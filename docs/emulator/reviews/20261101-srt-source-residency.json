@@ -1,0 +1,765 @@
+{
+  "schema_version": 1,
+  "scope": "UNIVERSAL_SHADPS4",
+  "review": "Exact SRT source-page preparation after black-frame retest",
+  "source_parent": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+  "tested_upstream": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "candidate_upstream": "ee0364a9c17ab7ee39888e839a928d936309134a",
+  "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "archives": [
+    {
+      "file": "universal-upstream-20261101T155134Z-329947.tar.gz",
+      "bytes": 13249972,
+      "sha256": "3cf003de58ffac8ebcf3b9dd1b41e1a733d9b33f4caff939c490cba902e0b138"
+    },
+    {
+      "file": "universal-graphics-20261101T160712Z-463264.tar.gz",
+      "bytes": 3561478,
+      "sha256": "7ff642f8dcbb56da74c8726753329a3ef684c5c659bf08bef1b0e142bff66a97"
+    },
+    {
+      "file": "universal-graphics-20261101T160731Z-465674.tar.gz",
+      "bytes": 1060060,
+      "sha256": "e9578d17da4111629e6adb08b755c73fb2a301757e5aaeb9e997a8aa2ac6ad3c"
+    },
+    {
+      "file": "universal-two-games-20261101T155134Z-329935.tar.gz",
+      "bytes": 17892486,
+      "sha256": "a6d9516622eb10be1567690ad1593466b674de078392d3cc6da0379211d3b059"
+    }
+  ],
+  "trials": [
+    {
+      "host_result": {
+        "schema_version": 2,
+        "record_id": "universal-upstream-20261101T155134Z-329947",
+        "timestamp_utc": "2026-11-01T16:07:12.158703+00:00",
+        "scope": "UNIVERSAL_SHADPS4",
+        "stage": "COMPLETE_BUILD_ONLY",
+        "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+        "exit_code": 0,
+        "requested_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "source_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+        "game_launched": false,
+        "graphics_verified": false,
+        "installed_binary_changed": false,
+        "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T155134Z-329947.tar.gz",
+        "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+        "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-db4d06c0cb36/build/shadps4",
+        "binary_sha256": "4ab967374ef86d41c76dcc480797fcaa4257d48aad37070100d4ca386ece6fee"
+      },
+      "reviewed_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "build_evidence": {
+        "compiler": "GCC 14",
+        "native_link": "build.log [2641/2642] Linking CXX executable shadps4",
+        "ctest_suites": 9,
+        "ctest_cases": 31,
+        "renderer_contracts": 7,
+        "srt_jit_checks": 10418,
+        "sparse_ranges": 288,
+        "sparse_scenarios": 7,
+        "sparse_modes": [
+          "recorder",
+          "vulkan-headers"
+        ],
+        "startup_scenarios": 3,
+        "additional_passes": [
+          "descriptor pool allocation",
+          "contiguous VMA clamp",
+          "guest/HLE ABI alignment"
+        ],
+        "logs": {
+          "build.log": "a44a1ec07efbf0bc643c302c487fbf5d726a3bf0664a5461e5598c25afa5c1a8",
+          "configure.log": "306b7d12159b2ea22fc7358133f536eb7a131071ac030228f7cb1de1a3ffe8f4",
+          "cpu-tests.log": "535ff5f61fbbd3f5133832beef1decf90de7634d5bf90c1946f1c8413c99c232",
+          "native-startup.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+          "compiler-check.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    {
+      "host_result": {
+        "schema_version": 2,
+        "record_id": "universal-graphics-20261101T160712Z-463264",
+        "scope": "UNIVERSAL_SHADPS4",
+        "timestamp_utc": "2026-11-01T16:07:12.817754+00:00",
+        "source_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "binary_sha256": "4ab967374ef86d41c76dcc480797fcaa4257d48aad37070100d4ca386ece6fee",
+        "game_launched": true,
+        "graphics_verified": false,
+        "installed_binary_changed": false,
+        "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T160712Z-463264.tar.gz",
+        "result": "GAME_OR_OBSERVER_FAILED",
+        "runner_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "runner_sha256": "95a9be78a053c95462dfb1c223aa4f696bb6a0edf5b248a82d7d8454c1c42dfe",
+        "context_games": [
+          "CUSA34384"
+        ],
+        "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T155134Z-329947/result.json",
+        "recovered_captures": [
+          "universal-graphics-20261101T122954Z-3617529"
+        ],
+        "display": ":0",
+        "display_preflight": {
+          "exit_code": 0,
+          "timed_out": false
+        },
+        "profile_source": "/home/chreece/.local/share/shadPS4",
+        "profile_files_copied": 205,
+        "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+        "vram_free_before": 5167497216,
+        "ollama_unloaded": [
+          "qwen3.8-greek:latest"
+        ],
+        "ollama_attempts": [
+          {
+            "transport": "direct-local-http",
+            "error": "[Errno 104] Connection reset by peer"
+          },
+          {
+            "transport": "docker:8f919e1ace79",
+            "listed_models": [
+              "qwen3.8-greek:latest"
+            ],
+            "post_unload_query_succeeded": true
+          },
+          {
+            "transport": "ollama-07c39de730dd-before",
+            "exit_code": 127
+          }
+        ],
+        "vram_free_at_launch": 25599688704,
+        "native": {
+          "binary_sha256": "4ab967374ef86d41c76dcc480797fcaa4257d48aad37070100d4ca386ece6fee",
+          "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+          "duration_limit": 120,
+          "time_to_sigterm": 118,
+          "graphics_visual_acceptance": "NOT_OBSERVED",
+          "audio_audible_acceptance": "NOT_OBSERVED",
+          "gameplay_acceptance": "NOT_OBSERVED",
+          "screenshots": [],
+          "owned_child_terminated": true,
+          "exit_code": -11,
+          "owned_child_pid": 464409,
+          "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+          "elapsed_seconds": 10.019,
+          "gpu_failure": null,
+          "srt_rejections": {
+            "Phi": 3906
+          },
+          "console_lines": 18275,
+          "warning_lines": 303,
+          "error_lines": 9070,
+          "selected_diagnostic_lines": 420,
+          "full_console_bytes": 2725688,
+          "native_fault": {
+            "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+          }
+        },
+        "tested_games": [
+          "CUSA34384"
+        ],
+        "stop_remaining_tests": false,
+        "shader_diagnostics": {
+          "dump_enabled": true,
+          "blocked_hashes": [
+            "0000000001c6c52b",
+            "0000000001de75d6",
+            "0000000004691bd5",
+            "000000000aaeb7a6",
+            "000000000e1725f7",
+            "0000000018d2b4cb",
+            "000000001d3b11aa",
+            "000000001fe2828d",
+            "0000000021b6bae0",
+            "0000000023e7d715",
+            "0000000028025117",
+            "0000000030980d90",
+            "0000000031da72ce",
+            "00000000374cf74e",
+            "000000003a3df9d8",
+            "000000005c33d320",
+            "000000006648a34b",
+            "000000007cdb6347",
+            "00000000819c680e",
+            "000000008ecff4c1",
+            "0000000091025d13",
+            "00000000947c9577",
+            "000000009a2cd8fd",
+            "00000000a27fa0f2",
+            "00000000abf7f1ba",
+            "00000000b3ad8a9d",
+            "00000000b8b29263",
+            "00000000bb9536d4",
+            "00000000bc50dad3",
+            "00000000be08cfac",
+            "00000000be13fedc",
+            "00000000beb185af",
+            "00000000dfd7cccc",
+            "00000000f127445f",
+            "00000000f847edb3",
+            "00000000fb368fea"
+          ],
+          "saved_ir": [
+            "cs_0x0000000001c6c52b.irprogram.txt",
+            "cs_0x0000000001c6c52b.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000001c6c52b.pre-res-discover.irprogram.txt",
+            "cs_0x0000000001c6c52b.pre-res-patch.irprogram.txt",
+            "cs_0x0000000001de75d6.irprogram.txt",
+            "cs_0x0000000001de75d6.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000001de75d6.pre-res-discover.irprogram.txt",
+            "cs_0x0000000001de75d6.pre-res-patch.irprogram.txt",
+            "cs_0x0000000004691bd5.irprogram.txt",
+            "cs_0x0000000004691bd5.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000004691bd5.pre-res-discover.irprogram.txt",
+            "cs_0x0000000004691bd5.pre-res-patch.irprogram.txt",
+            "cs_0x000000000aaeb7a6.irprogram.txt",
+            "cs_0x000000000aaeb7a6.pre-lower-phi.irprogram.txt",
+            "cs_0x000000000aaeb7a6.pre-res-discover.irprogram.txt",
+            "cs_0x000000000aaeb7a6.pre-res-patch.irprogram.txt",
+            "cs_0x000000000e1725f7.irprogram.txt",
+            "cs_0x000000000e1725f7.pre-lower-phi.irprogram.txt",
+            "cs_0x000000000e1725f7.pre-res-discover.irprogram.txt",
+            "cs_0x000000000e1725f7.pre-res-patch.irprogram.txt",
+            "cs_0x0000000018d2b4cb.irprogram.txt",
+            "cs_0x0000000018d2b4cb.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000018d2b4cb.pre-res-discover.irprogram.txt",
+            "cs_0x0000000018d2b4cb.pre-res-patch.irprogram.txt",
+            "cs_0x000000001d3b11aa.irprogram.txt",
+            "cs_0x000000001d3b11aa.pre-lower-phi.irprogram.txt",
+            "cs_0x000000001d3b11aa.pre-res-discover.irprogram.txt",
+            "cs_0x000000001d3b11aa.pre-res-patch.irprogram.txt",
+            "cs_0x000000001fe2828d.irprogram.txt",
+            "cs_0x000000001fe2828d.pre-lower-phi.irprogram.txt"
+          ],
+          "saved_bytes": 20947636,
+          "limit_bytes": 20971520,
+          "limit_files": 48
+        },
+        "exit_code": 1
+      },
+      "reviewed_result": "FAIL_UNSUPPORTED_DS_ORDERED_COUNT",
+      "graphics_accepted": false,
+      "console_excerpt_sha256": "15fcc1bd6b563a58d5b7779215c839140ffe21f3e9caf717bfe4d665cee3d1b6",
+      "console_complete": false,
+      "fault_counts_in_retained_console": {
+        "0x1006d24000": 1,
+        "0x1008f28000": 1,
+        "0x1006d6c000": 1,
+        "0x1006d70000": 1,
+        "0x1006d48000": 1,
+        "0x1008f84000": 1,
+        "0x1006d4c000": 1,
+        "0x1006d50000": 1,
+        "0x1008f6c000": 1,
+        "0x1008f70000": 1,
+        "0x1006d8c000": 1,
+        "0x1006d90000": 1,
+        "0x1008f8c000": 1,
+        "0x1008f90000": 1
+      },
+      "screenshots": [],
+      "ir_manifest": [
+        {
+          "file": "cs_0x0000000001c6c52b.irprogram.txt",
+          "bytes": 153076,
+          "sha256": "7b6aa6f242917f864a089aa7f4e65f8fd246c32891de3ddcf0b2c983fd1c3b11"
+        },
+        {
+          "file": "cs_0x0000000001c6c52b.pre-lower-phi.irprogram.txt",
+          "bytes": 552578,
+          "sha256": "1976c3cd6c45709433b682868e3150cba5fc72e3fed5b16cc3d59de4c363b126"
+        },
+        {
+          "file": "cs_0x0000000001c6c52b.pre-res-discover.irprogram.txt",
+          "bytes": 546712,
+          "sha256": "f864a0debb9947fc7ee57b720d394ed7db0754368a3c97572ce8e5e3d9a66ee3"
+        },
+        {
+          "file": "cs_0x0000000001c6c52b.pre-res-patch.irprogram.txt",
+          "bytes": 546969,
+          "sha256": "81b141bf48896ebf762070ed39c9a4dbfd19f6bf837761d98085a76319628ad3"
+        },
+        {
+          "file": "cs_0x0000000001de75d6.irprogram.txt",
+          "bytes": 189670,
+          "sha256": "5c00bd31c0b1a0b2c3596883f350fcf2f9646d8335a47936e31bfe2a2eab2608"
+        },
+        {
+          "file": "cs_0x0000000001de75d6.pre-lower-phi.irprogram.txt",
+          "bytes": 648228,
+          "sha256": "efda90f4cca6a1d238f1967f4f5ce12abb833024aa4b7b1bf1c01f6b8c6cc673"
+        },
+        {
+          "file": "cs_0x0000000001de75d6.pre-res-discover.irprogram.txt",
+          "bytes": 631990,
+          "sha256": "aeebb36fc5d5ac5955202ea540c4cfcd8d3a87a7d1e878be673f650c1824c2c6"
+        },
+        {
+          "file": "cs_0x0000000001de75d6.pre-res-patch.irprogram.txt",
+          "bytes": 632418,
+          "sha256": "f2efa86ac5cc4677860b642d0f02a55a2f1a8520b00ac8d347830d76e9df04a3"
+        },
+        {
+          "file": "cs_0x0000000004691bd5.irprogram.txt",
+          "bytes": 124727,
+          "sha256": "a15a82544c8cf3a466a3766e039c6f0f0e2432e43afe63c8f9a1b55c4bd34ec3"
+        },
+        {
+          "file": "cs_0x0000000004691bd5.pre-lower-phi.irprogram.txt",
+          "bytes": 472984,
+          "sha256": "104319861616973fec515c5b93f639d46891c869371238eda9e5be5e0eead403"
+        },
+        {
+          "file": "cs_0x0000000004691bd5.pre-res-discover.irprogram.txt",
+          "bytes": 481304,
+          "sha256": "e03f503b1c64a6fc6d0a3c2fae8b13b5924872d3436fac61b6997ea7f5a84f10"
+        },
+        {
+          "file": "cs_0x0000000004691bd5.pre-res-patch.irprogram.txt",
+          "bytes": 481403,
+          "sha256": "98778890d37a4e4f7dbb0efad817f08822a3e6ac99f7e0a30eb0f8960749b785"
+        },
+        {
+          "file": "cs_0x000000000aaeb7a6.irprogram.txt",
+          "bytes": 196271,
+          "sha256": "b61dbb911243e8580fc8bbf1e42ae95656417889a028395b5fd5e5f6802ca5cd"
+        },
+        {
+          "file": "cs_0x000000000aaeb7a6.pre-lower-phi.irprogram.txt",
+          "bytes": 697954,
+          "sha256": "25a72c170afadebb466826a1b91eee30bc10cc30e2008908f5d4ee04a89b555b"
+        },
+        {
+          "file": "cs_0x000000000aaeb7a6.pre-res-discover.irprogram.txt",
+          "bytes": 678510,
+          "sha256": "63d871e276d9b91cde884c57ed40fbd352f017cff8bfe3ee7667813b08b400cf"
+        },
+        {
+          "file": "cs_0x000000000aaeb7a6.pre-res-patch.irprogram.txt",
+          "bytes": 678938,
+          "sha256": "ef0176e200cb116f6a9cb280181a82374c4ff94ecfe5d139096bff759651291b"
+        },
+        {
+          "file": "cs_0x000000000e1725f7.irprogram.txt",
+          "bytes": 321669,
+          "sha256": "fff585035dd316946969e58b03dd2dc631e0195de5b965b08c20dc5eb3e75f66"
+        },
+        {
+          "file": "cs_0x000000000e1725f7.pre-lower-phi.irprogram.txt",
+          "bytes": 1153717,
+          "sha256": "d38ef3c0353606d9ee770de1299a3b5aaacf9331043716588125b38b384304fb"
+        },
+        {
+          "file": "cs_0x000000000e1725f7.pre-res-discover.irprogram.txt",
+          "bytes": 1147113,
+          "sha256": "0e70c84c1a39b9866905977de27f7ca665ba163d99db12d69167b891296ddf4d"
+        },
+        {
+          "file": "cs_0x000000000e1725f7.pre-res-patch.irprogram.txt",
+          "bytes": 1147425,
+          "sha256": "712255635ea3630d9bae56a3afff7eebf5135b6b4879484a03cf46b2dd7cada0"
+        },
+        {
+          "file": "cs_0x0000000018d2b4cb.irprogram.txt",
+          "bytes": 391052,
+          "sha256": "563a84220828f102c68181f0165e4f31d866f9182f3313c9ed1140caf3de4bac"
+        },
+        {
+          "file": "cs_0x0000000018d2b4cb.pre-lower-phi.irprogram.txt",
+          "bytes": 1406293,
+          "sha256": "487f878866bcfc81e2f5a60d34f9bc8f9691ab901c7c899ccaf931b4ef070d07"
+        },
+        {
+          "file": "cs_0x0000000018d2b4cb.pre-res-discover.irprogram.txt",
+          "bytes": 1394813,
+          "sha256": "ca2f3ddae3a1bd96503017e7523a435a588ba45f7b1d1b015d6c563092f03211"
+        },
+        {
+          "file": "cs_0x0000000018d2b4cb.pre-res-patch.irprogram.txt",
+          "bytes": 1395143,
+          "sha256": "83fbf2dfe1c47ccfa5e74aab5e964d1bf261f0db28aee6eec0234745627ba97c"
+        },
+        {
+          "file": "cs_0x000000001d3b11aa.irprogram.txt",
+          "bytes": 308164,
+          "sha256": "e03668858f57281cfc0f398c01d548e27d7860f16f9e9f445eb5e4e487a9924b"
+        },
+        {
+          "file": "cs_0x000000001d3b11aa.pre-lower-phi.irprogram.txt",
+          "bytes": 1096105,
+          "sha256": "ecbd8a5d639331a1671014a7778daaba12625afd9f1d319804dc758a6e02d553"
+        },
+        {
+          "file": "cs_0x000000001d3b11aa.pre-res-discover.irprogram.txt",
+          "bytes": 1090025,
+          "sha256": "3111dcdf810139cd16eae5d40956dfc8873ddb1c5306f96cae4057d08b145125"
+        },
+        {
+          "file": "cs_0x000000001d3b11aa.pre-res-patch.irprogram.txt",
+          "bytes": 1090343,
+          "sha256": "73e989dac8e5cab5a994e4c7a8d7414790e48a9e475faa98dfe13ad9cef666d7"
+        },
+        {
+          "file": "cs_0x000000001fe2828d.irprogram.txt",
+          "bytes": 280334,
+          "sha256": "e06189a33486bed87ff9a5dcfff361f4af4421196713e94b19b7db6a73c5e0ac"
+        },
+        {
+          "file": "cs_0x000000001fe2828d.pre-lower-phi.irprogram.txt",
+          "bytes": 1011708,
+          "sha256": "94b9e44eff7b5d744d81b578e66d6a6f146ec4b3f96b139003a3a000f9de2c38"
+        }
+      ],
+      "failure": "Shader 0xdbaa6ae4 reaches unsupported DS_ORDERED_COUNT and translation fails before screenshots.",
+      "capture_limit": "20 MiB IR cap retains preceding SRT rejections; the failing ordered-opcode shader is not among the saved IR."
+    },
+    {
+      "host_result": {
+        "schema_version": 2,
+        "record_id": "universal-graphics-20261101T160731Z-465674",
+        "scope": "UNIVERSAL_SHADPS4",
+        "timestamp_utc": "2026-11-01T16:07:31.133168+00:00",
+        "source_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "binary_sha256": "4ab967374ef86d41c76dcc480797fcaa4257d48aad37070100d4ca386ece6fee",
+        "game_launched": true,
+        "graphics_verified": false,
+        "installed_binary_changed": false,
+        "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261101T160731Z-465674.tar.gz",
+        "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+        "runner_commit": "db4d06c0cb360ba57bcab0905502a44bf11fb794",
+        "runner_sha256": "95a9be78a053c95462dfb1c223aa4f696bb6a0edf5b248a82d7d8454c1c42dfe",
+        "context_games": [
+          "CUSA11456"
+        ],
+        "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261101T155134Z-329947/result.json",
+        "recovered_captures": [
+          "universal-graphics-20261101T122954Z-3617529"
+        ],
+        "display": ":0",
+        "display_preflight": {
+          "exit_code": 0,
+          "timed_out": false
+        },
+        "profile_source": "/home/chreece/.local/share/shadPS4",
+        "profile_files_copied": 205,
+        "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+        "vram_free_before": 25599737856,
+        "ollama_unloaded": [],
+        "vram_free_at_launch": 25599737856,
+        "native": {
+          "binary_sha256": "4ab967374ef86d41c76dcc480797fcaa4257d48aad37070100d4ca386ece6fee",
+          "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+          "duration_limit": 120,
+          "time_to_sigterm": 118,
+          "graphics_visual_acceptance": "NOT_OBSERVED",
+          "audio_audible_acceptance": "NOT_OBSERVED",
+          "gameplay_acceptance": "NOT_OBSERVED",
+          "screenshots": [
+            "frame-040s.png",
+            "frame-080s.png",
+            "frame-110s.png"
+          ],
+          "owned_child_terminated": true,
+          "exit_code": -9,
+          "owned_child_pid": 465679,
+          "exit_reason": "TEST_118S_DURATION_LIMIT",
+          "elapsed_seconds": 120.165,
+          "gpu_failure": null,
+          "srt_rejections": {
+            "Phi": 32,
+            "GetAttributeU32": 16
+          },
+          "console_lines": 3433,
+          "warning_lines": 349,
+          "error_lines": 1146,
+          "selected_diagnostic_lines": 420,
+          "full_console_bytes": 443946,
+          "native_fault": {
+            "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+          }
+        },
+        "tested_games": [
+          "CUSA11456"
+        ],
+        "stop_remaining_tests": false,
+        "shader_diagnostics": {
+          "dump_enabled": true,
+          "blocked_hashes": [
+            "0000000004950cf6",
+            "000000002ba74851",
+            "0000000052b6e003",
+            "0000000055d17c16",
+            "000000005c4c2b6f",
+            "000000008ced785b"
+          ],
+          "saved_ir": [
+            "cs_0x0000000004950cf6.irprogram.txt",
+            "cs_0x0000000004950cf6.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000004950cf6.pre-res-discover.irprogram.txt",
+            "cs_0x0000000004950cf6.pre-res-patch.irprogram.txt",
+            "cs_0x000000002ba74851.irprogram.txt",
+            "cs_0x000000002ba74851.pre-lower-phi.irprogram.txt",
+            "cs_0x000000002ba74851.pre-res-discover.irprogram.txt",
+            "cs_0x000000002ba74851.pre-res-patch.irprogram.txt",
+            "cs_0x0000000052b6e003.irprogram.txt",
+            "cs_0x0000000052b6e003.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000052b6e003.pre-res-discover.irprogram.txt",
+            "cs_0x0000000052b6e003.pre-res-patch.irprogram.txt",
+            "cs_0x0000000055d17c16.irprogram.txt",
+            "cs_0x0000000055d17c16.pre-lower-phi.irprogram.txt",
+            "cs_0x0000000055d17c16.pre-res-discover.irprogram.txt",
+            "cs_0x0000000055d17c16.pre-res-patch.irprogram.txt",
+            "cs_0x000000005c4c2b6f.irprogram.txt",
+            "cs_0x000000005c4c2b6f.pre-lower-phi.irprogram.txt",
+            "cs_0x000000005c4c2b6f.pre-res-discover.irprogram.txt",
+            "cs_0x000000005c4c2b6f.pre-res-patch.irprogram.txt",
+            "cs_0x000000008ced785b.irprogram.txt",
+            "cs_0x000000008ced785b.pre-lower-phi.irprogram.txt",
+            "cs_0x000000008ced785b.pre-res-discover.irprogram.txt",
+            "cs_0x000000008ced785b.pre-res-patch.irprogram.txt"
+          ],
+          "saved_bytes": 5814151,
+          "limit_bytes": 20971520,
+          "limit_files": 48
+        },
+        "exit_code": 0
+      },
+      "reviewed_result": "FAIL_BLACK_SCREEN",
+      "graphics_accepted": false,
+      "console_excerpt_sha256": "4893c479df56ff12040ecb461d3e566af023645004134ae47c7e6382c5b3c47e",
+      "console_complete": true,
+      "fault_counts_in_retained_console": {
+        "0x150260c000": 2,
+        "0x1502618000": 1,
+        "0x1502610000": 1
+      },
+      "screenshots": [
+        {
+          "file": "frame-040s.png",
+          "sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073",
+          "visual_review": "Black frame with 29 FPS / 35.0 ms overlay; no scene or readable menu."
+        },
+        {
+          "file": "frame-080s.png",
+          "sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073",
+          "visual_review": "Black frame; no scene or readable menu."
+        },
+        {
+          "file": "frame-110s.png",
+          "sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073",
+          "visual_review": "Black frame; no scene or readable menu."
+        }
+      ],
+      "ir_manifest": [
+        {
+          "file": "cs_0x0000000004950cf6.irprogram.txt",
+          "bytes": 39394,
+          "sha256": "0e38946a488fa1ef6a52d7a4b52bd879bf2de066ae95c6e9a8547b20f62e5c3e"
+        },
+        {
+          "file": "cs_0x0000000004950cf6.pre-lower-phi.irprogram.txt",
+          "bytes": 116763,
+          "sha256": "1a7edfd02182e788ac01143fcb8312077c1cd55a3aab1de892f37c1d6d0fd06f"
+        },
+        {
+          "file": "cs_0x0000000004950cf6.pre-res-discover.irprogram.txt",
+          "bytes": 115542,
+          "sha256": "5f7812ce715a0cb75c094a98a5d74f97d2e0f2344b74f7d86d4d8043306d1fe9"
+        },
+        {
+          "file": "cs_0x0000000004950cf6.pre-res-patch.irprogram.txt",
+          "bytes": 115582,
+          "sha256": "24c2e008aa591ba7ba902ade3e7d6845c7152a583d349cc190d0f0d90363ce47"
+        },
+        {
+          "file": "cs_0x000000002ba74851.irprogram.txt",
+          "bytes": 93832,
+          "sha256": "0789f54339fb3ea8ef8cfaa26c4e422eaa3531b92074dc8779f8b95da66ecec6"
+        },
+        {
+          "file": "cs_0x000000002ba74851.pre-lower-phi.irprogram.txt",
+          "bytes": 320044,
+          "sha256": "14a30a97e98035c9da581fe4d91dfe62979989466241de5137d315cd31c065af"
+        },
+        {
+          "file": "cs_0x000000002ba74851.pre-res-discover.irprogram.txt",
+          "bytes": 306471,
+          "sha256": "d544246e620e25421e8de1ff7527a1b26663f0f796e2705ba1c1cb946388cb25"
+        },
+        {
+          "file": "cs_0x000000002ba74851.pre-res-patch.irprogram.txt",
+          "bytes": 306568,
+          "sha256": "00667caa3dc4af242a1441adfabc0cacc9c3792c21fb49b834d1e5efccaf517f"
+        },
+        {
+          "file": "cs_0x0000000052b6e003.irprogram.txt",
+          "bytes": 88466,
+          "sha256": "5d4e2c7fd2ffd45fc703ff926df67e923b4318b37e4151458a375f2118df0d98"
+        },
+        {
+          "file": "cs_0x0000000052b6e003.pre-lower-phi.irprogram.txt",
+          "bytes": 272475,
+          "sha256": "86d3e605dd8a7abb94d918ebe9b7661f666a94f0ca3909ca61b50bffb3fd6074"
+        },
+        {
+          "file": "cs_0x0000000052b6e003.pre-res-discover.irprogram.txt",
+          "bytes": 266855,
+          "sha256": "7be2c5cb9678baf27536981e475a511d6cbf4bee04acd4fb768f81a1efadf1ed"
+        },
+        {
+          "file": "cs_0x0000000052b6e003.pre-res-patch.irprogram.txt",
+          "bytes": 266889,
+          "sha256": "14b6eb9592caf5be88b08eb5ea7ee3b39a8bf4f321e012fac20ebebb9588b060"
+        },
+        {
+          "file": "cs_0x0000000055d17c16.irprogram.txt",
+          "bytes": 73015,
+          "sha256": "1887da1db8d5366353a0806642b63b31c4dbb4cca56991bc93d1d2c901ecbb97"
+        },
+        {
+          "file": "cs_0x0000000055d17c16.pre-lower-phi.irprogram.txt",
+          "bytes": 238020,
+          "sha256": "77953177138d7253692109732c213c56589cfd750bcd391a12cf8be47de6d3bc"
+        },
+        {
+          "file": "cs_0x0000000055d17c16.pre-res-discover.irprogram.txt",
+          "bytes": 234884,
+          "sha256": "9250da5a78e4de27ce6029a2256037436f16bca66487a31b9c357c371d26d379"
+        },
+        {
+          "file": "cs_0x0000000055d17c16.pre-res-patch.irprogram.txt",
+          "bytes": 234916,
+          "sha256": "bc847cde264b38f657fac54084773b27e203fb35c9d26cf4aa564f8f849e00cb"
+        },
+        {
+          "file": "cs_0x000000005c4c2b6f.irprogram.txt",
+          "bytes": 248551,
+          "sha256": "f21334c816870fbd5e13b9efa054f6bafe4ba61a4170d9d7fa9c97e74699caed"
+        },
+        {
+          "file": "cs_0x000000005c4c2b6f.pre-lower-phi.irprogram.txt",
+          "bytes": 792719,
+          "sha256": "208880d121d779e47e068a6096e0c5bac55509acb9868524113f851cf646e165"
+        },
+        {
+          "file": "cs_0x000000005c4c2b6f.pre-res-discover.irprogram.txt",
+          "bytes": 773720,
+          "sha256": "4a61e4903cf0eb1e666abb194f36d955f2c0d9332c76385666333b70d3d9f4d8"
+        },
+        {
+          "file": "cs_0x000000005c4c2b6f.pre-res-patch.irprogram.txt",
+          "bytes": 773871,
+          "sha256": "5500a129d6c181a9ee899e484acf5045a11ef4cee8d6cc2f1e613672a3eaf43b"
+        },
+        {
+          "file": "cs_0x000000008ced785b.irprogram.txt",
+          "bytes": 11985,
+          "sha256": "a3efeddca155f7acd99de5eca47727b353c4a64868a2e6517f8904738b9f4f6d"
+        },
+        {
+          "file": "cs_0x000000008ced785b.pre-lower-phi.irprogram.txt",
+          "bytes": 41587,
+          "sha256": "75474cca6517fe87276e287c48e90e384ba3cf2678cf01601df50dc1052432cf"
+        },
+        {
+          "file": "cs_0x000000008ced785b.pre-res-discover.irprogram.txt",
+          "bytes": 40995,
+          "sha256": "17a43e43d8b25f14eb65005f25916837968066c85daad576728c3869732d7c08"
+        },
+        {
+          "file": "cs_0x000000008ced785b.pre-res-patch.irprogram.txt",
+          "bytes": 41007,
+          "sha256": "702db8ac3b3c7182f3ffb790a8243f949e70bb2747de948670dba79854f808f9"
+        }
+      ],
+      "failure": "All three screenshots visually reviewed and black. The same six shaders retain Phi or workgroup-dependent descriptor offsets."
+    }
+  ],
+  "duplicate_policy": "The batch contains byte-identical copies of all three individual archives. Verified all nested hashes and count one native build plus two game trials only.",
+  "retained_source": {
+    "verified_file_hashes": 2863,
+    "manifest_sha256": "12f8001abdd1067213957db56f3e4793aa4181b557be4a230055a143c514c096",
+    "changes_since_prior_capture": [
+      "source-0 guest_tsharp_array.h now bounds complete descriptor prefixes instead of demanding trailing record padding.",
+      "source-0 vk_rasterizer.cpp removes duplicate-descriptor reuse.",
+      "source-1 and source-2 unchanged."
+    ],
+    "decision": "Do not import the experimental indexed-resource backend wholesale. Its bounds change depends on that backend; the renderer removes prior deduplication and does not establish new graphics acceptance."
+  },
+  "root_cause_scope": {
+    "established": "The host SRT walker copies words from guest memory without creating BDA residency for their source pages. A shader may still perform dynamic GPU reads of the same pages. A missing BDA entry records a deferred fault and the current load returns zero.",
+    "not_established": "The previous captures do not include the walker source addresses, so overlap with the four GoT or fourteen retained GoW fault reports is not yet established. This patch does not implement exact first-fault replay or complete GPU-indexed textures."
+  },
+  "changes": [
+    {
+      "component": "host SRT walker",
+      "behavior": "Record each copied guest word address alongside its flattened value. Preserve the third argument in r8 before offset evaluation can clobber edx; retain the existing fault-load register. Refresh source addresses on every userdata refresh."
+    },
+    {
+      "component": "buffer cache",
+      "behavior": "For DMA stages, prepare only exact source words that pass 40-bit bounds and locked mapped CPU-read/GPU-read permission checks. Skip already resident blocks. Use IgnoreStreamBuffer so four-byte reads allocate actual sparse residency. Existing full-range DMA synchronization handles uploads and read dependencies."
+    },
+    {
+      "component": "resource binding",
+      "behavior": "Prepare all DMA stages before binding any stage, so BDA page-table writes precede read-access tracking. Log newly prepared source addresses and blocks for comparison with future faults."
+    },
+    {
+      "component": "shader cache",
+      "behavior": "Bump metadata version 6 to 7 because cached SRT machine code has a different calling convention. Shader binary version remains 14. Update the existing version expectation; no new test file is added to the repository."
+    },
+    {
+      "component": "upstream refresh",
+      "behavior": "Replay the cumulative integration onto upstream ee0364a9, which clamps image mip counts and view base levels. Former integration head db4d06c0 remains cited by all original trials; journal history is retained. No upstream-main merge is used."
+    }
+  ],
+  "validation": {
+    "result": "PASS_FOCUSED_CPU_CHECKS_NATIVE_GPU_RETEST_PENDING",
+    "production_srt_walker_jit_checks": 5779,
+    "walker_cases": "Immediate and dynamic offsets, nested and multiple roots, masked pointers, edx-clobbering dynamic bitfields, repeated changed userdata, rejected GPU-derived offset, empty walker, and copied machine-code calling convention. Actual ComputeOffset/VisitPointer/GenerateSrtProgram/RefreshFlatBuf bodies with IR scaffolding and real Xbyak.",
+    "production_residency_checks": 36,
+    "residency_cases": "Actual PrepareDmaSources and ObtainBuffer plus actual mapping helper, with recorded cache operations at 16 KiB/64 KiB/1 MiB page sizes. Duplicate pages, crossing words, gaps, missing permissions, free VMAs, 40-bit/overflow bounds, final valid word and remapping.",
+    "production_bind_order_scenarios": 3,
+    "cache_loader_cases": 9,
+    "negative_controls": 5,
+    "negative_control_details": [
+      "Omitting source-address writes fails.",
+      "Leaving source output in clobbered rdx faults.",
+      "Allowing stream-buffer shortcut fails residency.",
+      "Removing mapping/permission check admits invalid sources.",
+      "Accepting old metadata fails cache ABI check."
+    ],
+    "existing_srt_primitive_checks": 10418,
+    "existing_uniform_lane_checks": 2825,
+    "existing_sparse_ranges": 288,
+    "existing_sparse_scenarios": 7,
+    "existing_sparse_modes": [
+      "recorder",
+      "real Vulkan headers"
+    ],
+    "existing_renderer_contracts": 7,
+    "image_binding_cases": 24,
+    "image_binding_negative_controls": 4,
+    "fixtures": {
+      "check-srt-source-addresses.py": "6c73be11240af8f5823e0ffde16f0ea1eff5332748a7b50faea740635218dfaa",
+      "check-srt-dma-residency.py": "9f2c5ddba0325cbe4febd07f37c549b85e8bbc2c4e22f342b5ae1f4103d264b0",
+      "check-srt-cache-abi.py": "5e7f86f9e75bd9b86300b164bbc718c0c17e75a8d12afc37912b35edcd7205bf",
+      "check-image-bindings.py": "80bc41ccd077ddd9cb64a29be8e81f5e30211de04abdab5ed648cb694039fa2b"
+    },
+    "attempts": [
+      "Native CMake configure could not start: cmake is absent in this executor. Full native build of the new patch remains pending on the host.",
+      "Bind-order fixture placeholder also matched its output string; corrected the fixture delimiter before the successful compile/run.",
+      "Existing cache source contract initially expected metadata version 6; updated that existing expectation to 7.",
+      "Image-binding fixture initially used current HEAD as its old baseline, which already contains the fix; pinned its negative baseline to 8db59b4a and reran."
+    ],
+    "hardware_execution": "NOT_RUN",
+    "limits": [
+      "Recorded cache/device operations are not a Vulkan GPU test.",
+      "CPU preparation does not cover unseen GPU-dependent addresses or all future faults.",
+      "No new PS4 instruction semantics are introduced; this is host cache/residency preparation. No claim of PS4 hardware behavior validation is made.",
+      "No cross-platform, graphics, audio or gameplay acceptance is established."
+    ]
+  },
+  "promotion": "Keep PR118 draft and fork main unchanged. Rebuild the candidate on current upstream and repeat both bounded game observations."
+}

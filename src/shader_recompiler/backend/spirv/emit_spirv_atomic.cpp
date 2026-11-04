@@ -143,10 +143,18 @@ Id ImageAtomicU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id va
                   Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id)) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
+    // Integer image atomics must use the image's scalar signedness, not the
+    // unsigned bit-pattern type used by the IR. Bitcasts keep every guest bit.
+    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
+    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
+    const Id pointer_type =
+        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
     const Id pointer{
-        ctx.OpImageTexelPointer(ctx.image_u32, texture.id, fixed_coords, ctx.ConstU32(0U))};
+        ctx.OpImageTexelPointer(pointer_type, texture.id, fixed_coords, ctx.ConstU32(0U))};
+    const Id operand = is_signed ? ctx.OpBitcast(scalar_type, value) : value;
     const auto [scope, semantics]{AtomicArgs(ctx)};
-    return (ctx.*atomic_func)(ctx.U32[1], pointer, scope, semantics, value);
+    const Id result = (ctx.*atomic_func)(scalar_type, pointer, scope, semantics, operand);
+    return is_signed ? ctx.OpBitcast(ctx.U32[1], result) : result;
 }
 
 Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
@@ -164,10 +172,18 @@ Id ImageAtomicU32CmpSwap(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords
                          Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id, Id, Id, Id)) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id fixed_coords{FixImageAtomicCoords(ctx, coords, texture.view_type)};
+    const bool is_signed = texture.data_types->Get(1).value == ctx.S32[1].value;
+    const Id scalar_type = is_signed ? ctx.S32[1] : ctx.U32[1];
+    const Id pointer_type =
+        is_signed ? ctx.TypePointer(spv::StorageClass::Image, scalar_type) : ctx.image_u32;
     const Id pointer{
-        ctx.OpImageTexelPointer(ctx.image_u32, texture.id, fixed_coords, ctx.ConstU32(0U))};
+        ctx.OpImageTexelPointer(pointer_type, texture.id, fixed_coords, ctx.ConstU32(0U))};
+    const Id operand = is_signed ? ctx.OpBitcast(scalar_type, value) : value;
+    const Id comparator = is_signed ? ctx.OpBitcast(scalar_type, cmp_value) : cmp_value;
     const auto [scope, semantics]{AtomicArgs(ctx)};
-    return (ctx.*atomic_func)(ctx.U32[1], pointer, scope, semantics, semantics, value, cmp_value);
+    const Id result =
+        (ctx.*atomic_func)(scalar_type, pointer, scope, semantics, semantics, operand, comparator);
+    return is_signed ? ctx.OpBitcast(ctx.U32[1], result) : result;
 }
 } // Anonymous namespace
 
