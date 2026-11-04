@@ -41,7 +41,45 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 488c972b48a76575f26e2e58b7afe1d58e38f1ffdad5b085815fda706b6e6518 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' dfb726ae61aed70aee242e18442a327447660ff6e8eb338ef552062c9adbdcc2 "$OUT/graphics.py" | sha256sum --check -
+curl --fail --location --retry 3 \
+    "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
+    -o "$OUT/observer.py"
+python3 - "$OUT" "$PIN" "$RUNNER_PIN" <<'PY'
+import datetime,fcntl,hashlib,importlib.util,json,pathlib,sys
+out=pathlib.Path(sys.argv[1])
+record={'timestamp_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'kind':'universal-prebuild-process-preflight','source_commit':sys.argv[2],
+        'runner_commit':sys.argv[3],'game_launched':False,'result':'PREFLIGHT_FAILED'}
+def load(name,path):
+    spec=importlib.util.spec_from_file_location(name,path)
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+try:
+    runner=load('graphics_preflight',out/'graphics.py')
+    if hashlib.sha256((out/'observer.py').read_bytes()).hexdigest()!=runner.OBSERVER_SHA256:
+        raise RuntimeError('RUNNER_OBSERVER_HASH_MISMATCH')
+    observer=load('observer_preflight',out/'observer.py')
+    record['existing_emulator_pids']=observer.existing_games()
+    for pid in record['existing_emulator_pids']:
+        observer.capture_owned_stop_state(pid,out,filename=f'existing-process-{pid}.json')
+    if record['existing_emulator_pids']:
+        raise RuntimeError('AN_EMULATOR_STILL_HAS_LIVE_OR_UNREADABLE_THREADS')
+    record['result']='PASS'
+except Exception as error:
+    record['error']=f'{type(error).__name__}: {error}'
+finally:
+    (out/'process-preflight.json').write_text(json.dumps(record,indent=2)+'\n')
+    journal=out.parent.parent/'docs/emulator/TRIALS.jsonl'
+    journal.parent.mkdir(parents=True,exist_ok=True)
+    with journal.open('a') as stream:
+        fcntl.flock(stream,fcntl.LOCK_EX)
+        stream.write(json.dumps(record)+'\n')
+print('PREBUILD_PROCESS_PREFLIGHT='+record['result'],flush=True)
+if record.get('error'):print(record['error'],flush=True)
+sys.exit(0 if record['result']=='PASS' else 2)
+PY
 if [[ "$MODE" == build ]]; then
     curl --fail --location --retry 3 \
         "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-upstream-build.sh" \
