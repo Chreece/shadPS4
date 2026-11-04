@@ -169,6 +169,8 @@ vk::DescriptorSet DescriptorHeap::Commit(
             ASSERT_MSG(reset_result == vk::Result::eSuccess,
                        "Unexpected error resetting descriptor pool: {}",
                        vk::to_string(reset_result));
+            curr_pool_remaining_sizes = curr_pool_sizes;
+            curr_pool_remaining_sets = curr_pool_max_sets;
         } else {
             CreateDescriptorPool(required);
         }
@@ -209,13 +211,26 @@ vk::DescriptorSet DescriptorHeap::Commit(
     const auto allocate = [&](u32 count) {
         desc_sets.resize(count);
         alloc_info.descriptorSetCount = count;
-        return device.allocateDescriptorSets(&alloc_info, desc_sets.data());
+        const auto allocation_result = device.allocateDescriptorSets(&alloc_info, desc_sets.data());
+        if (allocation_result == vk::Result::eSuccess) {
+            curr_pool_remaining_sets -= count;
+            for (const auto& need : required) {
+                const auto it =
+                    std::find_if(curr_pool_remaining_sizes.begin(), curr_pool_remaining_sizes.end(),
+                                 [&](const auto& size) { return size.type == need.type; });
+                ASSERT(it != curr_pool_remaining_sizes.end());
+                it->descriptorCount -= need.descriptorCount * count;
+            }
+        }
+        return allocation_result;
     };
     vk::Result result = vk::Result::eErrorOutOfPoolMemory;
     const auto try_batch = [&] {
         return TryAllocateDescriptorBatch(
-            allocate, result, vk::Result::eSuccess,
-            vk::Result::eErrorOutOfPoolMemory, vk::Result::eErrorFragmentedPool);
+            allocate, result, vk::Result::eSuccess, vk::Result::eErrorOutOfPoolMemory,
+            vk::Result::eErrorFragmentedPool,
+            DescriptorBatchCapacity<vk::DescriptorPoolSize>(curr_pool_remaining_sizes, required,
+                                                            curr_pool_remaining_sets));
     };
     if (try_batch() != 0) {
         const auto desc_set = desc_sets.back();
@@ -264,10 +279,7 @@ vk::DescriptorSet DescriptorHeap::Commit(
         CreateDescriptorPool(required, true);
         descriptor_sets.clear();
         alloc_info.descriptorPool = curr_pool;
-        desc_sets.clear();
-        desc_sets.resize(1);
-        alloc_info.descriptorSetCount = 1;
-        result = device.allocateDescriptorSets(&alloc_info, desc_sets.data());
+        result = allocate(1);
         if (result != vk::Result::eSuccess) {
             for (const auto& need : required) {
                 LOG_ERROR(Render_Vulkan,
@@ -316,6 +328,8 @@ void DescriptorHeap::CreateDescriptorPool(
     curr_pool = pool;
     curr_pool_sizes = sizes;
     curr_pool_max_sets = max_sets;
+    curr_pool_remaining_sizes = sizes;
+    curr_pool_remaining_sets = max_sets;
     curr_pool_flags = flags;
 }
 

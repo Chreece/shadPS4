@@ -89,6 +89,8 @@ private:
     vk::DescriptorPool curr_pool;
     std::vector<vk::DescriptorPoolSize> curr_pool_sizes;
     u32 curr_pool_max_sets{};
+    std::vector<vk::DescriptorPoolSize> curr_pool_remaining_sizes;
+    u32 curr_pool_remaining_sets{};
     vk::DescriptorPoolCreateFlags curr_pool_flags{};
     struct PendingPool {
         vk::DescriptorPool pool;
