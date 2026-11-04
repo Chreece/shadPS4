@@ -12,6 +12,7 @@
 #include "shader_recompiler/backend/bindings.h"
 #include "shader_recompiler/frontend/copy_shader.h"
 #include "shader_recompiler/frontend/tessellation.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/ir/attribute.h"
 #include "shader_recompiler/ir/passes/srt.h"
 #include "shader_recompiler/ir/reg.h"
@@ -197,11 +198,41 @@ struct Info : InfoPersistent {
     bool CanReadUniformBufferRange(u32 root_sgpr, u32 first, u32 last) const;
     bool UniformBufferBoundsCompatible() const;
 
+    bool IndexedResourcesCompatible() const {
+        for (const auto& image : images) {
+            if (!image.is_guest_indexed) {
+                continue;
+            }
+            AmdGpu::Buffer table{};
+            if (!image.indexed_table_fetch.Fetch(flattened_ud_buf.data(), &table) ||
+                !table.Valid()) {
+                return false;
+            }
+            const u32 entries =
+                image.indexed_record_stride_bytes
+                    ? Optimization::CompleteGuestTsharpRecordEntries(
+                          table.stride, table.num_records, image.indexed_record_stride_bytes,
+                          image.indexed_descriptor_offset_bytes, MaxGuestIndexedImageEntries)
+                    : Optimization::CompleteGuestTsharpTableEntries(table.stride, table.num_records,
+                                                                    MaxGuestIndexedImageEntries);
+            if (entries != image.indexed_guest_entries) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     void AddBindings(Backend::Bindings& bnd) const {
         bnd.buffer += buffers.size();
-        bnd.unified += buffers.size() + samplers.size();
+        bnd.unified += buffers.size();
+        for (const auto& sampler : samplers) {
+            bnd.unified += sampler.NumBindings(*this);
+        }
         for (const auto& image : images) {
             bnd.unified += image.NumBindings(*this);
+            if (image.is_guest_mixed_indexed) {
+                bnd.unified += image.NumBindings(*this) + image.NumBindings(*this) + 1;
+            }
         }
     }
 
