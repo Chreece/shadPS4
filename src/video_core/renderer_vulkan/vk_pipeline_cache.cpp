@@ -280,35 +280,25 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
     return info;
 }
 
-static u32 GuestIndexedImageLimit(const Instance& instance) {
-    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
-    constexpr u32 type_reserve = Shader::NUM_IMAGES + 32u;
-    constexpr u32 total_reserve =
-        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
-    const u32 type_hard =
-        std::min(limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages);
-    const u32 type_real =
-        type_hard > type_reserve + 1u
-            ? std::min(Shader::MaxGuestIndexedImageEntries, type_hard - type_reserve - 1u)
-            : 0u;
-    const u32 total_real = limits.maxPerStageResources > total_reserve + 1u
-                               ? std::min(Shader::MaxGuestIndexedImageEntries,
-                                          limits.maxPerStageResources - total_reserve - 1u)
-                               : 0u;
-    return std::min(type_real, total_real);
-}
-
-static u32 GuestIndexedSamplerLimit(const Instance& instance);
-
-static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
+static u32 GuestNumericImageLimit(const Instance& instance, u32 arrays) {
     const auto limits = instance.GetPhysicalDevice().getProperties().limits;
     constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
-    const u32 available =
-        std::min({limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages,
-                  limits.maxPerStageResources});
-    return available > reserve + 4u
-               ? std::min(Shader::MaxGuestIndexedImageEntries, (available - reserve - 4u) / 4u)
-               : 0u;
+    const u32 images =
+        std::min(limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages);
+    const u32 image_count = images > reserve ? (images - reserve) / arrays : 0u;
+    const u32 total_count = limits.maxPerStageResources > reserve + 1u
+                                ? (limits.maxPerStageResources - reserve - 1u) / (arrays + 1u)
+                                : 0u;
+    const u32 count = std::min(image_count, total_count);
+    return count > 1u ? std::min(Shader::MaxGuestIndexedImageEntries, count - 1u) : 0u;
+}
+
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 3u);
+}
+
+static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 9u);
 }
 
 static u32 GuestIndexedSamplerLimit(const Instance& instance) {

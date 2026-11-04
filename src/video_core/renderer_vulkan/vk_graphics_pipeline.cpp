@@ -509,10 +509,10 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
                 });
                 binding += count;
             };
-            add_images(num_bindings);
-            if (image.is_guest_mixed_indexed) {
+            for (u32 i = 0; i < image.NumImageArrays(); ++i) {
                 add_images(num_bindings);
-                add_images(num_bindings);
+            }
+            if (image.is_guest_indexed) {
                 bindings.push_back({
                     .binding = binding++,
                     .descriptorType = vk::DescriptorType::eStorageBuffer,
