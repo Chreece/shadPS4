@@ -785,3 +785,12 @@ Archive `universal-two-games-20261103T061706Z-3865503.tar.gz` SHA256 `8dcacf265f
 Full GCC14 Release build and retained CPU/startup/three CLI checks pass. 27 production SPIR-V modules validate, including 32 simultaneous sampler bindings; 168 image/sampler pairs match numeric types. 3,072 production constructor cases with intercepted driver calls, 30,000 descriptor-budget property cases and 9 observer checks pass. Initial HashCombine compile failure and executor-proc fixture failure are retained. [Review and exact limits](reviews/20261103-integer-samplers.json). The shared OpenOrbis probe is assembled and C11 syntax checked; SDK link/PS4 execution remain pending. Integer-host representations of scaled/converted formats still need correct interpolation; no hardware or visual proof is inferred from host checks.
 
 Next: exact-source build and bounded validated GoT→GoW replay, with no second launch while stop is unconfirmed. Main remains unchanged; all prior fixes and DS work are preserved, with seed/re-entry unfinished.
+
+
+## 2026-11-03 — Upstream 943df2e3 refresh after PR127 was blocked
+
+Archive `universal-two-games-20261103T102913Z-1335474.tar.gz` (SHA256 `a0e09e9efd4cc42991da6e0a2844ac04347ba8d28b524d6ae12ad6b69907e80e`) stopped at the upstream ancestry check before build. Neither GoT nor GoW launched. No new graphics, audio, crash or DS evidence is inferred; the integer-sampler candidate still needs native testing.
+
+[Draft PR128](https://github.com/Chreece/shadPS4/pull/128) rebases all 16 retained commits onto `943df2e3`. Fifteen replay unchanged. The user-colour conflict preserves safe missing-user handling while adopting upstream’s zero-based output, bounded player-index fallback and error result; its body matches upstream after resolving the user-manager macro. JPEG files match upstream byte for byte. Rendering, sampler, DS and runner files are identical to PR127. Existing user-colour fixture expectations were updated; no new repository test files.
+
+Full GCC14 Release build, retained CPU suite and three actual-binary CLI cases pass. [Review and complete commit mapping](reviews/20261103-upstream-943df2e3-refresh.json). All 419 prior journal rows are byte-preserved; old branches remain available. Main is unchanged. Next: build the exact pin and run GoT then GoW with validation and DS capture, <=120 seconds each, no input; stop remaining games after GPU loss or unconfirmed exit.
