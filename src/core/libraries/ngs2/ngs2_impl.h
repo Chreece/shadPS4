@@ -18,17 +18,17 @@ static_assert(sizeof(OrbisNgs2SystemOption) == 64);
 static_assert(sizeof(OrbisNgs2SystemInfo) == 136);
 static_assert(sizeof(OrbisNgs2RackInfo) == 168);
 
-
 namespace Impl {
 
 inline s32 RackCreate(OrbisNgs2Handle systemHandle, u32 rackId, const OrbisNgs2RackOption* option,
-               const OrbisNgs2ContextBufferInfo* bufferInfo, OrbisNgs2Handle* outHandle) {
+                      const OrbisNgs2ContextBufferInfo* bufferInfo, OrbisNgs2Handle* outHandle) {
     return sceNgs2RackCreate(systemHandle, rackId, option, bufferInfo, outHandle);
 }
 
 inline s32 RackCreateWithAllocator(OrbisNgs2Handle systemHandle, u32 rackId,
-                            const OrbisNgs2RackOption* option,
-                            const OrbisNgs2BufferAllocator* allocator, OrbisNgs2Handle* outHandle) {
+                                   const OrbisNgs2RackOption* option,
+                                   const OrbisNgs2BufferAllocator* allocator,
+                                   OrbisNgs2Handle* outHandle) {
     return sceNgs2RackCreateWithAllocator(systemHandle, rackId, option, allocator, outHandle);
 }
 
@@ -44,12 +44,13 @@ inline s32 RackGetUserData(OrbisNgs2Handle rackHandle, uintptr_t* outUserData) {
     return sceNgs2RackGetUserData(rackHandle, outUserData);
 }
 
-inline s32 RackGetVoiceHandle(OrbisNgs2Handle rackHandle, u32 voiceIndex, OrbisNgs2Handle* outHandle) {
+inline s32 RackGetVoiceHandle(OrbisNgs2Handle rackHandle, u32 voiceIndex,
+                              OrbisNgs2Handle* outHandle) {
     return sceNgs2RackGetVoiceHandle(rackHandle, voiceIndex, outHandle);
 }
 
 inline s32 RackQueryBufferSize(u32 rackId, const OrbisNgs2RackOption* option,
-                        OrbisNgs2ContextBufferInfo* outBufferInfo) {
+                               OrbisNgs2ContextBufferInfo* outBufferInfo) {
     return sceNgs2RackQueryBufferSize(rackId, option, outBufferInfo);
 }
 
@@ -57,14 +58,14 @@ inline s32 RackSetUserData(OrbisNgs2Handle rackHandle, uintptr_t userData) {
     return sceNgs2RackSetUserData(rackHandle, userData);
 }
 
-inline s32 SystemCreate(const OrbisNgs2SystemOption* option, const OrbisNgs2ContextBufferInfo* bufferInfo,
-                 OrbisNgs2Handle* outHandle) {
+inline s32 SystemCreate(const OrbisNgs2SystemOption* option,
+                        const OrbisNgs2ContextBufferInfo* bufferInfo, OrbisNgs2Handle* outHandle) {
     return sceNgs2SystemCreate(option, bufferInfo, outHandle);
 }
 
 inline s32 SystemCreateWithAllocator(const OrbisNgs2SystemOption* option,
-                              const OrbisNgs2BufferAllocator* allocator,
-                              OrbisNgs2Handle* outHandle) {
+                                     const OrbisNgs2BufferAllocator* allocator,
+                                     OrbisNgs2Handle* outHandle) {
     return sceNgs2SystemCreateWithAllocator(option, allocator, outHandle);
 }
 
@@ -77,11 +78,12 @@ inline s32 SystemEnumHandles(OrbisNgs2Handle* aOutHandle, u32 maxHandles) {
 }
 
 inline s32 SystemEnumRackHandles(OrbisNgs2Handle systemHandle, OrbisNgs2Handle* aOutHandle,
-                          u32 maxHandles) {
+                                 u32 maxHandles) {
     return sceNgs2SystemEnumRackHandles(systemHandle, aOutHandle, maxHandles);
 }
 
-inline s32 SystemGetInfo(OrbisNgs2Handle systemHandle, OrbisNgs2SystemInfo* outInfo, size_t infoSize) {
+inline s32 SystemGetInfo(OrbisNgs2Handle systemHandle, OrbisNgs2SystemInfo* outInfo,
+                         size_t infoSize) {
     return sceNgs2SystemGetInfo(systemHandle, outInfo, infoSize);
 }
 
@@ -90,7 +92,7 @@ inline s32 SystemGetUserData(OrbisNgs2Handle systemHandle, uintptr_t* outUserDat
 }
 
 inline s32 SystemQueryBufferSize(const OrbisNgs2SystemOption* option,
-                          OrbisNgs2ContextBufferInfo* outBufferInfo) {
+                                 OrbisNgs2ContextBufferInfo* outBufferInfo) {
     return sceNgs2SystemQueryBufferSize(option, outBufferInfo);
 }
 
@@ -106,11 +108,13 @@ inline s32 SystemSetUserData(OrbisNgs2Handle systemHandle, uintptr_t userData) {
     return sceNgs2SystemSetUserData(systemHandle, userData);
 }
 
-inline s32 VoiceGetOwner(OrbisNgs2Handle voiceHandle, OrbisNgs2Handle* outRackHandle, u32* outVoiceId) {
+inline s32 VoiceGetOwner(OrbisNgs2Handle voiceHandle, OrbisNgs2Handle* outRackHandle,
+                         u32* outVoiceId) {
     return sceNgs2VoiceGetOwner(voiceHandle, outRackHandle, outVoiceId);
 }
 
-inline s32 VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState, size_t stateSize) {
+inline s32 VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState,
+                         size_t stateSize) {
     return sceNgs2VoiceGetState(voiceHandle, outState, stateSize);
 }
 
@@ -119,7 +123,7 @@ inline s32 VoiceGetStateFlags(OrbisNgs2Handle voiceHandle, u32* outStateFlags) {
 }
 
 inline s32 SystemRender(OrbisNgs2Handle systemHandle, const OrbisNgs2RenderBufferInfo* aBufferInfo,
-                 u32 numBufferInfo) {
+                        u32 numBufferInfo) {
     return sceNgs2SystemRender(systemHandle, aBufferInfo, numBufferInfo);
 }
 
