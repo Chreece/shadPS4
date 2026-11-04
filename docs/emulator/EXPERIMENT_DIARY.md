@@ -736,3 +736,12 @@ The 17:32 native archive built source `96c5742b` successfully, but GoW aborted a
 PR121 adds typed 1D sampling, empty-to-populated texture-table revalidation and independent scalar-range/material-record strides. It also restores missing SRT dependency scheduling, uniform lane-pointer handling, whole-result SCC, 64-bit bit tests and portable 64-bit bit insertion. Previous production code fails four focused counterexamples; the corrected source builds and passes existing CPU/startup checks plus 203 SRT, 9600 scalar and 28 table checks and six SPIR-V validations. See [the full review](reviews/20261102-generic-contract-recovery.json) for exact source/binary/evidence identities, fixture corrections and hardware-probe status.
 
 The complete GoT native regression cause is not proven. No new game result is claimed, no historical binary is replaced, no DS seed is guessed, and main remains unchanged pending bounded native verification.
+
+
+### 2026-11-02 — both PR121 games crash; missing texture contracts restored (PR122)
+
+The 18:32 archive builds f6c7b43e successfully, then both games exit -11: GoW at 17.483s on equal-address Color1D/layered-Color2D R8 overlap; GoT at 29.960s on BC5/UbnormNz. The GoT 25-second screenshot is black with a 29 FPS overlay. Neither restores the prior state; no DS first-pass evidence is captured. The collector reports no GPU fault, which is not proof that no kernel event occurred.
+
+The GoW shape matches the missing strict guard from f8cc5e3 (originally 1-to-6 layers, now 1-to-2). PR122 ports it into ImageInfo and reuses GPU-data-preserving expansion. The recovered renderer source also maps UbnormNz to Unorm plus biased channel conversion; those two cases were absent. PR122 restores them and keeps constant/default channels unchanged in samples, reads and gathers. The existing indexed numeric guard remains; it is not silently bypassed.
+
+The complete GCC14 build and existing CPU/startup suites pass, as do 3,954 actual-production texture checks and six Vulkan 1.3 SPIR-V validations. Earlier production code fails both format and default-channel counterexamples. No tests are added to the repository. A separate OpenOrbis 40-dispatch probe is shared; assembly and syntax pass, while SDK linking and PS4 execution remain untested. See [the full review](reviews/20261102-texture-contract-restoration.json) for source identities, all failed attempts and validation limits. This is a draft candidate; main and the preserved binaries remain unchanged.
