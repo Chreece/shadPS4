@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-typed-image-20261029T094518Z-3015905-reviewed",
+  "recorded_at": "2026-10-29",
+  "scope": "Universal emulator runtime evidence, CUSA34384 identifies the workload only",
+  "game_id": "CUSA34384",
+  "tested_games": [
+    "CUSA34384"
+  ],
+  "outer_archive": "gow-typed-image-20261029T094518Z-3015905.tar.gz",
+  "outer_sha256": "5b012e18edead00c4a08dea4d6b99f0dcb175a5d3d1b8315283b5722fe14f1bd",
+  "game_archive": "gow-vulkan-validation-game-20261029-094905-3015906.tar.gz",
+  "game_sha256": "913a17aa087172770212f16c03e094679d02f2a1d1e891d562184246c9bb37bc",
+  "source_commit": "eb2fd024697d21ba70d2a1055eb4c6f6db4d5fa9",
+  "binary_sha256": "a3edb42d4a270aa82ffeb18733c2e412526f8376eabac0e15c5beaf4ba138e85",
+  "retained_upstream_snapshot": "0cd6e4f2cb6617af12eb8267cca848cc41ad20d7",
+  "native_build": "PASS 106-object incremental compile and native link",
+  "cpu_regression": [
+    "BASELINE_ONE_TEXEL_TYPE_CONFUSION=REPRODUCED cases=64 wrong_type=32",
+    "TYPED_IMAGE_CACHE=PASS cases=64 wrong_type=0 gpu_preserved=8 rebound=16 two_pass=4"
+  ],
+  "compiler_warning": "One GCC14 -Wfree-nonheap-object warning retained, not shown causal",
+  "typed_image_recreation_log_count": 0,
+  "previous_validation_messages_absent": [
+    "VUID-VkDescriptorImageInfo-descriptorType-06714",
+    "VUID-VkDescriptorImageInfo-imageView-07796",
+    "VUID-vkQueueBindSparse-queuetype",
+    "VUID-VkBufferCreateInfo-size-06409",
+    "VUID-VkMappedMemoryRange-size-01389"
+  ],
+  "first_validation_error": "SYNC-HAZARD-WRITE-AFTER-PRESENT",
+  "validation_detail": "vkQueuePresentKHR attempts presentation of swapchain image 0, which was presented previously; no sufficient synchronization identified between the presentation operations",
+  "thread": "shadPS4:Present",
+  "process_exit_code": -11,
+  "validation_stop_requested": true,
+  "runtime_seconds": 12.108,
+  "native_device_loss_reported": false,
+  "process_exit_limit": "SIGSEGV after validation monitor requested stop, NOT a clean intentional exit and NOT proof the synchronization hazard caused the access violation",
+  "fault_address": "0x8",
+  "faulting_program_elf_offset": "0x825760",
+  "screenshot": {
+    "file": "frame-011s.png",
+    "sha256": "616ac12478b4f94a084456ad236fee82fbc42900649c58800e8eb8a651e2ec23",
+    "size": "1920x1080",
+    "inspection": "Black image with only FPS overlay. No game scene visible at 11s; not proof all other frames were black."
+  },
+  "gameplay": "NOT_RECOVERED_IN_OBSERVED_FRAME",
+  "audio": "NOT_VERIFIED",
+  "sparse_queue": {
+    "graphics_family": 0,
+    "sparse_family": 4,
+    "bind_batches": 4
+  },
+  "vram_free_before_gib": 8.633,
+  "ollama_unloaded": false,
+  "vram_free_after_gib": 8.633,
+  "restoration": [
+    "SOURCE_RESTORED",
+    "PR94_ELF_RESTORED"
+  ],
+  "protected_hashes_unchanged": [
+    "historical gameplay",
+    "PR91",
+    "PR94",
+    "previous image creation candidate"
+  ],
+  "diagnostic_interpretation": "Previously exposed resource VUIDs no longer observed in this run. TypedImageRecreate count zero means the new cross-type recreation path was not shown activated. New swapchain presentation hazard, independent from texture-cache patch and without proven relation to the earlier 22-second device loss.",
+  "fix_preparation": {
+    "branch": "fix/swapchain-reacquire-fence-20261029",
+    "patch_commit": "a710d10166e5441289beb796ebaf5cddabd783cf",
+    "patch_blob": "5b9eb1f8a8a5d2c89db03f7d52646cedabf735f1",
+    "fixture_commit": "311f88a246fee98b707efaae3a47d4abd7385286",
+    "fixture_blob": "96ab5daab306a10ddd91fd439136e69edfd3ded3",
+    "runner_commit": "aad204fce20ef6c7921c7c818533f73c1833d2d7",
+    "runner_path": "scripts/shadps4_swapchain_acquire_fence_20261029.py",
+    "runner_blob": "bf79485f898e6f95a19a7bc7b338b4bb7b3c8849",
+    "runner_sha256": "a46d3edae5936c1100dca3014e56a89c57a249754d07afe607c0e61e134077fc",
+    "source_changes": [
+      "src/video_core/renderer_vulkan/vk_swapchain.cpp",
+      "src/video_core/renderer_vulkan/vk_swapchain.h"
+    ],
+    "source_preimages": [
+      "f2d6bbab9b4c18d0d2d21c66da9faf365f423b56",
+      "826705d40ba78b5fe83b2f173fe454ec97a0894b"
+    ],
+    "change": "Acquire with both existing binary semaphore and new per-frame fence. On VK_SUCCESS or VK_SUBOPTIMAL_KHR, wait and reset fence before reusing the swapchain image; destroy/create fences with each swapchain. Existing present-ready semaphores remain indexed by acquired image. Do not add vkDeviceWaitIdle or per-title/shader checks.",
+    "why": "Khronos WSI documentation explicitly says successful acquire-fence wait establishes prior presentation completion for reacquired image. A fence wait is a host synchronization point and may affect throughput; benchmark after gameplay is restored.",
+    "local_validation": "CPU-only extracted AcquireNextImage test 9 scenarios, GCC and Clang -Werror baseline/corrected and corrected ASan+UBSan PASS; models explicit acquire-fence completion rather than Vulkan device execution. Pinned runtime bash -n and dynamically composed runner CPU fixture PASS. Actual Vulkan SDK compilation, runtime validation, and gameplay PENDING.",
+    "run_gate": "Exact protected source and binary hashes; exact two-file patch and CPU fixture; real project full native build before one validation-enabled trial with first-error stop; preserve new candidate separately, restore PR94 and append local universal diary even on failure."
+  },
+  "decision": "KEEP_OBSERVED_TYPED_CACHE_FIX_AND_UNTOUCHED_PROVEN_EXECUTABLE; INVESTIGATE_PRESENT_ACQUIRE_SYNCHRONIZATION; DO_NOT_PROMISE_NEXT_RUN_GAMEPLAY; NO_UNRELATED_REBASE"
+}

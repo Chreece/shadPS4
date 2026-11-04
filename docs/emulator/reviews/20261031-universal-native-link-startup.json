@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-upstream-native-link-startup-20261031",
+  "timestamp_utc": "2026-10-31T17:17:20.739946+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "published_parent_commit": "b887fac9766449d8c625b5d383b0da199ed2fa93",
+  "production_source_tree_sha": "16c57c43c5ae2d028d3cd0fbb94ceb7e78911799",
+  "native_platform": "Linux x86_64",
+  "compiler": "GCC14.2.0",
+  "configuration": {
+    "build_type": "Release",
+    "ENABLE_TESTS": false,
+    "ENABLE_DISCORD_RPC": false
+  },
+  "compiled_emulator_translation_units": 442,
+  "native_result": {
+    "native_link": "PASS",
+    "cli_startup": "PASS",
+    "cli_scenarios": 3,
+    "binary_bytes": 99586536,
+    "binary_sha256": "19d8165473b2b71efee5db1fd27dfd1544db45f66f57bde85b7096fe503c436b",
+    "game_launched": false
+  },
+  "startup_regression": {
+    "production_change": "src/common/path_util.cpp: use create_directories for user-data paths whose parents are absent",
+    "old_binary": {
+      "result": "REPRODUCED_BASELINE_STARTUP_ABORT",
+      "exit_code": -6,
+      "stderr": "terminate called after throwing an instance of 'std::filesystem::__cxx11::filesystem_error'\n  what():  filesystem error: cannot create directory: No such file or directory [/tmp/userdir-baseline-wlcx0zpc/missing/parents/data/shadPS4]\n",
+      "binary_sha256": "6c4616969a878e487ece664116c46a5a738849496f8111d7a3bafd3b70dd2392",
+      "game_launched": false
+    },
+    "new_binary_cases": [
+      "missing nested XDG_DATA_HOME parents created and --help returns0",
+      "existing user data marker preserved on second startup",
+      "regular-file path conflict rejected without overwriting the file"
+    ],
+    "new_binary_result": "PASS_3_SCENARIOS"
+  },
+  "build_execution_notes": [
+    "GCC13 does not support upstream std::ranges::to or explicit object parameters; not a source regression",
+    "SDK discovery/header prerequisites were supplied in isolated task directories",
+    "An initial GCC14 SDK extraction was incomplete; re-extracted compiler was verified and tested in a separate prefix",
+    "Initial verified build attempt exited1 with incomplete persisted log; not reported as pass",
+    "A two-worker retry was intentionally interrupted (exit130) before restarting with six workers",
+    "Streamed six-worker run compiled all442 emulator translation units; generated link failed only because -luuid and -ludev were not on the SDK library search path",
+    "The unchanged CMake-generated link command then succeeded with LIBRARY_PATH set to the isolated SDK",
+    "Actual native --help reproduced SIGABRT with absent user-data parents; production path_util.cpp was corrected, recompiled with its generated compiler command, and the same generated link command rerun",
+    "Final native executable passes three actual startup scenarios. A stock-host end-to-end CMake run remains in the pinned host runner. No zero-warning build claim."
+  ],
+  "game_or_gpu_run": false,
+  "cross_platform_builds": "NOT_RUN",
+  "main_merge": "NOT_PERFORMED",
+  "decision": "RETAIN_PR118_DRAFT_PENDING_COMBINED_GAME_GPU_VALIDATION_AND_REMAINING_RETAINED_SOURCE",
+  "evidence": [
+    "20261031-universal-cpu-tests.txt",
+    "20261031-universal-native-startup.txt"
+  ],
+  "source_identity_note": "Local verification compiled the reviewed production source tree before publication; embedded SCM text can reflect the earlier configure. The host runner rebuilds the immutable published commit and records its own ELF hash."
+}

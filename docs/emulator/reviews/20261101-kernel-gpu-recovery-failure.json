@@ -1,0 +1,289 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-kernel-gpu-recovery-failure-20261101",
+  "timestamp_utc": "2026-11-01T15:20:29.800598+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "base_source_commit": "f4309d8b50c93d4760119accd2e5c4d7f7213b9b",
+  "upstream_commit": "55a97e46955b2ece7c7ff8bddeb043ca57a506c6",
+  "archive": {
+    "name": "gpu-crash-20261101T145748Z.tar.gz",
+    "bytes": 864355,
+    "sha256": "8ac687e81ca5ee4eac6f44887c5a2a820e503bbb352a8235d5b3871bf5a855c1"
+  },
+  "files": [
+    {
+      "path": "kernel.log",
+      "bytes": 695144,
+      "sha256": "4fafac85eff12505b6cb1fbc65ae1c5631029ecc366d19eef2030d0afb76ba35"
+    },
+    {
+      "path": "packages.txt",
+      "bytes": 208,
+      "sha256": "c8d01da720d26476aa20ae9580409cede0d9f5afc522e56d7464b8dc7bb8e398"
+    },
+    {
+      "path": "processes.txt",
+      "bytes": 51083,
+      "sha256": "ef4040596872ae1e799747b828672d7eca0243d38886c6ccd5ba4f851418bbe7"
+    },
+    {
+      "path": "sunshine.log",
+      "bytes": 37332626,
+      "sha256": "0669c8884c83e090bb54ad4d3fa7d150e9c326de379d684e9a202a5d97b050a3"
+    },
+    {
+      "path": "system.txt",
+      "bytes": 257,
+      "sha256": "3376362be5260f78ed420bb70371070f9252c501bc1ee3dd39cf6abd834842bf"
+    }
+  ],
+  "host": {
+    "kernel": "6.12.113+deb13-amd64",
+    "mesa_vulkan": "25.0.7-2+deb13u1",
+    "firmware_amd_graphics": "20250410-2",
+    "libdrm_amdgpu": "2.4.124-2",
+    "source": "Uploaded system.txt and packages.txt; no package changes made."
+  },
+  "timeline_timezone": "Europe/Berlin (UTC+01:00), consistent with kernel audit epoch timestamps and the host game records; journal text itself omits the offset.",
+  "timeline": [
+    {
+      "local_time": "14:43:25",
+      "observation": "Graphics ring timeout reported as soft-recovered."
+    },
+    {
+      "local_time": "14:49:59\u201314:50:00",
+      "observation": "4515 init_user_pages failures; ten gfxhub RLC page faults, PASID 9484. No process owner is identified for those faults."
+    },
+    {
+      "local_time": "14:50:19\u201314:50:34",
+      "observation": "MES queue removal/addition failures, failed KFD quiesce/resume and SDMA0 timeout; GPU reset begins."
+    },
+    {
+      "local_time": "14:51:33",
+      "observation": "MODE1/ASIC reset fails; GPU Recovery Failed: -62. Sunshine reports vkQueueSubmit failed: -4."
+    },
+    {
+      "local_time": "14:51:43",
+      "observation": "SDMA1 timeout starts another GPU reset; no successful reset completion is present in this archive."
+    },
+    {
+      "local_time": "14:54:24\u201314:56:25",
+      "observation": "Kernel reports Xorg, Sunshine capture/session threads and reset worker blocked. Xorg is waiting in amdgpu display mode handling; reset worker is waiting in dm_suspend."
+    },
+    {
+      "local_time": "15:55:32",
+      "observation": "Sunshine service reports processes remain after final SIGKILL; service restart attempts did not recover those threads."
+    }
+  ],
+  "key_evidence": {
+    "graphics_timeout": {
+      "count": 1,
+      "first": [
+        {
+          "line": 158,
+          "text": "Nov 01 14:43:25 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: ring gfx_0.0.0 timeout, but soft recovered"
+        }
+      ]
+    },
+    "user_page_failures": {
+      "count": 4515,
+      "first": [
+        {
+          "line": 225,
+          "text": "Nov 01 14:49:59 homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1"
+        },
+        {
+          "line": 226,
+          "text": "Nov 01 14:49:59 homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1"
+        }
+      ]
+    },
+    "gfxhub_faults": {
+      "count": 10,
+      "first": [
+        {
+          "line": 4737,
+          "text": "Nov 01 14:50:00 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: [gfxhub] page fault (src_id:0 ring:40 vmid:7 pasid:9484)"
+        },
+        {
+          "line": 4746,
+          "text": "Nov 01 14:50:00 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: [gfxhub] page fault (src_id:0 ring:40 vmid:7 pasid:9484)"
+        }
+      ]
+    },
+    "reset_failure": {
+      "count": 4,
+      "first": [
+        {
+          "line": 4994,
+          "text": "Nov 01 14:51:33 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: GPU mode1 reset failed"
+        },
+        {
+          "line": 4995,
+          "text": "Nov 01 14:51:33 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: ASIC reset failed with error, -62 for drm dev, 0000:03:00.0"
+        },
+        {
+          "line": 4998,
+          "text": "Nov 01 14:51:33 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: GPU reset end with ret = -62"
+        },
+        {
+          "line": 4999,
+          "text": "Nov 01 14:51:33 homeserver kernel: amdgpu 0000:03:00.0: amdgpu: GPU Recovery Failed: -62"
+        }
+      ]
+    },
+    "blocked_tasks": {
+      "count": 10,
+      "first": [
+        {
+          "line": 5038,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task session::video:3108509 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5068,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task video::capture:3108516 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5115,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task Xorg:724769 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5167,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task kworker/u65:9:571114 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5191,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task kworker/2:0:689572 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5215,
+          "text": "Nov 01 14:54:24 homeserver kernel: INFO: task kworker/u64:3:705361 blocked for more than 120 seconds."
+        },
+        {
+          "line": 5266,
+          "text": "Nov 01 14:56:25 homeserver kernel: INFO: task session::video:3108509 blocked for more than 241 seconds."
+        },
+        {
+          "line": 5296,
+          "text": "Nov 01 14:56:25 homeserver kernel: INFO: task video::capture:3108516 blocked for more than 241 seconds."
+        },
+        {
+          "line": 5343,
+          "text": "Nov 01 14:56:25 homeserver kernel: INFO: task Xorg:724769 blocked for more than 241 seconds."
+        },
+        {
+          "line": 5395,
+          "text": "Nov 01 14:56:25 homeserver kernel: INFO: task kworker/u65:9:571114 blocked for more than 241 seconds."
+        }
+      ]
+    },
+    "display_stack": {
+      "count": 5,
+      "first": [
+        {
+          "line": 5125,
+          "text": "Nov 01 14:54:24 homeserver kernel:  parse_hdmi_amd_vsdb+0xa6/0x2f0 [amdgpu]"
+        },
+        {
+          "line": 5129,
+          "text": "Nov 01 14:54:24 homeserver kernel:  amdgpu_dm_update_freesync_caps+0x469/0x5e0 [amdgpu]"
+        },
+        {
+          "line": 5226,
+          "text": "Nov 01 14:54:24 homeserver kernel:  dm_suspend+0x103/0x260 [amdgpu]"
+        },
+        {
+          "line": 5353,
+          "text": "Nov 01 14:56:25 homeserver kernel:  parse_hdmi_amd_vsdb+0xa6/0x2f0 [amdgpu]"
+        },
+        {
+          "line": 5357,
+          "text": "Nov 01 14:56:25 homeserver kernel:  amdgpu_dm_update_freesync_caps+0x469/0x5e0 [amdgpu]"
+        }
+      ]
+    }
+  },
+  "selected_process_snapshot": [
+    {
+      "pid": 969,
+      "state": "I<",
+      "comm": "kworker/R-amdgp"
+    },
+    {
+      "pid": 705361,
+      "state": "D",
+      "comm": "kworker/u64:3+a"
+    },
+    {
+      "pid": 719108,
+      "state": "D+",
+      "comm": "llama-server"
+    },
+    {
+      "pid": 720096,
+      "state": "D+",
+      "comm": "llama-server"
+    },
+    {
+      "pid": 724769,
+      "state": "Dsl+",
+      "comm": "Xorg"
+    },
+    {
+      "pid": 2240305,
+      "state": "I<sl",
+      "comm": "sunshine"
+    }
+  ],
+  "attribution": {
+    "nearby_game_run": "universal-graphics-20261101T134245Z-572383",
+    "nearby_source_commit": "db69c107265f4b5cae6669cc1c139dd607c0fb89",
+    "correlation": "GoT started at 13:42:45.269541 UTC and its observer stopped after 42.378 seconds, within three seconds of the 14:43:25 local soft-recovery message. That kernel message has no PID attribution.",
+    "later_fault_owner": "UNKNOWN; PASID 9484 has no owner mapping in this archive. Blocked llama-server processes and KFD errors do not by themselves prove Ollama caused the failure.",
+    "latest_verified_binary": "dbf5c545138b5bd46af1b0fb174121d563c5f1a2 / SHA256 b34a9a539b88c5fb0dab9dc1cd597ca98f88e9049dbba1ed030671a2cb51d32d; the build started after the failed reset and both game requests stopped before launch.",
+    "production_fix_from_this_archive": "None; no shader, guest address or invalid renderer command is identified. Do not invent a title/vendor workaround or claim the kernel crash is fixed."
+  },
+  "confirmed_host_blocker": "GPU recovery failed and graphics/reset threads remained blocked in the kernel, explaining the later unresponsive X display. Repeated Sunshine service stops failed to terminate the blocked threads. A session-preserving recovery is not demonstrated by these files.",
+  "collector_defect": {
+    "kernel_lines": 6101,
+    "reset_failure_present_in_old_last_600_lines": false,
+    "correction": "Add a separate bounded journalctl GPU/DRM/hung-task filter before selecting 600 matches, retaining the original unfiltered capture too. This avoids losing reset evidence behind the later unrelated audit stream."
+  },
+  "new_preflight": "Read display-process task state twice 250 ms apart. Persistently D-state tasks must have identical process ID, thread ID and start time. Stop before X11/VRAM/game work and retain read-only diagnostics. Transient waits, exited threads and reused IDs do not trigger this stop. No GPU-vendor condition selects emulator behavior.",
+  "references": [
+    {
+      "url": "https://docs.kernel.org/filesystems/proc.html",
+      "use": "Read-only proc task state/stat fields."
+    },
+    {
+      "url": "https://www.freedesktop.org/software/systemd/man/latest/journalctl.html",
+      "use": "--grep message filtering with --lines; newest entries are output first when both are supplied."
+    }
+  ],
+  "validation": {
+    "blocked_task_and_filter_checks": "PASS 8 cases: parse blocked display threads including a nonblocked Sunshine leader, names containing parentheses, unrelated processes and malformed/disappeared tasks; stable task identity stops preflight, transient/reused/changed IDs do not; blocked path sends no X11 queries; applying the production journal filter to the supplied log retains the reset failure that the old last-600-lines capture loses.",
+    "full_runner_failure_paths": "PASS 4 cases: xdpyinfo timeout, denied display, missing tool and persistently blocked Sunshine capture thread. Failed preflight launches no game and performs no profile copy/VRAM query; stop flag, global/per-game journals and diagnostic archives survive finalization.",
+    "display_helper_cases": "PASS 10 existing cases including real owned-process timeout and output bounds.",
+    "batch_cases": "PASS 12 build/existing cases including two games, shared display stop, GPU loss, unconfirmed termination, missing evidence and bad harness checksum.",
+    "existing_orchestration_cases": "PASS 5",
+    "build_record_cases": "PASS 2",
+    "python_bash_syntax_and_whitespace": "PASS",
+    "native_source_changed": false,
+    "host_recovery": "NOT_PERFORMED; service/driver/host resets are not part of this runner.",
+    "new_game_result": "NOT_RUN; host recovery and responsive display required."
+  },
+  "runner_files": [
+    {
+      "path": "tools/development/run_universal_verified_graphics.py",
+      "sha256": "95a9be78a053c95462dfb1c223aa4f696bb6a0edf5b248a82d7d8454c1c42dfe"
+    },
+    {
+      "path": "scripts/shadps4-universal-two-game-check.sh",
+      "sha256": "4cc382a626d4d9ac77f28dcdaab9446987e69328fc447c02d45e9b14c984f622"
+    }
+  ],
+  "decision": "BLOCK_GPU_TESTING_WHILE_DISPLAY_TASKS_REMAIN_KERNEL_BLOCKED; RETAIN_VERIFIED_NATIVE_BUILD_AND_PR118; HOST_RECOVERY_BEFORE_GAME_RETRY; KEEP_MAIN_UNCHANGED",
+  "game_launched": false,
+  "graphics_verified": false
+}
