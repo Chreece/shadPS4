@@ -6,6 +6,8 @@ MODE=${2:-build}
 RUNNER_PIN=${3:-$PIN}
 [[ "$MODE" == build || "$MODE" == existing ]] || exit 2
 [[ "$RUNNER_PIN" =~ ^[0-9a-f]{40}$ ]] || exit 2
+export SHADPS4_GRAPHICS_DIAGNOSTICS=1
+export SHADPS4_VULKAN_DIAGNOSTICS=1
 FIRST_GAME=${SHADPS4_TEST_FIRST_GAME:-CUSA34384}
 case "$FIRST_GAME" in
     CUSA34384) GAMES=(CUSA34384 CUSA11456) ;;
@@ -41,7 +43,7 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' dfb726ae61aed70aee242e18442a327447660ff6e8eb338ef552062c9adbdcc2 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' da410056250594d87a477376bd9200b0ac15b5f423689b81d210225d7b668566 "$OUT/graphics.py" | sha256sum --check -
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
