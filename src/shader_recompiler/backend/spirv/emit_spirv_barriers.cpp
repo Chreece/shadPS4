@@ -45,8 +45,8 @@ void EmitSubgroupBarrier(EmitContext& ctx) {
         memory = memory | spv::MemorySemanticsMask::UniformMemory;
     }
     const auto semantics = static_cast<u32>(spv::MemorySemanticsMask::AcquireRelease | memory);
-    ctx.OpMemoryBarrier(ctx.ConstU32(static_cast<u32>(spv::Scope::Subgroup)),
-                        ctx.ConstU32(semantics));
+    const auto scope = ctx.ConstU32(static_cast<u32>(spv::Scope::Subgroup));
+    ctx.OpControlBarrier(scope, scope, ctx.ConstU32(semantics));
 }
 
 void EmitWorkgroupMemoryBarrier(EmitContext& ctx) {
