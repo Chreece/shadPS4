@@ -1243,6 +1243,8 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
     ir = IR::IREmitter{*block, block->begin()};
     pc = start_pc;
     bool full_wave_select = false;
+    std::optional<u32> full_wave_mask;
+    const GcnInst* previous_inst{};
     for (const auto& inst : inst_list) {
         pc += inst.length;
 
@@ -1256,7 +1258,9 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
 
         if (inst.opcode == Opcode::V_CNDMASK_B32 && full_wave_select &&
             (inst.src[2].field == OperandField::Undefined ||
-             inst.src[2].field == OperandField::VccLo)) {
+             inst.src[2].field == OperandField::VccLo ||
+             (inst.src[2].field == OperandField::ScalarGPR &&
+              full_wave_mask == inst.src[2].code))) {
             V_CNDMASK_B32(inst, true);
         } else {
             TranslateInstruction(inst);
@@ -1265,6 +1269,14 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
             full_wave_select = inst.opcode == Opcode::S_ORN2_SAVEEXEC_B64 &&
                                inst.src[0].field == OperandField::ExecLo &&
                                inst.dst[0].field == OperandField::VccLo;
+            full_wave_mask.reset();
+            if (full_wave_select && previous_inst && previous_inst->opcode == Opcode::S_AND_B64 &&
+                previous_inst->dst[0].field == OperandField::ScalarGPR &&
+                (previous_inst->src[0].field == OperandField::ExecLo ||
+                 previous_inst->src[1].field == OperandField::ExecLo)) {
+                full_wave_mask = previous_inst->dst[0].code;
+            }
+            previous_inst = &inst;
         }
     }
     if (cond != IR::Condition::True && cond != IR::Condition::False) {
