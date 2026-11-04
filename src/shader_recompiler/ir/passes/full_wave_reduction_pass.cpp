@@ -65,7 +65,8 @@ IR::Value MatchReduction(IR::Inst& root) {
 } // namespace
 
 void FullWaveReductionPass(IR::Program& program, const Profile& profile) {
-    if (program.info.hw_stage != HwStage::Compute || profile.subgroup_size != 64) {
+    if ((program.info.hw_stage != HwStage::Compute && program.info.hw_stage != HwStage::Fragment) ||
+        profile.subgroup_size != 64) {
         return;
     }
     for (auto* block : program.blocks) {
