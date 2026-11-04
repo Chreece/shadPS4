@@ -566,7 +566,7 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
 
 // VOP2
 
-void Translator::V_CNDMASK_B32(const GcnInst& inst) {
+void Translator::V_CNDMASK_B32(const GcnInst& inst, bool full_wave) {
     IR::U64 mask;
     if (inst.src[2].field == OperandField::Undefined) {
         mask = ir.PackUint2x32(ir.CompositeConstruct(ir.GetVccLo(), ir.GetVccHi()));
@@ -575,6 +575,7 @@ void Translator::V_CNDMASK_B32(const GcnInst& inst) {
     }
     const IR::Value result = ir.Select(ir.InverseBallot(mask), GetSrc<IR::F32>(inst.src[1]),
                                        GetSrc<IR::F32>(inst.src[0]));
+    result.Inst()->SetFlags(full_wave);
     SetDst(inst.dst[0], IR::U32F32{result});
 }
 
