@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-10-29T19:12:44Z",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "game": {
+    "seconds": 118.448,
+    "time_limit_reached": true,
+    "exit_code": 0,
+    "input": "NONE"
+  },
+  "archive": "got-c925-gpu-subview-coherence-20261029T191244291449Z.tar.gz",
+  "experiment": "Preserve same-base smaller GPU-rendered sampled image views with existing CopyMip",
+  "status": "BUILD_PASS_MENU_RUN_PASS_NO_SUBVIEW_EVENT",
+  "build": "PASS",
+  "candidate_sha256": {
+    "source": "8430fb87b9ea2adbd2966a15615def491a5d32182f8b513c87579e67393905cc",
+    "object": "a300e3cc3246c0210714049dbd1d5429ddbc38e88fb71bd973d63a00436d2c06",
+    "elf": "d66096e7632f2433caf617e8fe5d7c8cc7b40b65dd035d8be2c5affe67b8da4a"
+  },
+  "observations": {
+    "GpuRenderedSubviewRefresh": 0,
+    "GpuDescriptorTableCpuCoherence": 48,
+    "INDEXED_MATERIAL_BIND_REJECT": 7,
+    "Sharp_unflattened": 305,
+    "valid_mixed_indexed_images": {
+      "color2d": 27612,
+      "color3d": 35,
+      "cube": 4
+    },
+    "menu": "Visible options, fog, particles; katana black silhouette",
+    "vulkan_device_lost": 0,
+    "sync_hazards": 0,
+    "free_vram_bytes": 8644431872,
+    "ollama_unloaded": false
+  },
+  "restoration": {
+    "source": "RESTORED_VERIFIED",
+    "object": "RESTORED_VERIFIED",
+    "elf": "RESTORED_VERIFIED"
+  },
+  "interpretation": "Valid isolated source correction but subview path never exercised; no proof of new visual output. 229 SHARP_RESOURCE_PROVENANCE records mostly refer to accepted indexed resources rather than missing ones. Seven genuine zero-record compute table rejects remain, bounds must not be invented.",
+  "disposition": "PRESERVE_ISOLATED_SOURCE_AND_CANDIDATE_ELF; DO_NOT_PROMOTE; DO_NOT_DISCARD_CORRECTNESS_FIX",
+  "next_fix_basis": "Actual GPU-to-CPU table sync paths execute (48 events). Investigate unverified/partial MemoryManager::TryWriteBacking and dirty-state bookkeeping, not unrelated texture cache paths."
+}
