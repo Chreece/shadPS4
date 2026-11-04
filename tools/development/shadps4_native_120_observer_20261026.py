@@ -120,7 +120,8 @@ def take_picture(report,second,display):
         return False
 
 
-def term_owned(child,phase):
+def term_owned(child,phase,deadline=None):
+    deadline=min(deadline if deadline is not None else float('inf'), time.monotonic()+2.0)
     if child.poll() is not None:
         return None
     try:
@@ -129,17 +130,37 @@ def term_owned(child,phase):
         except ProcessLookupError:
             pass
         try:
-            child.wait(timeout=2)
+            child.wait(timeout=max(0.0,min(1.5,deadline-time.monotonic())))
         except subprocess.TimeoutExpired:
             try:
                 os.killpg(child.pid,signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            child.wait(timeout=3)
+            child.wait(timeout=max(0.0,deadline-time.monotonic()))
     except (OSError,subprocess.TimeoutExpired) as error:
         return f'{type(error).__name__}: {error}'
     print('OWNED_GAME_PROCESS_TERMINATED='+phase,flush=True)
     return None
+
+
+def capture_owned_stop_state(pid, out, proc=Path('/proc')):
+    state={'pid':pid,'threads':[]}
+    process=proc/str(pid)
+    try:
+        tasks=sorted((process/'task').iterdir(),key=lambda p:int(p.name))
+        state['thread_count']=len(tasks)
+        state['truncated']=len(tasks)>128
+        for task in tasks[:128]:
+            item={'tid':int(task.name)}
+            for name in ('status','wchan'):
+                try:
+                    item[name]=(task/name).read_text(errors='replace')[:8192]
+                except OSError as error:
+                    item[name+'_error']=str(error)
+            state['threads'].append(item)
+    except OSError as error:
+        state['error']=str(error)
+    save(out/'owned-process-stop-state.json',state)
 
 
 def summarize(console,out):
@@ -368,7 +389,7 @@ def main():
     finally:
         if child is not None:
             if child.poll() is None:
-                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL')
+                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL',began+120.0)
                 if stop_error:
                     result['termination_error']=stop_error
             result['owned_child_terminated']=child.poll() is not None
@@ -392,6 +413,10 @@ def main():
                     save(report/'native-fault-mapping.json',result["native_fault"])
             except Exception as error:
                 failure=f'{type(error).__name__}: {error}'
+        if not result['owned_child_terminated'] and child is not None:
+            result['trigger_reason']=result['exit_reason']
+            result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
+            capture_owned_stop_state(child.pid,report)
         if failure:
             result['failure']=failure
         save(report/'native-result.json',result)

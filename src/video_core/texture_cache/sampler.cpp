@@ -9,9 +9,10 @@
 namespace VideoCore {
 
 Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
-                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth) {
+                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth,
+                 const bool is_integer) {
     using namespace Vulkan;
-    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() &&
+    const bool anisotropy_enable = !is_integer && instance.IsAnisotropicFilteringSupported() &&
                                    (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
                                     AmdGpu::IsAnisoFilter(sampler.xy_min_filter));
     const float max_anisotropy =
@@ -24,8 +25,28 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
         border_color = vk::BorderColor::eFloatOpaqueBlack;
     }
 
+    if (is_integer) {
+        switch (border_color) {
+        case vk::BorderColor::eFloatTransparentBlack:
+            border_color = vk::BorderColor::eIntTransparentBlack;
+            break;
+        case vk::BorderColor::eFloatOpaqueBlack:
+            border_color = vk::BorderColor::eIntOpaqueBlack;
+            break;
+        case vk::BorderColor::eFloatOpaqueWhite:
+            border_color = vk::BorderColor::eIntOpaqueWhite;
+            break;
+        case vk::BorderColor::eFloatCustomEXT:
+            border_color = vk::BorderColor::eIntCustomEXT;
+            break;
+        default:
+            UNREACHABLE();
+        }
+    }
+
     const auto custom_color = [&]() -> std::optional<vk::SamplerCustomBorderColorCreateInfoEXT> {
-        if (border_color == vk::BorderColor::eFloatCustomEXT) {
+        if (border_color == vk::BorderColor::eFloatCustomEXT ||
+            border_color == vk::BorderColor::eIntCustomEXT) {
             const auto border_color_index = sampler.border_color_ptr.Value();
             const auto border_color_buffer = border_color_base.Address<std::array<float, 4>*>();
             const auto custom_border_color_array = border_color_buffer[border_color_index];
@@ -35,7 +56,7 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
                     vk::ClearColorValue{
                         .float32 = custom_border_color_array,
                     },
-                .format = vk::Format::eR32G32B32A32Sfloat,
+                .format = is_integer ? vk::Format::eUndefined : vk::Format::eR32G32B32A32Sfloat,
             };
             return ret;
         } else {
@@ -45,9 +66,12 @@ Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sample
 
     const vk::SamplerCreateInfo sampler_ci = {
         .pNext = custom_color ? &*custom_color : nullptr,
-        .magFilter = LiverpoolToVK::Filter(sampler.xy_mag_filter),
-        .minFilter = LiverpoolToVK::Filter(sampler.xy_min_filter),
-        .mipmapMode = LiverpoolToVK::MipFilter(sampler.mip_filter),
+        .magFilter =
+            is_integer ? vk::Filter::eNearest : LiverpoolToVK::Filter(sampler.xy_mag_filter),
+        .minFilter =
+            is_integer ? vk::Filter::eNearest : LiverpoolToVK::Filter(sampler.xy_min_filter),
+        .mipmapMode = is_integer ? vk::SamplerMipmapMode::eNearest
+                                 : LiverpoolToVK::MipFilter(sampler.mip_filter),
         .addressModeU = LiverpoolToVK::ClampMode(sampler.clamp_x),
         .addressModeV = LiverpoolToVK::ClampMode(sampler.clamp_y),
         .addressModeW = LiverpoolToVK::ClampMode(sampler.clamp_z),
