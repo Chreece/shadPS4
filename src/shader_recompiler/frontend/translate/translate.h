@@ -154,7 +154,7 @@ public:
 
     // Vector ALU
     // VOP2
-    void V_CNDMASK_B32(const GcnInst& inst);
+    void V_CNDMASK_B32(const GcnInst& inst, bool full_wave = false);
     void V_READLANE_B32(const GcnInst& inst);
     void V_WRITELANE_B32(const GcnInst& inst);
     void V_ADD_F32(const GcnInst& inst);
