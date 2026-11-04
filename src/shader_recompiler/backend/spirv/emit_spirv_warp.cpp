@@ -45,7 +45,24 @@ Id EmitLaneId(EmitContext& ctx) {
     return ctx.OpLoad(ctx.U32[1], ctx.subgroup_local_invocation_id);
 }
 
+static Id ShuffleActiveLanes(EmitContext& ctx, Id value, Id index) {
+    const Id scope = SubgroupScope(ctx);
+    const Id active = ctx.OpGroupNonUniformBallot(ctx.U32[4], scope, ctx.true_value);
+    const Id word = ctx.OpShiftRightLogical(ctx.U32[1], index, ctx.ConstU32(5u));
+    const Id bit = ctx.OpBitwiseAnd(ctx.U32[1], index, ctx.ConstU32(31u));
+    const Id mask = ctx.OpVectorExtractDynamic(ctx.U32[1], active, word);
+    const Id enabled = ctx.OpBitFieldUExtract(ctx.U32[1], mask, bit, ctx.ConstU32(1u));
+    const Id present = ctx.OpINotEqual(ctx.U1[1], enabled, ctx.u32_zero_value);
+    const Id source = ctx.OpSelect(ctx.U32[1], present, index, EmitLaneId(ctx));
+    const Id shuffled = ctx.OpGroupNonUniformShuffle(ctx.U32[1], scope, value, source);
+    return ctx.OpSelect(ctx.U32[1], present, shuffled, ctx.u32_zero_value);
+}
+
 Id EmitQuadBroadcast(EmitContext& ctx, Id value, Id index) {
+    if (ctx.info.hw_stage == HwStage::Compute) {
+        const Id quad_base = ctx.OpBitwiseAnd(ctx.U32[1], EmitLaneId(ctx), ctx.ConstU32(~3u));
+        return ShuffleActiveLanes(ctx, value, ctx.OpBitwiseOr(ctx.U32[1], quad_base, index));
+    }
     return ctx.OpGroupNonUniformQuadBroadcast(ctx.U32[1], SubgroupScope(ctx), value, index);
 }
 
@@ -54,10 +71,17 @@ Id EmitReadFirstLane(EmitContext& ctx, Id value) {
 }
 
 Id EmitShuffle(EmitContext& ctx, Id value, Id index) {
+    if (ctx.info.hw_stage == HwStage::Compute) {
+        return ShuffleActiveLanes(ctx, value, index);
+    }
     return ctx.OpGroupNonUniformShuffle(ctx.U32[1], SubgroupScope(ctx), value, index);
 }
 
 Id EmitShuffleXor(EmitContext& ctx, Id value, Id mask) {
+    if (ctx.info.hw_stage == HwStage::Compute) {
+        const Id index = ctx.OpBitwiseXor(ctx.U32[1], EmitLaneId(ctx), mask);
+        return ShuffleActiveLanes(ctx, value, index);
+    }
     return ctx.OpGroupNonUniformShuffleXor(ctx.U32[1], SubgroupScope(ctx), value, mask);
 }
 
