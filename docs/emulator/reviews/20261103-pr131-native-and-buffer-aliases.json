@@ -1,0 +1,180 @@
+{
+  "schema_version": 2,
+  "record_id": "pr131-native-buffer-alias-followup-20261103",
+  "reviewed_at": "2026-11-03T17:54:03.776501+00:00",
+  "source_commit": "8b6396c807db480823e455d7680ca4578d559938",
+  "source_tree": "366d29c9bb74ce75ddeb12965054592b70f1c5f4",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "pr": 132,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/132",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "result": "BUILD_AND_HOST_CHECKS_PASS_NATIVE_PENDING",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "native_evidence": {
+    "archive": "universal-two-games-20261103T172826Z-4161942.tar.gz",
+    "archive_sha256": "1274ec1c3b773ae36707df134df8b5e388f28d2d7bd4bbad52844b46faef5cee",
+    "library_file_id": "libfile_1d3178665244819181f471c49515a5a7",
+    "source_commit": "6d11d5541d078c0040d92676d70911e2aa2a1fcf",
+    "binary_sha256": "03153003e77ca353010909d2707e73ddc715e7e790ffd9937b9fdb0d498df6d8",
+    "upstream_checked": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "build_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "tested_games": [
+      "CUSA11456"
+    ],
+    "got": {
+      "elapsed_seconds": 42.681,
+      "exit_reason": "GPU_CONTEXT_LOST",
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "screenshot_review": [
+        {
+          "file": "frame-008s.png",
+          "sha256": "7d20a6d36a43c65d57570892ff8d0adba33bd875fd06ac76f8c831188c9ac508",
+          "observation": "Loading game / waiting for game video; 30 FPS overlay."
+        },
+        {
+          "file": "frame-025s.png",
+          "sha256": "d78e4a34a98c7a6ee03db5f3c1f24217ee740df71af40fc24dbe94f0a4f3768c",
+          "observation": "Visible Sucker Punch logo; 30 FPS overlay. No menu or gameplay."
+        }
+      ],
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "audio": "NOT_AUDITED",
+      "automatic_coherence": true,
+      "configured_readbacks_mode": 0,
+      "image_readbacks": 1,
+      "image_read_demand_events": 1,
+      "image_publication": {
+        "ms": 25882,
+        "address": "0x110af43d00",
+        "bytes": 1395968,
+        "demand_address": "0x110b098a00",
+        "demand_bytes": 8
+      },
+      "buffer_readbacks_at_least": 1024,
+      "validation_layer_active": true,
+      "validation_failure": null,
+      "gpu_memory_fault_reports": 0,
+      "gpu_error": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+      "kernel_journal": "Unavailable to the unprivileged collector; no sudo requested."
+    },
+    "gow": "SKIPPED_AFTER_GOT_GPU_LOSS",
+    "ordered_capture": "REQUESTED_NO_CAPTURE",
+    "vram_free_at_launch": 25599725568,
+    "ollama_unloaded": [
+      "qwen3.8-greek:latest"
+    ],
+    "comparison": "PR130 screenshot at25s was black; PR131 shows the logo. PR130 lost GPU context at41.032s and PR131 at42.681s. Visible progress is observed, but crash recovery, menu/gameplay and exclusive patch causality are not established.",
+    "captured_spirv": {
+      "count": 14,
+      "validation": "All captured modules PASS spirv-val --target-env vulkan1.3. This does not validate guest semantics or identify the failing GPU operation.",
+      "files": {
+        "cs_0x0000000015d7e72a_0.spv": "f3ae080d8ea95e892eab4c761f971e7ab8ac0b7ec6b211e1520bae68559465f9",
+        "cs_0x0000000015d7e72a_1.spv": "f74f4ae25b4380869194842928403c18292ee28207371e01da4ac314ecee5c63",
+        "cs_0x000000001cb77b64_0.spv": "eae1625e871787cf2306c6674069bfa83ed3ac4284991ab59e9df3ca3e32d9de",
+        "cs_0x000000001cb77b64_1.spv": "70b1a046da384f3acca3dbb2cfb6aae8611727974438cbc07ee11074b7a0b76d",
+        "cs_0x00000000273a7c18_0.spv": "0a01a5f3e82826bdebd7f248e8a143ad1fa9692c54830059a19e220267927046",
+        "cs_0x00000000273a7c18_1.spv": "64a56dc4ca41e2b8d3393df0171faed490bc10a30a22a1c6b93916f789732a2f",
+        "cs_0x000000005e89a8b4_0.spv": "a5511e3a4b49c2a18eaca5ef9e200bbc64aedbf7628de34614d1476428cc3285",
+        "cs_0x00000000628dd8fd_0.spv": "b967f922bd4715fa00d65ea3533a16277b79be5cf8b083207a21caf0c03a74f5",
+        "cs_0x00000000628dd8fd_1.spv": "03b0594bb37b833bea17b60e96c7da2f383505e4a4779116953ccd1bb8df4c07",
+        "cs_0x00000000a65fb88d_0.spv": "ac2a825cc4bfe61060a574415a7b426accd6d6ede0efd788cc2e82601259c1ed",
+        "cs_0x00000000a65fb88d_1.spv": "5f64dd8aa48bebc52ac0c560b5461a6be16c9de390bca2ae8d965986d217f8a9",
+        "cs_0x00000000e1fb67ac_0.spv": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee",
+        "fs_0x00000000361a48f5_0.spv": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23",
+        "vs_0x000000009911cadd_0.spv": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6"
+      }
+    }
+  },
+  "changes": [
+    "Remove destination image invalidation before Rasterizer::CopyBuffer acquires/preserves its destination. Early dirty marking made eligible pending images non-downloadable, losing untouched bytes on partial copies.",
+    "Centralize image invalidation after BufferCache::ObtainBuffer publishes pending eligible images and synchronizes the buffer, for all writable aliases. Preserve the existing batched-copy path by invalidating the exact ranges at MarkRegionAsGpuModified.",
+    "Invalidate all images whose memory overlaps the write interval, including interior writes and images separated by gaps. Ignore empty intervals and preserve non-overlapping neighbours.",
+    "Add bounded image-buffer-write diagnostics. No per-title/shader/vendor options or new exceptions. Existing image-publication eligibility remains."
+  ],
+  "validation": {
+    "release": "PASS GCC14 Release/X11 and published-source rebuild; existing warnings remain",
+    "universal_cpu_regressions": "PASS retained suite",
+    "actual_binary_startup": "PASS three scenarios, GPU_NOT_RUN",
+    "host_reproduction": {
+      "checks": 20108,
+      "before_failures": 1128,
+      "after_failures": 0,
+      "method": "Verbatim production ObtainBuffer, CopyBuffer, MarkRegionAsGpuModified and InvalidateMemoryFromGPU compiled against simulated memory/cache/driver boundaries. Assertions cover partial copies, shared-page preservation, interior writes, interval gaps, non-overlaps and delayed batched-copy invalidation. No real Vulkan execution.",
+      "initial_harness_compile": "Strict Werror initially rejected an existing unused lambda argument in the baseline. Recompiled both baseline/candidate with Wno-unused-parameter; no production code changed for the harness."
+    },
+    "sanitizers": "PASS ASan/UBSan, 20108 assertions; leak detection disabled for the established container limitation",
+    "new_repository_tests": false,
+    "binary_sha256": "6354584db268eddfae2d856a8c766444d40d1ab24ac91e3bee1e0150328038bb",
+    "logs": {
+      "nov3j-build.log": {
+        "sha256": "4d257bd642f31e7eae10d12e0a533d27d262114bceefe3dd53a74c86751f5f31",
+        "bytes": 16081
+      },
+      "nov3j-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3j-cpu.log": {
+        "sha256": "453be5bc0dd662904e07a608d6ad17d597d989aa33bb166a36975765ac1f41a7",
+        "bytes": 6219
+      },
+      "nov3j-published-build.log": {
+        "sha256": "d3215a63be9d600efda694324aacf7ebc30fdfea4ce5f13c89c51cf4ed2a69df",
+        "bytes": 14529
+      },
+      "nov3j-published-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3j-before.log": {
+        "sha256": "3091172d3feb2aabaa5f37373fb78aa5bbced971c24ac16791a1f9e5fa84b288",
+        "bytes": 716
+      },
+      "nov3j-after.log": {
+        "sha256": "4b3566eea04a44e5faab0d1767868e828802860737c47e15fc4ce0e2fb41d52a",
+        "bytes": 75
+      },
+      "nov3j-sanitizers.log": {
+        "sha256": "4b3566eea04a44e5faab0d1767868e828802860737c47e15fc4ce0e2fb41d52a",
+        "bytes": 75
+      },
+      "nov3j-probe-assembly.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      },
+      "nov3j-probe-syntax.log": {
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0
+      }
+    }
+  },
+  "probe": {
+    "url": "https://chatgpt.com/library?file_id=libfile_f5935b2d11ec8191812778c64604c491&account_id=personal",
+    "version": 2,
+    "sha256": "69faf5e6cf3342ac9bb2cc966bdc5b061829e94e1b9f1acf5527a998552aa6b1",
+    "assembly": "PASS LLVM18 Bonaire, four kernels",
+    "c11_syntax": "PASS GCC14 O2 Wall Wextra Werror",
+    "expected_dispatches": 336,
+    "expected_word_observations": 15360,
+    "new_case": "GPU image write, then a four-word GPU raw-buffer write at offsets0/16/32/48/64, then GPU image load into an output buffer. No intervening CPU pixel read. Verify changed and untouched pixels.",
+    "dma_packet_case": "NOT_INCLUDED; rasterizer DMA-copy ordering currently has host orchestration coverage only.",
+    "sdk_link": "NOT_RUN",
+    "ps4_hardware": "NOT_RUN",
+    "emulator_gpu": "NOT_RUN"
+  },
+  "preservation": {
+    "runner": "Byte-identical to tested PR131; only next test order changes.",
+    "wrapper_sha256": "a548c7423b353fd562bc7ca12e3eccf9647d437f9a3c423e2b4d52e2ade95533",
+    "graphics_runner_sha256": "488c972b48a76575f26e2e58b7afe1d58e38f1ffdad5b085815fda706b6e6518",
+    "retained_code": "All prior committed fixes and DS work retained; upstream remains an ancestor; main unchanged."
+  },
+  "limits": [
+    "These reproduced coherence defects are not established as the cause of the native GPU loss. The faulting GPU command remains unidentified.",
+    "No native execution of PR132 or cross-game/platform performance/correctness proof. Broad writable descriptors invalidate conservatively and may add image refresh work.",
+    "Existing eligible-image limitations remain: this is not complete coherence for arbitrary tiled, MSAA or stencil images or physical aliases across distinct guest mappings.",
+    "DS ordered dedicated seed and guest shader re-entry remain unfinished."
+  ],
+  "next_test": "Build the final checkpoint with the unchanged two-game runner. GoW FIRST, then GoT if safe: the last two GoT GPU failures prevented GoW from running. <=120s each; no automatic input or readback options. Keep >=8GiB VRAM/display/process preflights; stop after GPU failure or unconfirmed child exit."
+}
