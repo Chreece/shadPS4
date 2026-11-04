@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/assert.h"
-#include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -54,10 +53,9 @@ Id EmitGetUserData(EmitContext& ctx, IR::ScalarReg reg) {
 
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset) {
     const u32 flatbuf_off_dw = inst->Flags<u32>();
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !ctx.profile.support_bda) {
-        return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
-    }
     if (flatbuf_off_dw == 0) {
+        ASSERT_MSG(ctx.profile.support_bda && ctx.info.uses_dma,
+                   "Unflattened constant read requires buffer device address support");
         return ctx.OpFunctionCall(ctx.U32[1], ctx.read_const_dynamic, addr, offset);
     } else {
         return ctx.EmitFlatbufferLoad(ctx.ConstU32(flatbuf_off_dw));
@@ -523,6 +521,39 @@ void EmitStoreBufferU32x3(EmitContext& ctx, IR::Inst* inst, u32 handle, Id addre
 
 void EmitStoreBufferU32x4(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value) {
     EmitStoreBufferB32xN<4, PointerType::U32>(ctx, inst, handle, address, value);
+}
+
+template <u32 N>
+static void EmitGuardedBufferStore(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address,
+                                   Id value, Id guard) {
+    const Id store = ctx.OpLabel();
+    const Id merge = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(guard, store, merge);
+    ctx.AddLabel(store);
+    EmitStoreBufferB32xN<N, PointerType::U32>(ctx, inst, handle, address, value);
+    ctx.OpBranch(merge);
+    ctx.AddLabel(merge);
+}
+
+void EmitStoreBufferU32Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                               Id guard) {
+    EmitGuardedBufferStore<1>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x2Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<2>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x3Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<3>(ctx, inst, handle, address, value, guard);
+}
+
+void EmitStoreBufferU32x4Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard) {
+    EmitGuardedBufferStore<4>(ctx, inst, handle, address, value, guard);
 }
 
 void EmitStoreBufferU64(EmitContext& ctx, IR::Inst*, u32 handle, Id address, Id value) {

@@ -1,0 +1,71 @@
+// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+#include "check.h"
+#include "core/libraries/ngs2/hle/diagnostics.h"
+#include "core/libraries/ngs2/hle/lfe_diagnostics.h"
+#include <limits>
+using Libraries::Ngs2::Diagnostics::Budget;
+
+TEST(RepeatedErrorsAreExponentiallyThrottled) {
+    Budget budget;
+    unsigned emitted = 0;
+    for (unsigned i = 1; i <= 1024; ++i) {
+        const bool accepted = budget.Take(1);
+        CHECK(accepted == (i <= 4 || (i & (i - 1)) == 0));
+        emitted += accepted;
+    }
+    CHECK(emitted == 12);
+}
+TEST(RenderSamplingAndProcessLimit) {
+    Budget budget;
+    unsigned emitted = 0;
+    for (unsigned i = 1; i <= 1000000; ++i)
+        emitted += budget.Take(1, 256);
+    CHECK(emitted == 1792);
+    CHECK(!budget.Take(2));
+    // Failure records can still be captured after normal tracing is full.
+    for (unsigned i = 1; i <= 1000000; ++i)
+        emitted += budget.Take(1, 256, true);
+    CHECK(emitted == 2048);
+    CHECK(!budget.Take(2, 0, true));
+}
+TEST(DistinctCommandsHaveBoundedStorage) {
+    Budget budget;
+    for (unsigned i = 0; i < 64; ++i)
+        CHECK(budget.Take(i));
+    CHECK(!budget.Take(64));
+    CHECK(budget.Take(0x400000000ULL)); // Command churn cannot evict render reporting.
+    CHECK(budget.Take(0));
+}
+TEST(RequestKeysCannotThrottleOrEvictFailureKeys) {
+    Budget budget;
+    for (unsigned i = 0; i < 64; ++i)
+        for (unsigned repeat = 0; repeat < 127; ++repeat)
+            budget.Take(i);
+    CHECK(!budget.Take(64));
+    for (unsigned i = 0; i < 64; ++i)
+        CHECK(budget.Take(i, 0, true));
+    CHECK(!budget.Take(64, 0, true));
+}
+TEST(LfeWindowCountsEveryFrameAndPreservesTinySignals) {
+    Libraries::Ngs2::Diagnostics::LfeWindow window;
+    std::array<float, 16> audio{};
+    audio[3] = 0.000001f;
+    audio[11] = -0.000002f;
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.frames == 2 && window.nonzero[3] == 2 && window.peaks[3] == 0.000002f);
+    audio.fill(0);
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.frames == 4 && window.nonzero[3] == 2 && window.peaks[3] == 0.000002f);
+    audio[0] = std::numeric_limits<float>::quiet_NaN();
+    CHECK(window.Observe(audio, 8));
+    CHECK(window.nonfinite == 1 && window.nonzero[0] == 0);
+    CHECK(!window.Observe(audio, 0) && !window.Observe(audio, 9));
+    CHECK(!window.Observe(std::span{audio}.first(15), 8));
+    CHECK(window.frames == 6);
+    CHECK(window.Observe(audio, 2));
+    CHECK(window.channels == 2 && window.frames == 8 && window.nonzero[3] == 0);
+}
+int main() {
+    return Test::Run();
+}

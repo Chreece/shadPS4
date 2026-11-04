@@ -289,6 +289,28 @@ void Translator::EmitPrologue(IR::Block* first_block) {
         if (runtime_info.hw.cs.tgid_enable[2]) {
             ir.SetScalarReg(dst_sreg++, ir.GetAttributeU32(IR::Attribute::WorkgroupId, 2));
         }
+        if (runtime_info.hw.cs.tg_size_enable) {
+            const auto& cs = runtime_info.hw.cs;
+            const u64 threads =
+                u64(cs.workgroup_size[0]) * cs.workgroup_size[1] * cs.workgroup_size[2];
+            ASSERT_MSG(threads != 0 && threads <= 2048, "Invalid compute workgroup size");
+            const u32 waves = u32((threads + 63) / 64);
+            const IR::U32 local_wave = ir.ShiftRightLogical(
+                ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex), ir.Imm32(6u));
+            IR::U32 wave_id = local_wave;
+            if (cs.ordered_append) {
+                const IR::U32 group = ir.GetAttributeU32(IR::Attribute::WorkgroupIndex);
+                wave_id = cs.ordered_append_per_group
+                              ? group
+                              : IR::U32{ir.IAdd(ir.IMul(group, ir.Imm32(waves)), local_wave)};
+            }
+            const IR::U32 first_wave{
+                ir.Select(ir.IEqual(local_wave, ir.Imm32(0u)), ir.Imm32(1u << 31), ir.Imm32(0u))};
+            const IR::U32 ordered_term =
+                ir.ShiftLeftLogical(ir.BitwiseAnd(wave_id, ir.Imm32(0x7ffu)), ir.Imm32(6u));
+            ir.SetScalarReg(dst_sreg++,
+                            ir.BitwiseOr(first_wave, ir.BitwiseOr(ordered_term, ir.Imm32(waves))));
+        }
         break;
     case SwStage::Geometry:
         // The GS wave receives one ES vertex offset per input primitive vertex in V0-V6, with
