@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_on": "2026-11-03",
+  "recorded_on": "2026-11-04",
   "notice": "Derived status index only; canonical historical facts are append-only docs/emulator/TRIALS.jsonl. Main merge SHA does not imply hardware verification.",
   "engine_policy": "Generic emulator changes for all games; tested games are evidence, never source/runtime switches.",
   "fixes": [
@@ -633,6 +633,30 @@
       "negative_result_or_prohibition": "No shader/title/vendor execution exceptions; shader hashes only identify evidence. Collected permutation is not proof of execution or a graphics fix.",
       "next_test": "One pinned Bash command recovers original record universal-graphics-20261103T202034Z-1291590; upload resulting archive.",
       "review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "shader-full-wave-reduction",
+      "subsystem": "shader-recompiler",
+      "status": "DRAFT_HOST_SEMANTICS_BUILD_PASS_NATIVE_PENDING",
+      "related_prs": [
+        138
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No new native game run. Recovered GoT shader contains two affected reductions; GPU-loss causality unproven.",
+      "negative_result_or_prohibition": "Automatic exact-pattern compute subgroup64 only; subgroup32 and general EXEC resurrection unresolved. No per-game/hash overrides. 64-shuffle performance untested.",
+      "next_test": "Same pinned source/binary: native GoT first, then GoW only after confirmed safe exit; 118s TERM + 2s KILL, 8GiB free VRAM, reversible recorded model leases. Compare progress, pending submissions, shader evidence and GPU status. Stop on GPU loss/live or unconfirmed child; no main promotion before native/cross-title acceptance."
+    },
+    {
+      "id": "font-runtime-layout-accessors",
+      "subsystem": "portable-build",
+      "status": "CLANG18_RELEASE_LINK_PASS_DRAFT",
+      "related_prs": [
+        139
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Compile-only repair; no runtime pointer or layout change.",
+      "negative_result_or_prohibition": "Do not retain warning suppression as the final fix.",
+      "next_test": "Build the exact combined native candidate and perform shared GoT/GoW acceptance."
     }
   ]
 }
