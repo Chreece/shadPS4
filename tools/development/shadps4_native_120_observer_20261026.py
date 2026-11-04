@@ -201,10 +201,28 @@ def summarize(console,out):
     graphics_diagnostics_truncated=False
     graphics_event_counts={}
     graphics_diagnostics_active=False
+    gpu_work=[]
+    gpu_work_bytes=0
+    gpu_work_entries=0
+    gpu_work_truncated=False
+    gpu_work_overwritten=0
     with console.open('rb') as stream:
         for raw in stream:
             total+=1
             text=raw.decode('utf-8','replace').strip()
+            if text.startswith('GRAPHICS_WORK'):
+                gpu_work_entries+=int(text.startswith('GRAPHICS_WORK seq='))
+                gpu_work_truncated|=text.startswith('GRAPHICS_WORK_TRUNCATED')
+                overwritten=re.search(r'\boverwritten=(\d+)\b',text)
+                if overwritten:
+                    gpu_work_overwritten=max(gpu_work_overwritten,int(overwritten.group(1)))
+                line=text[:4096]+'\n'
+                size=len(line.encode('utf-8'))
+                if gpu_work_bytes+size<=4*1024**2:
+                    gpu_work.append(line)
+                    gpu_work_bytes+=size
+                else:
+                    gpu_work_truncated=True
             diagnostic=re.search(r'GRAPHICS_DIAG ms=\d+ event=([a-z-]+) count=(\d+)\b',text)
             if diagnostic:
                 event=diagnostic.group(1)
@@ -253,6 +271,7 @@ def summarize(console,out):
     (out/'selected-console-diagnostics.txt').write_text(
         '\n'.join(important)+'\n',encoding='utf-8')
     (out/'graphics-diagnostics.log').write_text(''.join(graphics_diagnostics),encoding='utf-8')
+    (out/'gpu-work.log').write_text(''.join(gpu_work),encoding='utf-8')
     with console.open('rb') as stream:
         size=console.stat().st_size
         if size>2*1024*1024:
@@ -264,6 +283,10 @@ def summarize(console,out):
             excerpt=stream.read()
     (out/'console-excerpt.log').write_bytes(excerpt)
     return {'gpu_failure':gpu_failure,'srt_rejections':srt_rejections,'console_lines':total,'warning_lines':warnings,'error_lines':errors,
+            'gpu_work_entries':gpu_work_entries,
+            'gpu_work_bytes':gpu_work_bytes,
+            'gpu_work_truncated':gpu_work_truncated,
+            'gpu_work_overwritten':gpu_work_overwritten,
             'graphics_diagnostics_active':graphics_diagnostics_active,
             'graphics_event_sampled_max_counts':graphics_event_counts,
             'graphics_diagnostics_bytes':graphics_diagnostic_bytes,
