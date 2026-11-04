@@ -40,11 +40,11 @@ namespace VideoCore {
 struct PageManager::Impl {
     struct PageState {
         u8 num_write_watchers;
-        u8 num_read_watchers;
+        u32 num_read_watchers;
 
         Core::MemoryPermission WritePerm() const noexcept {
-            return num_write_watchers == 0 ? Core::MemoryPermission::Write
-                                           : Core::MemoryPermission::None;
+            return num_write_watchers == 0 && num_read_watchers == 0 ? Core::MemoryPermission::Write
+                                                                     : Core::MemoryPermission::None;
         }
 
         Core::MemoryPermission ReadPerm() const noexcept {
@@ -57,7 +57,7 @@ struct PageManager::Impl {
         }
 
         template <bool is_read>
-        u8 GetPage() const {
+        u32 GetPage() const {
             if constexpr (is_read) {
                 return num_read_watchers;
             } else {
@@ -70,7 +70,8 @@ struct PageManager::Impl {
                                                 bool update_read = false) {
             if (update_read) {
                 if (read_op == PageOp::Track) {
-                    ASSERT_MSG(num_read_watchers == 0, "Too many watchers");
+                    ASSERT_MSG(num_read_watchers < std::numeric_limits<u32>::max(),
+                               "Too many watchers");
                 } else if (read_op == PageOp::Untrack) {
                     ASSERT_MSG(num_read_watchers > 0, "Not enough watchers");
                 }
@@ -115,7 +116,7 @@ struct PageManager::Impl {
         locks.reserve(start_page, end_page);
     }
 
-    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) {
+    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op, PageOp read_op) {
         const u64 page_start = addr >> PM_PAGE_BITS;
         const u64 page_end = Common::DivCeil(addr + size, PM_PAGE_SIZE);
 
@@ -156,7 +157,8 @@ struct PageManager::Impl {
             }
 
             // Apply the change to the page state
-            const auto new_perms = state->Update(write_op);
+            const auto new_perms =
+                state->Update(write_op, write_op != PageOp::None, read_op, read_op != PageOp::None);
             if (new_perms != perms) [[unlikely]] {
                 // If the protection changed add pending (un)protect action
                 release_pending();
@@ -448,13 +450,8 @@ struct SignalImpl : public PageManager::Impl {
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
     if (EmulatorSettings.IsUserfaultfdTracking()) {
-        try {
-            impl = std::make_unique<UffdImpl>(rasterizer_);
-            LOG_INFO(Config, "Memory tracking method: userfaultfd");
-            return;
-        } catch (const std::runtime_error& e) {
-            // if uffd is unsupported, falls back to SignalImpl
-        }
+        LOG_INFO(Config, "Automatic GPU coherence requires read-fault tracking; "
+                         "write-only userfaultfd tracking is insufficient");
     }
     LOG_INFO(Config, "Memory tracking method: signals");
 #endif
@@ -471,8 +468,8 @@ void PageManager::OnGpuUnmap(VAddr address, size_t size) {
     impl->OnUnmap(address, size);
 }
 
-void PageManager::UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) const {
-    impl->UpdatePageWatchers(addr, size, write_op);
+void PageManager::UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op, PageOp read_op) const {
+    impl->UpdatePageWatchers(addr, size, write_op, read_op);
 }
 
 void PageManager::UpdatePageWatchersForRegion(VAddr base_addr, const Bounds& bounds,
