@@ -131,6 +131,8 @@ public:
 
     void ReadMemory(VAddr addr, u64 size);
 
+    void TrackGpuImage(ImageId image_id);
+
     /// Retrieves the image handle of the image with the provided attributes.
     [[nodiscard]] ImageId FindImage(ImageDesc& desc, bool exact_fmt = false);
 
@@ -350,8 +352,6 @@ private:
             }
         }
     }
-
-    void TrackGpuImage(ImageId image_id);
 
     /// Copies image memory back to CPU.
     void DownloadImageMemory(ImageId image_id,
