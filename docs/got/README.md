@@ -3,7 +3,7 @@
 This directory is the **GoT game-specific evidence appendix**, not a second emulator-wide diary. The single authoritative combined GoW/GoT/all-games history is [the universal emulator trial diary](../emulator/EXPERIMENT_DIARY.md), with an append-only [structured trial ledger](../emulator/TRIALS.jsonl) and [generic fix registry](../emulator/FIXES.json). The goal is generic correctness across games - never title-ID cases, shader-hash branches, fake descriptors, skipped draws, synthetic texels, forced input, or unsafe CPU substitutions for live GPU values.
 
 
-**Latest native review (2026-11-03):** PR125 stopped on Vulkan image sampled-type validation before menu at25.206s. [PR126](https://github.com/Chreece/shadPS4/pull/126) is a locally validated float-image atomic fallback candidate; native visual recovery is pending. [Shared review](../emulator/reviews/20261103-image-atomic-fallback.json). The earlier menu/in-game branches remain preserved.
+**Latest native review (2026-11-03):** PR126 passed the prior shader-module gate, then reached integer-image sampler validation. Stop remained unconfirmed and GoW was skipped; screenshots still show no game video. [PR127](https://github.com/Chreece/shadPS4/pull/127) separates numeric sampler variants and bounds shutdown waits; native recovery remains pending. [Shared review](../emulator/reviews/20261103-integer-samplers.json). Earlier menu/in-game branches are preserved.
 
 - [EXPERIMENT_DIARY.md](EXPERIMENT_DIARY.md): successful and failed experiments with emulator effect, native proof, game appearance, performance, retained code and exact evidence.
 - [BASELINES.json](BASELINES.json): machine-readable hashes and promotion status.
