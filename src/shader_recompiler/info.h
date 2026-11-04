@@ -231,10 +231,8 @@ struct Info : InfoPersistent {
             bnd.unified += sampler.NumBindings(*this);
         }
         for (const auto& image : images) {
-            bnd.unified += image.NumBindings(*this);
-            if (image.is_guest_mixed_indexed) {
-                bnd.unified += image.NumBindings(*this) + image.NumBindings(*this) + 1;
-            }
+            bnd.unified += image.NumBindings(*this) * image.NumImageArrays();
+            bnd.unified += image.is_guest_indexed ? 1u : 0u;
         }
     }
 
