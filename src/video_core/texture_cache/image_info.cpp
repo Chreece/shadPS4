@@ -181,6 +181,25 @@ bool ImageInfo::IsCompatible(const ImageInfo& info) const {
            num_samples == info.num_samples && num_bits == info.num_bits;
 }
 
+bool ImageInfo::CanExpandColor1DToColor2DLayers(const ImageInfo& cached) const {
+    if (cached.type != AmdGpu::ImageType::Color1D || type != AmdGpu::ImageType::Color2D ||
+        cached.guest_address != guest_address || guest_address == 0 ||
+        cached.resources.layers != 1 || resources.layers <= cached.resources.layers ||
+        cached.resources.levels != 1 || resources.levels != 1 || cached.size != size ||
+        size.height != 1 || size.depth != 1 || cached.pitch != pitch ||
+        cached.num_bits != num_bits || cached.num_samples != num_samples ||
+        cached.pixel_format != pixel_format || cached.tile_mode != tile_mode ||
+        cached.array_mode != array_mode || cached.bank_swizzle != bank_swizzle ||
+        cached.alt_tile != alt_tile || cached.props.is_tiled != props.is_tiled ||
+        cached.props.is_pow2 != props.is_pow2 || cached.props.is_block || props.is_block ||
+        cached.props.is_depth || props.is_depth || cached.props.is_volume || props.is_volume ||
+        cached.props.has_stencil || props.has_stencil || cached.guest_size == 0 ||
+        guest_size <= cached.guest_size) {
+        return false;
+    }
+    return guest_size % resources.layers == 0 && guest_size / resources.layers == cached.guest_size;
+}
+
 void ImageInfo::UpdateSize() noexcept {
     ASSERT_MSG(array_mode != AmdGpu::ArrayMode::ArrayLinearGeneral,
                "Unhandled array mode: ArrayLinearGeneral");

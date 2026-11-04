@@ -190,7 +190,9 @@ struct StageSpecialization {
     }
 
     bool operator==(const StageSpecialization& other) const {
-        if (!Valid()) {
+        if (!Valid() || !other.Valid() || buffers.size() != other.buffers.size() ||
+            images.size() != other.images.size() || samplers.size() != other.samplers.size() ||
+            info->uniform_buffer_bounds != other.info->uniform_buffer_bounds) {
             return false;
         }
 
