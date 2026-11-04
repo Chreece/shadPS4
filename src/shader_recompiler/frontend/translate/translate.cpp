@@ -1242,6 +1242,7 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
     }
     ir = IR::IREmitter{*block, block->begin()};
     pc = start_pc;
+    bool full_wave_select = false;
     for (const auto& inst : inst_list) {
         pc += inst.length;
 
@@ -1253,7 +1254,18 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
             continue;
         }
 
-        TranslateInstruction(inst);
+        if (inst.opcode == Opcode::V_CNDMASK_B32 && full_wave_select &&
+            (inst.src[2].field == OperandField::Undefined ||
+             inst.src[2].field == OperandField::VccLo)) {
+            V_CNDMASK_B32(inst, true);
+        } else {
+            TranslateInstruction(inst);
+        }
+        if (inst.opcode != Opcode::S_WAITCNT && inst.opcode != Opcode::S_NOP) {
+            full_wave_select = inst.opcode == Opcode::S_ORN2_SAVEEXEC_B64 &&
+                               inst.src[0].field == OperandField::ExecLo &&
+                               inst.dst[0].field == OperandField::VccLo;
+        }
     }
     if (cond != IR::Condition::True && cond != IR::Condition::False) {
         block->branch_cond = ir.ConditionRef(ir.Condition(cond));

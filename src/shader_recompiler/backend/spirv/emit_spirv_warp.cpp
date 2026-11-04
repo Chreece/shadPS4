@@ -10,6 +10,33 @@ Id SubgroupScope(EmitContext& ctx) {
     return ctx.ConstU32(static_cast<u32>(spv::Scope::Subgroup));
 }
 
+static Id ReduceActiveLanes(EmitContext& ctx, Id value, bool minimum) {
+    const Id scope = SubgroupScope(ctx);
+    const Id active = ctx.OpGroupNonUniformBallot(ctx.U32[4], scope, ctx.true_value);
+    const Id first = ctx.OpGroupNonUniformBallotFindLSB(ctx.U32[1], scope, active);
+    const Id identity = ctx.ConstU32(minimum ? ~0u : 0u);
+    Id result = identity;
+    for (u32 lane = 0; lane < 64; ++lane) {
+        const Id mask = ctx.OpCompositeExtract(ctx.U32[1], active, lane / 32);
+        const Id bit = ctx.OpBitwiseAnd(ctx.U32[1], mask, ctx.ConstU32(1u << (lane % 32)));
+        const Id present = ctx.OpINotEqual(ctx.U1[1], bit, ctx.u32_zero_value);
+        const Id source = ctx.OpSelect(ctx.U32[1], present, ctx.ConstU32(lane), first);
+        const Id shuffled = ctx.OpGroupNonUniformShuffle(ctx.U32[1], scope, value, source);
+        const Id operand = ctx.OpSelect(ctx.U32[1], present, shuffled, identity);
+        result = minimum ? ctx.OpUMin(ctx.U32[1], result, operand)
+                         : ctx.OpBitwiseOr(ctx.U32[1], result, operand);
+    }
+    return result;
+}
+
+Id EmitGroupReduceUMin(EmitContext& ctx, Id value) {
+    return ReduceActiveLanes(ctx, value, true);
+}
+
+Id EmitGroupReduceOr(EmitContext& ctx, Id value) {
+    return ReduceActiveLanes(ctx, value, false);
+}
+
 Id EmitWarpId(EmitContext& ctx) {
     UNREACHABLE();
 }
