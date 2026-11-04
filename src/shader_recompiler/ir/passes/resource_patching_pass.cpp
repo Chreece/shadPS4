@@ -888,6 +888,28 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
                 CalculateBufferAddress(ir, inst, info, buffer, buffer.stride));
 }
 
+IR::Value ApplyImageReadNumberConversion(IR::IREmitter& ir, const IR::Value& texel,
+                                         const AmdGpu::Image& image,
+                                         const IR::TextureInstInfo& inst_info) {
+    const auto conversion = image.GetNumberConversion();
+    if (conversion != AmdGpu::NumberConversion::UnormToUbnorm) {
+        return ApplyReadNumberConversionVec4(ir, texel, conversion);
+    }
+    const auto mapping = image.DstSelect();
+    const auto components = AmdGpu::NumComponents(image.GetDataFmt());
+    std::array<IR::F32, 4> values;
+    for (u32 i = 0; i < values.size(); ++i) {
+        const auto selector =
+            u32(mapping.array[inst_info.is_gather ? u32(inst_info.gather_comp) : i]);
+        values[i] = IR::F32{ir.CompositeExtract(texel, i)};
+        if (selector >= u32(AmdGpu::CompSwizzle::Red) &&
+            selector < u32(AmdGpu::CompSwizzle::Red) + components) {
+            values[i] = ApplyReadNumberConversion(ir, values[i], conversion);
+        }
+    }
+    return ir.CompositeConstruct(values[0], values[1], values[2], values[3]);
+}
+
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
                           const AmdGpu::Image& image, const IR::Value& gpu_tsharp_word3) {
     const auto handle = inst.Arg(0);
@@ -1096,7 +1118,7 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
 
-    auto converted = ApplyReadNumberConversionVec4(ir, texel, image.GetNumberConversion());
+    auto converted = ApplyImageReadNumberConversion(ir, texel, image, inst_info);
     if (sampler.force_degamma && image.GetNumberFmt() != AmdGpu::NumberFormat::Srgb) {
         converted = ApplyForceDegamma(ir, texel);
     }
@@ -1179,8 +1201,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& resourc
             // Storage image requires shader swizzle.
             texel = ApplySwizzle(ir, texel, image.DstSelect());
         }
-        const auto converted =
-            ApplyReadNumberConversionVec4(ir, texel, image.GetNumberConversion());
+        const auto converted = ApplyImageReadNumberConversion(ir, texel, image, inst_info);
         inst.ReplaceUsesWith(converted);
     } else {
         inst.SetArg(1, coords);
