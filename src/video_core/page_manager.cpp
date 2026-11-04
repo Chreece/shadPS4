@@ -43,8 +43,8 @@ struct PageManager::Impl {
         u8 num_read_watchers;
 
         Core::MemoryPermission WritePerm() const noexcept {
-            return num_write_watchers == 0 ? Core::MemoryPermission::Write
-                                           : Core::MemoryPermission::None;
+            return num_write_watchers == 0 && num_read_watchers == 0 ? Core::MemoryPermission::Write
+                                                                     : Core::MemoryPermission::None;
         }
 
         Core::MemoryPermission ReadPerm() const noexcept {
@@ -448,13 +448,8 @@ struct SignalImpl : public PageManager::Impl {
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
     if (EmulatorSettings.IsUserfaultfdTracking()) {
-        try {
-            impl = std::make_unique<UffdImpl>(rasterizer_);
-            LOG_INFO(Config, "Memory tracking method: userfaultfd");
-            return;
-        } catch (const std::runtime_error& e) {
-            // if uffd is unsupported, falls back to SignalImpl
-        }
+        LOG_INFO(Config, "Automatic GPU coherence requires read-fault tracking; "
+                         "write-only userfaultfd tracking is insufficient");
     }
     LOG_INFO(Config, "Memory tracking method: signals");
 #endif

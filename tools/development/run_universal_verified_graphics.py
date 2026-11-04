@@ -41,6 +41,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     validation_compilation_hashes = []
     resource_warning_hashes = []
     readbacks_modes = set()
+    automatic_coherence = False
     compilation_by_thread = {}
     validation_log = out / 'capture/vulkan-validation.log'
     if validation_log.is_file():
@@ -55,6 +56,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         with console.open(errors='replace') as f:
             for line in f:
                 line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                automatic_coherence |= 'GPU memory coherence: automatic' in line
                 mode = re.search(r'GPU readbacksMode: (\d+)\b', line)
                 if mode:
                     readbacks_modes.add(int(mode.group(1)))
@@ -151,6 +153,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             'validation_compilation_hashes': validation_compilation_hashes,
             'resource_warning_hashes': list(reversed(resource_warning_hashes)),
             'observed_readbacks_modes': sorted(readbacks_modes),
+            'automatic_coherence_enabled': automatic_coherence,
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
@@ -396,7 +399,7 @@ def profile_source(project):
     raise RuntimeError('NO_EXISTING_PROFILE_WITH_SYSTEM_MODULES')
 
 
-def copy_profile(old, new, diagnostics=False, precise_readbacks=False):
+def copy_profile(old, new, diagnostics=False):
     allowed = {'sys_modules', 'custom_modules', 'fonts', 'licenses', 'home',
                'savedata', 'game_data', 'trophy', 'config.json'}
     files = []
@@ -433,8 +436,6 @@ def copy_profile(old, new, diagnostics=False, precise_readbacks=False):
         data.setdefault('GPU', {})['dump_shaders'] = True
     else:
         data = {'GPU': {'dump_shaders': True}}
-    if precise_readbacks:
-        data.setdefault('GPU', {})['readbacks_mode'] = 2
     if diagnostics:
         data.setdefault('Vulkan', {}).update(
             vkvalidation_enabled=True, vkvalidation_core_enabled=True,
@@ -542,9 +543,7 @@ def main():
     record['runner_commit'] = os.environ.get('SHADPS4_TEST_RUNNER_COMMIT', PIN)
     record['runner_sha256'] = digest(Path(__file__))
     diagnostics = os.environ.get('SHADPS4_VULKAN_DIAGNOSTICS') == '1'
-    precise_readbacks = os.environ.get('SHADPS4_TEST_PRECISE_READBACKS') == '1'
     record['vulkan_diagnostics_requested'] = diagnostics
-    record['requested_readbacks_mode'] = 2 if precise_readbacks else None
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
@@ -612,8 +611,7 @@ def main():
             verify_validation_layer(out, record)
         old = profile_source(project)
         record['profile_source'] = str(old)
-        record['profile_files_copied'] = copy_profile(
-            old, runtime / 'user', diagnostics, precise_readbacks)
+        record['profile_files_copied'] = copy_profile(old, runtime / 'user', diagnostics)
         profile_config = runtime / 'user/config.json'
         record['profile_config_sha256'] = digest(profile_config)
         settings = json.loads(profile_config.read_text())
@@ -632,6 +630,8 @@ def main():
         record['vram_free_at_launch'] = free_vram()
         if record['vram_free_at_launch'] < MIN_FREE:
             raise RuntimeError('LESS_THAN_8_GIB_VRAM_FREE')
+        if diagnostics:
+            os.environ['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
         sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
                     '--game', str(game), '--cwd', str(runtime), '--report', str(out / 'capture'),
                     '--seconds', '118']
@@ -697,14 +697,6 @@ def main():
                     'guest_continuation_executed': False})
         record['shader_diagnostics'] = collect_shader_diagnostics(
             runtime, out, out / 'capture/full-console.log', record['ordered_gds_evidence'])
-        if precise_readbacks and record['game_launched']:
-            record['precise_readbacks_confirmed'] = (
-                record['shader_diagnostics']['observed_readbacks_modes'] == [2])
-            if not record['precise_readbacks_confirmed']:
-                record['stop_remaining_tests'] = True
-                if rc == 0:
-                    rc = 1
-                    record['result'] = 'REQUESTED_READBACK_POLICY_NOT_CONFIRMED'
         if (record['ordered_gds_capture_requested'] and record['ordered_gds_evidence'] and
                 record['shader_diagnostics']['capture_completed_marker'] and
                 not record['stop_remaining_tests']):
