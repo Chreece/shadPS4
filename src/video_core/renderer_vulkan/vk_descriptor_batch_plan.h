@@ -14,10 +14,14 @@ namespace Vulkan {
 inline constexpr std::array<std::uint32_t, 6> DescriptorAllocationBatchSizes{32, 16, 8, 4, 2, 1};
 
 template <typename Result, typename Attempt>
-std::uint32_t TryAllocateDescriptorBatch(Attempt&& attempt, Result& result,
-                                          Result success, Result out_of_pool,
-                                          Result fragmented_pool) {
+std::uint32_t TryAllocateDescriptorBatch(Attempt&& attempt, Result& result, Result success,
+                                         Result out_of_pool, Result fragmented_pool,
+                                         std::uint32_t max_count = 32) {
+    result = out_of_pool;
     for (const std::uint32_t count : DescriptorAllocationBatchSizes) {
+        if (count > max_count) {
+            continue;
+        }
         result = attempt(count);
         if (result == success) {
             return count;
@@ -27,6 +31,25 @@ std::uint32_t TryAllocateDescriptorBatch(Attempt&& attempt, Result& result,
         }
     }
     return 0;
+}
+
+template <typename Size>
+std::uint32_t DescriptorBatchCapacity(std::span<const Size> remaining,
+                                      std::span<const Size> required,
+                                      std::uint32_t remaining_sets) {
+    auto count = remaining_sets;
+    for (const auto& needed : required) {
+        if (needed.descriptorCount == 0) {
+            continue;
+        }
+        const auto it = std::find_if(remaining.begin(), remaining.end(),
+                                     [&](const Size& size) { return size.type == needed.type; });
+        if (it == remaining.end()) {
+            return 0;
+        }
+        count = std::min(count, it->descriptorCount / needed.descriptorCount);
+    }
+    return count;
 }
 // Actual VkWriteDescriptorSet counts determine pool demand. A shader may
 // reference the same GPU descriptor table through multiple independently
