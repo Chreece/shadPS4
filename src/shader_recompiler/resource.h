@@ -173,6 +173,7 @@ struct ImageResource {
     bool is_guest_mixed_indexed{};
     bool is_depth{};
     bool is_atomic{};
+    bool is_atomic_float_emulated{};
     bool is_array{};
     bool is_written{};
     bool is_r128{};
@@ -200,6 +201,9 @@ struct ImageResource {
                 data_fmt != AmdGpu::DataFormat::Format32) {
                 image = AmdGpu::Image::Null(true);
             }
+        }
+        if (is_atomic_float_emulated) {
+            image.num_format = u64(AmdGpu::NumberFormat::Uint);
         }
         return image;
     }
