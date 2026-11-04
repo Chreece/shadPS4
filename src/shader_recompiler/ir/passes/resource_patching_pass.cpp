@@ -149,7 +149,8 @@ public:
         const u32 index{Add(sampler_resources, desc, [this, &desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
-                   desc.is_depth == existing.is_depth &&
+                   desc.is_depth == existing.is_depth && desc.is_integer == existing.is_integer &&
+                   desc.integer_binding == existing.integer_binding &&
                    desc.is_guest_indexed == existing.is_guest_indexed &&
                    desc.indexed_guest_entries == existing.indexed_guest_entries &&
                    desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
@@ -546,6 +547,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
             .post_op_tsharp_dw3_off =
                 lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
+            .is_integer = !image_res.is_guest_indexed && AmdGpu::IsInteger(image.GetNumberFmt()),
         };
         if (image_res.is_guest_indexed && !verified_uniform_sampler) {
             if (image_res.indexed_record_stride_bytes != 0u) {
@@ -575,6 +577,11 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         if (sampler_res.sharp_fetch.summary == SharpFetch<AmdGpu::Sampler>::Summary::Invalid) {
             LogUnflattenedSharpSource(info, resource.sharps[1], "sampler",
                                       sampler_res.is_guest_indexed);
+        }
+        if (image_res.is_guest_indexed) {
+            auto integer_sampler = sampler_res;
+            integer_sampler.is_integer = true;
+            sampler_res.integer_binding = descriptors.Add(integer_sampler);
         }
         const u32 sampler_binding = descriptors.Add(sampler_res);
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
