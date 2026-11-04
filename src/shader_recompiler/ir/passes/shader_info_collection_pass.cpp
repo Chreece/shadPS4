@@ -138,6 +138,10 @@ void Visit(Info& info, const IR::Inst& inst) {
     case IR::Opcode::QuadBroadcast:
         info.uses_group_quad = true;
         break;
+    case IR::Opcode::GroupReduceUMin:
+    case IR::Opcode::GroupReduceOr:
+        info.uses_group_ballot = true;
+        [[fallthrough]];
     case IR::Opcode::Shuffle:
     case IR::Opcode::ShuffleXor:
         info.uses_group_shuffle = true;

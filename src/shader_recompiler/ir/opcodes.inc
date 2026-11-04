@@ -462,6 +462,8 @@ OPCODE(CubeFaceCoordT,                                      F32,            F32,
 OPCODE(CubeFaceMajorAxis,                                   F32,            F32,            F32,            F32,                                            )
 
 // Warp operations
+OPCODE(GroupReduceUMin,                                     U32,            U32,                                                                            )
+OPCODE(GroupReduceOr,                                       U32,            U32,                                                                            )
 OPCODE(LaneId,                                              U32,                                                                                            )
 OPCODE(WarpId,                                              U32,                                                                                            )
 OPCODE(QuadBroadcast,                                       U32,            U32,            U32                                                             )
