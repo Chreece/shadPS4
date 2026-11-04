@@ -257,11 +257,16 @@ Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handl
         ctx.OpIEqual(ctx.U1[1], guest_type, ctx.ConstU32(u32(AmdGpu::ImageType::Color3D)));
     const Id is_cube =
         ctx.OpIEqual(ctx.U1[1], guest_type, ctx.ConstU32(u32(AmdGpu::ImageType::Cube)));
+    const Id is_1d = ctx.OpLogicalOr(
+        ctx.U1[1],
+        ctx.OpIEqual(ctx.U1[1], guest_type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1D))),
+        ctx.OpIEqual(ctx.U1[1], guest_type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1DArray))));
 
     const Id x = ctx.OpCompositeExtract(ctx.F32[1], coords, 0u);
     const Id y = ctx.OpCompositeExtract(ctx.F32[1], coords, 1u);
     const Id z = ctx.OpCompositeExtract(ctx.F32[1], coords, 2u);
     const Id coords2d = ctx.OpCompositeConstruct(ctx.F32[2], x, y);
+    const Id coords1d = ctx.OpCompositeConstruct(ctx.F32[2], x, ctx.ConstF32(0.5f));
     const Id coords3d = ctx.OpCompositeConstruct(ctx.F32[3], x, y, z);
 
     // Compute fragment-quad derivatives *before* divergent selection of the
@@ -275,6 +280,13 @@ Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handl
     const Id grad2_dy = ctx.OpFMul(ctx.F32[2], ctx.OpDPdy(ctx.F32[2], coords2d), scale2);
     const Id grad3_dx = ctx.OpFMul(ctx.F32[3], ctx.OpDPdx(ctx.F32[3], coords3d), scale3);
     const Id grad3_dy = ctx.OpFMul(ctx.F32[3], ctx.OpDPdy(ctx.F32[3], coords3d), scale3);
+    const Id grad1_dx = ctx.OpCompositeConstruct(
+        ctx.F32[2], ctx.OpCompositeExtract(ctx.F32[1], grad2_dx, 0u), ctx.f32_zero_value);
+    const Id grad1_dy = ctx.OpCompositeConstruct(
+        ctx.F32[2], ctx.OpCompositeExtract(ctx.F32[1], grad2_dy, 0u), ctx.f32_zero_value);
+    const Id ordinary_coords = ctx.OpSelect(ctx.F32[2], is_1d, coords1d, coords2d);
+    const Id ordinary_dx = ctx.OpSelect(ctx.F32[2], is_1d, grad1_dx, grad2_dx);
+    const Id ordinary_dy = ctx.OpSelect(ctx.F32[2], is_1d, grad1_dy, grad2_dy);
 
     const Id volume = ctx.OpLabel();
     const Id other = ctx.OpLabel();
@@ -303,8 +315,8 @@ Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handl
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(ordinary);
-    const Id sample2d = emit_sample(texture.id, texture.image_type, coords2d, bounded,
-                                    AmdGpu::ImageType::Color2D, grad2_dx, grad2_dy);
+    const Id sample2d = emit_sample(texture.id, texture.image_type, ordinary_coords, bounded,
+                                    AmdGpu::ImageType::Color2D, ordinary_dx, ordinary_dy);
     ctx.OpBranch(other_end);
 
     ctx.AddLabel(other_end);
