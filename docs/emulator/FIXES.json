@@ -517,14 +517,14 @@
     {
       "id": "automatic-gpu-cpu-coherence",
       "subsystem": "gpu-coherence",
-      "status": "BUILD_AND_CPU_PASS_NATIVE_PENDING",
+      "status": "NATIVE_GOT_GPU_LOSS_GOW_SKIPPED",
       "related_prs": [
         130
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No native run of automatic candidate. Prior PR129 remains black in GoT and GPU context loss in GoW.",
+      "observed_game_effects": "PR130 build/CPU/startup PASS; automatic buffer/image publication confirmed with unchanged legacy settings. GoT loading then black; GPU context loss41.032s, child exit confirmed. GoW skipped.",
       "negative_result_or_prohibition": "No per-game readback mode, shader/title/vendor exceptions, or recovery inference from build/host tests. Legacy readback settings cannot gate core correctness.",
-      "next_test": "Build exact final checkpoint SHA, GoT then GoW with diagnostics/DS capture, <=120s each and no input or readback-option changes. Require actual automatic marker and publication evidence; stop after GPU failure or unconfirmed child exit. Preserve >=8GiB VRAM and existing-session checks. No main promotion without native recovery."
+      "next_test": "Investigate automatic publication ordering, alias overlap and unnecessary image synchronization from the captured evidence. No main promotion or claim of compatibility with other games."
     }
   ]
 }
