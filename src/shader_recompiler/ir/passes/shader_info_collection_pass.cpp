@@ -154,8 +154,10 @@ void Visit(Info& info, const IR::Inst& inst) {
         info.uses_group_ballot = true;
         info.uses_group_shuffle = true;
         break;
-    case IR::Opcode::ReadLane:
     case IR::Opcode::ReadFirstLane:
+        info.uses_group_shuffle |= !inst.Arg(1).IsImmediate() || !inst.Arg(1).U1();
+        [[fallthrough]];
+    case IR::Opcode::ReadLane:
     case IR::Opcode::WriteLane:
         info.uses_group_ballot = true;
         break;
