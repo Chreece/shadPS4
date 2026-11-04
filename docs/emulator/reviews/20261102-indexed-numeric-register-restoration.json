@@ -1,0 +1,365 @@
+{
+  "schema_version": 2,
+  "record_id": "indexed-numeric-images-register-restoration-20261102",
+  "timestamp_utc": "2026-11-02T19:50:55.610026+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 123,
+  "base_source_commit": "df253cdc175dcf90f634ef4d90f47d1c386ee089",
+  "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+  "published_production_commit": "cbd7c717dcdf64b67874e6bd319adc694607490e",
+  "local_production_commit": "239331f6d7737a07e48473f0bb6bc5a65a1b351a",
+  "verified_production_tree": "a86563c650180ab895bef056571108d70b75c943",
+  "commit_identity_note": "API and local commit identities differ; all twelve source blob SHAs and the full Git tree match. Local binary was rebuilt after the local production commit. Native runner builds the immutable published candidate in isolation.",
+  "uploaded_archive": {
+    "name": "universal-two-games-20261102T191207Z-3541345.tar.gz",
+    "sha256": "d79808b44f0560b891a1d1a9fc9b4582e1eda0d71e117063d7ee71c08ce3c7bb"
+  },
+  "native_results": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261102T191207Z-3541746-review",
+      "timestamp_utc": "2026-11-02T19:50:55.610026+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 122,
+      "archive": "universal-two-games-20261102T191207Z-3541345.tar.gz",
+      "archive_sha256": "d79808b44f0560b891a1d1a9fc9b4582e1eda0d71e117063d7ee71c08ce3c7bb",
+      "source_commit": "df253cdc175dcf90f634ef4d90f47d1c386ee089",
+      "binary_sha256": "6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "followup_pull_request": 123,
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+      "game_launched": false
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261102T192628Z-3654470-review",
+      "timestamp_utc": "2026-11-02T19:50:55.610026+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 122,
+      "archive": "universal-two-games-20261102T191207Z-3541345.tar.gz",
+      "archive_sha256": "d79808b44f0560b891a1d1a9fc9b4582e1eda0d71e117063d7ee71c08ce3c7bb",
+      "source_commit": "df253cdc175dcf90f634ef4d90f47d1c386ee089",
+      "binary_sha256": "6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "followup_pull_request": 123,
+      "game": "CUSA34384",
+      "native_observation": {
+        "binary_sha256": "6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 3655076,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "elapsed_seconds": 17.876,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 5162,
+        "warning_lines": 235,
+        "error_lines": 18,
+        "selected_diagnostic_lines": 190,
+        "full_console_bytes": 776182,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 8,
+        "srt_source_blocks": {
+          "4203462:4203462": 1,
+          "4203463:4203463": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201288:4201288": 1,
+          "4201300:4201300": 1
+        },
+        "memory_histograms_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "menu_or_gameplay_recovered": false,
+      "ds_first_pass_captured": false,
+      "result": "OVERLAP_PATH_PASSED_NEXT_INDEXED_INTEGER_GUARD_CRASH",
+      "fatal": "Indexed integer image requires a matching numeric SPIR-V array: shader=0x7f710602 entry=12 format=4",
+      "overlap_observation": {
+        "address": "0x10330b8500",
+        "old_layers": 1,
+        "new_layers": 2,
+        "slice_bytes": 256,
+        "source_gpu_modified": false
+      },
+      "interpretation": "Previous overlap guard passed. No screenshots, videos or gameplay observed. Numeric format 4 is the remapped Uint class; the raw T# format/conversion was not captured and is not guessed."
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261102T192647Z-3657030-review",
+      "timestamp_utc": "2026-11-02T19:50:55.610026+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 122,
+      "archive": "universal-two-games-20261102T191207Z-3541345.tar.gz",
+      "archive_sha256": "d79808b44f0560b891a1d1a9fc9b4582e1eda0d71e117063d7ee71c08ce3c7bb",
+      "source_commit": "df253cdc175dcf90f634ef4d90f47d1c386ee089",
+      "binary_sha256": "6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "followup_pull_request": 123,
+      "game": "CUSA11456",
+      "native_observation": {
+        "binary_sha256": "6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 3657051,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 119.517,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 3439,
+        "warning_lines": 367,
+        "error_lines": 1050,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 448319,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 3,
+        "srt_source_blocks": {
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "menu_or_gameplay_recovered": false,
+      "ds_first_pass_captured": false,
+      "result": "BOUNDED_RUN_COMPLETED_VISUAL_FAILURE_BLACK_SCREEN",
+      "visual_review": [
+        {
+          "file": "frame-080s.png",
+          "sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073",
+          "review": "BLACK; no menu/world; 110-second frame has 29-FPS overlay"
+        },
+        {
+          "file": "frame-110s.png",
+          "sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073",
+          "review": "BLACK; no menu/world; 110-second frame has 29-FPS overlay"
+        }
+      ],
+      "indexed_table_observation": {
+        "accepted_strided_discovery_reports": 7,
+        "host_vsharp_base": "0x1500000000",
+        "stride": 8,
+        "num_records": 0,
+        "guest_bytes": 0,
+        "typed_image_bind_reports": 0
+      },
+      "interpretation": "Duration completion is not visual recovery. No binding evidence proves BC5/11 was exercised in this run. The zero-record V# obeys scalar-load bounds; do not manufacture a table length. The restored register router is a separate reproduced defect, not the established cause of this black screen."
+    }
+  ],
+  "changes": [
+    {
+      "subsystem": "indexed sampled images",
+      "behavior": "Three numeric classes for each supported dimension, with complete original guest indices and null sentinel. Numeric metadata uses the same GPU-coherent descriptor table as bound images. Integer sample results retain bits; scaled/normalized/biased conversions preserve constant/default channels. Shared emitter handles implicit and explicit-gradient indexed modes. Fragment derivatives are evaluated before divergent numeric/dimension dispatch.",
+      "contracts": "Update SPIR-V declarations, shader binding offsets, both pipeline layouts, descriptor pointer reservations, device resource budgets, actual writes and cache versions together. Binary cache 21; metadata 12. No title/shader/vendor switches."
+    },
+    {
+      "subsystem": "SET_SH_REG",
+      "behavior": "Restore whole-packet validation and per-range routing for graphics and async compute. Prevent inclusive one-past queue-local writes, cross-end overruns and cross-start shared-state misrouting.",
+      "recovered_source": "got-shader-parity-20261102T164131085649Z/current/src/video_core/amdgpu/pm4_register_write.h",
+      "causality": "Old-code counterexamples reproduced locally; no native evidence yet ties this defect to GoT."
+    }
+  ],
+  "validation": {
+    "gcc14_full_build_link": "PASS",
+    "local_binary_sha256": "5347dac913f384dfd0916c96c840e01fa841cbf3506cf2a0be8f4f553c5233ef",
+    "startup_scenarios": 3,
+    "existing_ctest_suites": 9,
+    "existing_ctest_cases": 31,
+    "existing_source_contract_cases": 7,
+    "srt_primitive_checks": 10418,
+    "sparse_descriptor_vma_hle_checks": "PASS",
+    "production_spirv_modules_vulkan13": 6,
+    "typed_numeric_dimension_variants": 9,
+    "spirv_details": [
+      {
+        "file": "nov2e-shader-0.spv",
+        "sha256": "a0a680927903fcc3cf21cc8ee99dd9a60a9040bed38527a03a9c284ff1113370",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%f32_id 3D 0 0 0 1 Unknown",
+          "%f32_id 2D 0 1 0 1 Unknown"
+        ],
+        "sample_variants": 3,
+        "baseline": true
+      },
+      {
+        "file": "nov2e-shader-1.spv",
+        "sha256": "beef554166cc2c2b9bed757b7bb26dc308c79f6f0d8524c259b705725eba6300",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%f32_id 3D 0 0 0 1 Unknown",
+          "%f32_id 2D 0 1 0 1 Unknown"
+        ],
+        "sample_variants": 3,
+        "baseline": true
+      },
+      {
+        "file": "nov2e-shader-2.spv",
+        "sha256": "e0969fe9cf8e784c8fd76b69f052cb22cbbb4101a72c39e096b016a9b3cbf26f",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown"
+        ],
+        "sample_variants": 1,
+        "baseline": true
+      },
+      {
+        "file": "nov2e-shader-3.spv",
+        "sha256": "de728d428ef8e019c553e677dd15430cd61eb000321c882904057fd53ba5ac4d",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown"
+        ],
+        "sample_variants": 1,
+        "baseline": true
+      },
+      {
+        "file": "nov2f-shader-0.spv",
+        "sha256": "a8f4e80993550d9780849eb9111a157111cea434cf31b195dbd3afb15f565181",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%f32_id 3D 0 0 0 1 Unknown",
+          "%f32_id 2D 0 1 0 1 Unknown",
+          "%i32_id 2D 0 0 0 1 Unknown",
+          "%i32_id 3D 0 0 0 1 Unknown",
+          "%i32_id 2D 0 1 0 1 Unknown",
+          "%u32_id 2D 0 0 0 1 Unknown",
+          "%u32_id 3D 0 0 0 1 Unknown",
+          "%u32_id 2D 0 1 0 1 Unknown"
+        ],
+        "sample_variants": 9,
+        "baseline": false
+      },
+      {
+        "file": "nov2f-shader-1.spv",
+        "sha256": "8f7227014857e2abb3bcd2f014e54d42c0b31e105b2a845b93ccda887b4177a0",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%f32_id 3D 0 0 0 1 Unknown",
+          "%f32_id 2D 0 1 0 1 Unknown",
+          "%i32_id 2D 0 0 0 1 Unknown",
+          "%i32_id 3D 0 0 0 1 Unknown",
+          "%i32_id 2D 0 1 0 1 Unknown",
+          "%u32_id 2D 0 0 0 1 Unknown",
+          "%u32_id 3D 0 0 0 1 Unknown",
+          "%u32_id 2D 0 1 0 1 Unknown"
+        ],
+        "sample_variants": 9,
+        "baseline": false
+      },
+      {
+        "file": "nov2f-shader-2.spv",
+        "sha256": "b7c1adfd3a308dfe071cefa52f0c1ccbb34a90a6bf2af16a5d8ceb1383b860ac",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%i32_id 2D 0 0 0 1 Unknown",
+          "%u32_id 2D 0 0 0 1 Unknown"
+        ],
+        "sample_variants": 3,
+        "baseline": false
+      },
+      {
+        "file": "nov2f-shader-3.spv",
+        "sha256": "c3c1b0e95094aadde253ddbe6930fd534e8670c6637f0c7c4ab59cf7c4df9719",
+        "image_types": [
+          "%f32_id 2D 0 0 0 1 Unknown",
+          "%i32_id 2D 0 0 0 1 Unknown",
+          "%u32_id 2D 0 0 0 1 Unknown"
+        ],
+        "sample_variants": 3,
+        "baseline": false
+      }
+    ],
+    "production_metadata_checks": 18152,
+    "production_pm4_router_checks": 12802,
+    "old_pm4_counterexamples": 512,
+    "gpu_game_execution_here": "NOT_AVAILABLE",
+    "new_repository_tests": false
+  },
+  "attempts": [
+    {
+      "stage": "production_build",
+      "result": "PASS before formatting and after formatting; final post-commit link and actual CLI startup PASS."
+    },
+    {
+      "stage": "temporary_metadata_fixture_compile",
+      "result": "FAIL: fixture used nonexistent Image.dst_sel; corrected fixture to four actual dst_sel bitfields."
+    },
+    {
+      "stage": "temporary_metadata_oracle",
+      "result": "FAIL: oracle omitted the retained single-channel Alpha-to-Red remap; corrected independent expected component mask, then all 18152 checks PASS. No production change was needed."
+    },
+    {
+      "stage": "SPIRV inspection fixture",
+      "result": "FAIL: parser expected generic float/int/uint names instead of production f32_id/i32_id/u32_id names; corrected name lookup, then typed arrays and derivative ordering PASS."
+    },
+    {
+      "stage": "OpenOrbis probe review",
+      "result": "Changed probe identity mapping to explicit alpha one so numeric conversion comparisons do not depend on the separate single-channel Alpha-to-Red rule; C11 and assembly PASS."
+    }
+  ],
+  "hardware_probe": {
+    "library_file_id": "libfile_eb34fd1e2d188191af704b26fa23822a",
+    "url": "https://chatgpt.com/library?file_id=libfile_eb34fd1e2d188191af704b26fa23822a&account_id=personal",
+    "file": "indexed-numeric-openorbis.zip",
+    "sha256": "8958f31aa5df36d237a2d5bf674449dfa97f9d41778760f8ead0f54da00c647c",
+    "local_assembly": "PASS_BONAIRE",
+    "local_c11_syntax": "PASS_WALL_WEXTRA_WERROR",
+    "sdk_link": "NOT_RUN",
+    "ps4_execution": "NOT_RUN",
+    "dispatches": 44,
+    "coverage": "11 numeric format entries; material-index descriptor load; constant/swizzled channels; one 8-word versus two 4-word compute-user-register writes; two-second bounded fence per dispatch; own memory only",
+    "limits": "Explicit LOD/nearest 2D probe; no divergent fragment gradients, cube/3D, integer linear filtering, reserved-register endpoint writes, async-queue isolation or ordered continuation."
+  },
+  "limitations": [
+    "No post-change native game result; menu/world/video recovery remains unproven.",
+    "Integer filtering/border behavior and numeric precision still require real hardware comparison. Native frame rate/performance of expanded typed arrays is unmeasured.",
+    "Supported indexed image sample modes/dimensions are unchanged; no missing descriptor range or scalar bound is invented.",
+    "The register routing correction is not claimed as GoT root cause.",
+    "Dedicated ordered-counter seed and guest reentry remain unimplemented; original DS capture and PRs are retained.",
+    "No non-Linux build or native GPU was available here."
+  ],
+  "decision": "DRAFT_PR_ONLY_PENDING_BOUNDED_NATIVE_GAME_VERIFICATION",
+  "main_changed": false,
+  "historical_binaries_changed": false,
+  "next_test": {
+    "runner": "scripts/shadps4-universal-two-game-check.sh",
+    "runner_sha256": "5e32ba4f1ed4cf8c4105fef7dfca603d3e7f84f8e1f9e026371941f9aa7838ba",
+    "mode": "build",
+    "max_seconds_per_game": 120,
+    "automatic_input": false,
+    "capture_once_env": true,
+    "acceptance": "GoW passes integer table binding and records genuine next failure/ordered capture. GoT must display its previous menu/world before recovery is claimed; completing the bounded run on black remains a failure."
+  }
+}

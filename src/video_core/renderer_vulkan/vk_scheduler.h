@@ -13,6 +13,7 @@
 #include "common/unique_function.h"
 #include "video_core/amdgpu/regs_color.h"
 #include "video_core/amdgpu/regs_primitive.h"
+#include "video_core/gpu_work_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 #include "vulkan/vulkan.hpp"
@@ -411,6 +412,11 @@ public:
     }
 
     /// Returns the current command buffer tick.
+    template <typename... Args>
+    void RecordWork(const char* format, Args... args) const {
+        VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, CurrentTick(), format, args...);
+    }
+
     [[nodiscard]] u64 CurrentTick() const noexcept {
         return work_semaphore.CurrentTick();
     }

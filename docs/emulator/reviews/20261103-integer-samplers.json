@@ -1,0 +1,955 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-03T06:56:04.386991+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "main_changed": false,
+  "record_id": "integer-sampler-review-20261103",
+  "pull_request": 127,
+  "archive": {
+    "file": "universal-two-games-20261103T061706Z-3865503.tar.gz",
+    "bytes": 5784183,
+    "sha256": "8dcacf265f38d034289a44abd71f3f8ed7f22566341406785054860504e86909"
+  },
+  "native_records": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261103T061706Z-3865514",
+      "timestamp_utc": "2026-11-03T06:30:54.904981+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "COMPLETE_BUILD_ONLY",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "exit_code": 0,
+      "requested_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "source_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "upstream_commit": "8729018155e54f305b6bc7576f850e756ffdd13c",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261103T061706Z-3865514.tar.gz",
+      "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+      "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-bb85a9324e8d/build/shadps4",
+      "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68"
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261103T063055Z-3973421",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-03T06:30:55.110741+00:00",
+      "source_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68",
+      "game_launched": true,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261103T063055Z-3973421.tar.gz",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "runner_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "runner_sha256": "1414e1fae9a941c0560316fcf2ec9fdedaa56503f357a392b20fd995a4c25ede",
+      "vulkan_diagnostics_requested": true,
+      "context_games": [
+        "CUSA11456"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261103T061706Z-3865514/result.json",
+      "upstream_main_checked": "8729018155e54f305b6bc7576f850e756ffdd13c",
+      "observer_sha256": "cfdb4de4cf4a74f18f26bc4a84410fb8eb1c7ba2751c39ec0e013875b4525545",
+      "recovered_captures": [],
+      "display": ":0",
+      "display_preflight": {
+        "exit_code": 0,
+        "timed_out": false
+      },
+      "vulkan_layers": [
+        {
+          "name": "VK_LAYER_VALVE_steam_fossilize_32",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_fossilize_64",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_overlay_64",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_overlay_32",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_MESA_device_select",
+          "spec_version": 4210991,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_MESA_overlay",
+          "spec_version": 4210991,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_INTEL_nullhw",
+          "spec_version": 4198473,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_KHRONOS_validation",
+          "spec_version": 4210997,
+          "implementation_version": 1
+        }
+      ],
+      "profile_source": "/home/chreece/.local/share/shadPS4",
+      "profile_files_copied": 205,
+      "profile_config_sha256": "91af9eb882f9e4038ed3326da14a8a2d06c5b663017cee29678184453b211cbc",
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "vram_free_before": 5449068544,
+      "ollama_unloaded": [
+        "qwen3.8-greek:latest"
+      ],
+      "ollama_attempts": [
+        {
+          "transport": "direct-local-http",
+          "error": "[Errno 104] Connection reset by peer"
+        },
+        {
+          "transport": "ollama-0d489daca772-before",
+          "exit_code": 127
+        },
+        {
+          "transport": "docker:8f919e1ace79",
+          "listed_models": [
+            "qwen3.8-greek:latest"
+          ],
+          "post_unload_query_succeeded": true
+        }
+      ],
+      "vram_free_at_launch": 25633161216,
+      "native": {
+        "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": false,
+        "exit_code": null,
+        "owned_child_pid": 3974557,
+        "first_validation_failure": "[Render.Vulkan] <Error> (shadPS4:GpuComm) vk_platform.cpp:55 DebugUtilsCallback: VUID-vkCmdDraw-magFilter-04553: vkCmdDraw(): the sampled image descriptor [VkDescriptorSet 0x0, Set 0, Binding 4, Index 0, variable \"fs_img2\"] has VkSampler 0x8c000000008c0 which is set to use VK_FILTER_LINEAR with compareEnable is set to VK_FALSE, but image view's (VkImageView 0x96a000000096a[ImageView 513x513x1 0x200fb8e200:0x45100 0:0 0:0 (Color)]) format (VK_FORMAT_R8_UINT) does not contain VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT in its format features.\n",
+        "exit_reason": "VULKAN_VALIDATION_FAILED",
+        "termination_error": "TimeoutExpired: Command '['/home/chreece/projects/shadps4/tests/universal-upstream-bb85a9324e8d/build/shadps4', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin', '--fullscreen', 'true', '--show-fps']' timed out after 3 seconds",
+        "elapsed_seconds": 35.717,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 6005,
+        "warning_lines": 421,
+        "error_lines": 1235,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 822813,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 6,
+        "srt_source_blocks": {
+          "5508355:5508355": 1,
+          "5508356:5508356": 1,
+          "5508358:5508358": 1,
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {
+          "VUID-vkCmdDraw-magFilter-04553": 2
+        },
+        "validation_log_bytes": 9659,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "stop_remaining_tests": true,
+      "ordered_gds_capture_requested": true,
+      "ordered_gds_evidence": [],
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [],
+        "validation_named_hashes": [],
+        "validation_compilation_hashes": [],
+        "recent_compiled_hashes": [
+          "000000009911cadd",
+          "00000000361a48f5",
+          "00000000e1fb67ac",
+          "00000000745c455a",
+          "00000000e64d44b6",
+          "0000000059302a6e",
+          "000000003bb29d09",
+          "000000008e743c8e"
+        ],
+        "priority_hashes": [
+          "000000009911cadd",
+          "00000000361a48f5",
+          "00000000e1fb67ac",
+          "00000000745c455a",
+          "00000000e64d44b6",
+          "0000000059302a6e",
+          "000000003bb29d09",
+          "000000008e743c8e"
+        ],
+        "saved_ir": [
+          "vs_0x000000009911cadd.irprogram.txt",
+          "fs_0x00000000361a48f5.irprogram.txt",
+          "cs_0x00000000e1fb67ac.irprogram.txt",
+          "cs_0x00000000745c455a.irprogram.txt",
+          "cs_0x00000000e64d44b6.irprogram.txt",
+          "cs_0x0000000059302a6e.irprogram.txt",
+          "vs_0x000000003bb29d09.irprogram.txt",
+          "fs_0x000000008e743c8e.irprogram.txt",
+          "vs_0x000000009911cadd.pre-lower-phi.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000745c455a.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000e64d44b6.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000059302a6e.pre-lower-phi.irprogram.txt",
+          "vs_0x000000003bb29d09.pre-lower-phi.irprogram.txt",
+          "fs_0x000000008e743c8e.pre-lower-phi.irprogram.txt",
+          "vs_0x000000009911cadd.pre-res-discover.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-res-discover.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-res-discover.irprogram.txt",
+          "cs_0x00000000745c455a.pre-res-discover.irprogram.txt",
+          "cs_0x00000000e64d44b6.pre-res-discover.irprogram.txt",
+          "cs_0x0000000059302a6e.pre-res-discover.irprogram.txt",
+          "vs_0x000000003bb29d09.pre-res-discover.irprogram.txt",
+          "fs_0x000000008e743c8e.pre-res-discover.irprogram.txt",
+          "vs_0x000000009911cadd.pre-res-patch.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-res-patch.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-res-patch.irprogram.txt",
+          "cs_0x00000000745c455a.pre-res-patch.irprogram.txt",
+          "cs_0x00000000e64d44b6.pre-res-patch.irprogram.txt",
+          "cs_0x0000000059302a6e.pre-res-patch.irprogram.txt",
+          "vs_0x000000003bb29d09.pre-res-patch.irprogram.txt",
+          "fs_0x000000008e743c8e.pre-res-patch.irprogram.txt"
+        ],
+        "saved_bytes": 6249459,
+        "limit_bytes": 20971520,
+        "limit_files": 48,
+        "saved_binary": [
+          {
+            "file": "vs_0x000000009911cadd.fetch.bin",
+            "bytes": 24,
+            "sha256": "a7c349893686a3f3e5a4290ff450a3d183df9f3868dee25e6ad33f725f33a31d"
+          },
+          {
+            "file": "vs_0x000000009911cadd_0.bin",
+            "bytes": 60,
+            "sha256": "3b16b8c2e9e67a203c2824fe8d861bba8d0d6257d5a82d00e8154078ba4add32"
+          },
+          {
+            "file": "vs_0x000000009911cadd_0.spv",
+            "bytes": 3240,
+            "sha256": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6"
+          },
+          {
+            "file": "fs_0x00000000361a48f5_0.bin",
+            "bytes": 936,
+            "sha256": "f96372ebea181f5835de279390c6b8b90b2e1fbaca925554096e088d5753084b"
+          },
+          {
+            "file": "fs_0x00000000361a48f5_0.spv",
+            "bytes": 10440,
+            "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23"
+          },
+          {
+            "file": "cs_0x00000000e1fb67ac_0.bin",
+            "bytes": 196,
+            "sha256": "3171375f99d882ab310e7995d2b462489d7f5a5ea07efba389e1cc5849b11a00"
+          },
+          {
+            "file": "cs_0x00000000e1fb67ac_0.spv",
+            "bytes": 4996,
+            "sha256": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee"
+          },
+          {
+            "file": "cs_0x00000000745c455a_0.bin",
+            "bytes": 12464,
+            "sha256": "9e99e8f767f3f43a18e921b01d7222b3b1d2f30c94c6c4b735f3709b9fe63e0b"
+          },
+          {
+            "file": "cs_0x00000000745c455a_0.spv",
+            "bytes": 134996,
+            "sha256": "e437c660074d01f50c158fcbda9b4db7a5b0e6013ea4a58e30f6353b9f91ebc8"
+          },
+          {
+            "file": "cs_0x00000000e64d44b6_0.bin",
+            "bytes": 2356,
+            "sha256": "71037e7e572bbb9f5127caaf14b892b4504e79fe296e56fc823186ed4e232880"
+          },
+          {
+            "file": "cs_0x00000000e64d44b6_0.spv",
+            "bytes": 26956,
+            "sha256": "52bb40e7c063386af82c59914a0f838f503b4388bb564fa1df6509c3d36438e5"
+          },
+          {
+            "file": "cs_0x0000000059302a6e_0.bin",
+            "bytes": 2844,
+            "sha256": "4e3e425567f23c580bca80526a949586b5af870d1b12ae9e3a9c46b506c3ecf5"
+          },
+          {
+            "file": "cs_0x0000000059302a6e_0.spv",
+            "bytes": 26492,
+            "sha256": "bcbdad079aa59b0203a023853c50e892f0090dbfbddc7e28339e3fba61061fa3"
+          },
+          {
+            "file": "vs_0x000000003bb29d09.fetch.bin",
+            "bytes": 24,
+            "sha256": "2e215c0fa7be7d9fc8aacb5aff487ad790b9ece454f4b3d87ad50c830efe5846"
+          },
+          {
+            "file": "vs_0x000000003bb29d09_0.bin",
+            "bytes": 188,
+            "sha256": "d54daf0776b9805e0c0f811769ffdd73a74c7cfbd473fc70b989847998c4365c"
+          },
+          {
+            "file": "vs_0x000000003bb29d09_0.spv",
+            "bytes": 6348,
+            "sha256": "c043627bc0cc8663a89bfda9ba9f83c451a7338ad72109cd9149e544603d6173"
+          },
+          {
+            "file": "fs_0x000000008e743c8e_0.bin",
+            "bytes": 6424,
+            "sha256": "9bc24960899a5ed4596a4bb872dc73df6f9ba2eba69dbd8df72cdc44e70f01a0"
+          },
+          {
+            "file": "fs_0x000000008e743c8e_0.spv",
+            "bytes": 121600,
+            "sha256": "bc2b45d7c959c3031ac53a518bdf31fc7102c7f942efdd2fb613dc092ef2968d"
+          }
+        ],
+        "saved_binary_bytes": 360584,
+        "binary_limit_bytes": 8388608,
+        "binary_limit_files": 32,
+        "capture_completed_marker": false,
+        "console_tail_complete": true
+      },
+      "exit_code": 1
+    }
+  ],
+  "native_reviews": [
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-03T06:56:04.386991+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "main_changed": false,
+      "record_id": "universal-upstream-20261103T061706Z-3865514-review",
+      "source_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "pull_request": 126,
+      "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68",
+      "archive": {
+        "file": "universal-two-games-20261103T061706Z-3865503.tar.gz",
+        "bytes": 5784183,
+        "sha256": "8dcacf265f38d034289a44abd71f3f8ed7f22566341406785054860504e86909"
+      },
+      "game_launched": false,
+      "graphics_verified": false,
+      "tested_games": [],
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "decision": "BUILD_ONLY_PASS_DOES_NOT_PROVE_GRAPHICS"
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-03T06:56:04.386991+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "main_changed": false,
+      "record_id": "universal-graphics-20261103T063055Z-3973421-review",
+      "source_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "pull_request": 126,
+      "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68",
+      "archive": {
+        "file": "universal-two-games-20261103T061706Z-3865503.tar.gz",
+        "bytes": 5784183,
+        "sha256": "8dcacf265f38d034289a44abd71f3f8ed7f22566341406785054860504e86909"
+      },
+      "game_launched": true,
+      "graphics_verified": false,
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "result": "OWNED_PROCESS_STOP_UNCONFIRMED_AFTER_INTEGER_SAMPLER_VALIDATION",
+      "native": {
+        "binary_sha256": "28f887cd2988fd406e11275248689f59c12d5f001c74940b6887b8bd1acbbf68",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": false,
+        "exit_code": null,
+        "owned_child_pid": 3974557,
+        "first_validation_failure": "[Render.Vulkan] <Error> (shadPS4:GpuComm) vk_platform.cpp:55 DebugUtilsCallback: VUID-vkCmdDraw-magFilter-04553: vkCmdDraw(): the sampled image descriptor [VkDescriptorSet 0x0, Set 0, Binding 4, Index 0, variable \"fs_img2\"] has VkSampler 0x8c000000008c0 which is set to use VK_FILTER_LINEAR with compareEnable is set to VK_FALSE, but image view's (VkImageView 0x96a000000096a[ImageView 513x513x1 0x200fb8e200:0x45100 0:0 0:0 (Color)]) format (VK_FORMAT_R8_UINT) does not contain VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT in its format features.\n",
+        "exit_reason": "VULKAN_VALIDATION_FAILED",
+        "termination_error": "TimeoutExpired: Command '['/home/chreece/projects/shadps4/tests/universal-upstream-bb85a9324e8d/build/shadps4', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin', '--fullscreen', 'true', '--show-fps']' timed out after 3 seconds",
+        "elapsed_seconds": 35.717,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 6005,
+        "warning_lines": 421,
+        "error_lines": 1235,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 822813,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 6,
+        "srt_source_blocks": {
+          "5508355:5508355": 1,
+          "5508356:5508356": 1,
+          "5508358:5508358": 1,
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {
+          "VUID-vkCmdDraw-magFilter-04553": 2
+        },
+        "validation_log_bytes": 9659,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "prior_atomic_shader_failure_seen": false,
+      "visual_review": "Both captured frames show Loading game / Waiting for game video; no menu or in-game rendering.",
+      "decision": "RETAIN_PARTIAL_ATOMIC_GATE_PROGRESS_NO_MAIN_PROMOTION"
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-03T06:56:04.386991+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "main_changed": false,
+      "record_id": "pr126-gow-skipped-20261103",
+      "pull_request": 126,
+      "source_commit": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "archive": {
+        "file": "universal-two-games-20261103T061706Z-3865503.tar.gz",
+        "bytes": 5784183,
+        "sha256": "8dcacf265f38d034289a44abd71f3f8ed7f22566341406785054860504e86909"
+      },
+      "result": "NOT_LAUNCHED_PREVIOUS_OWNED_STOP_UNCONFIRMED",
+      "context_games": [
+        "CUSA34384"
+      ],
+      "tested_games": [],
+      "game_launched": false,
+      "graphics_verified": false,
+      "details": "GoW did not launch in this batch. Last actual GoW remains PR125 GPU_CONTEXT_LOST at 27.663s."
+    }
+  ],
+  "candidate": {
+    "schema_version": 2,
+    "timestamp_utc": "2026-11-03T06:56:04.386991+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "main_changed": false,
+    "record_id": "integer-sampler-candidate-20261103",
+    "pull_request": 127,
+    "fix_id": "integer-texture-sampler-pairing",
+    "source_commit": "dff5196262fb9e3873083ab095c18c2bc1e95aea",
+    "source_tree": "6b30379ba92cbcb5c13fae0e503d2d348a24c59f",
+    "upstream_main_checked": "8729018155e54f305b6bc7576f850e756ffdd13c",
+    "result": "BUILD_COMPILER_SAMPLER_AND_OBSERVER_CHECKS_PASS_NATIVE_PENDING",
+    "tested_games": [],
+    "game_launched": false,
+    "graphics_verified": false,
+    "binary_sha256": "88d1aac93c16660c8a60b2aa5353661e6ee87d45ecc62bcbcdb40ee762e44c81",
+    "full_release_build": "PASS_GCC14",
+    "existing_cpu_suite": "PASS",
+    "actual_binary_cli_scenarios": 3,
+    "production_spirv_modules": 27,
+    "numeric_sampler_pairs": 168,
+    "sampler_constructor_cases": 3072,
+    "sampler_constructor_method": "Compile actual sampler.cpp with fake feature provider and inspect intercepted VkSamplerCreateInfo calls; GPU not run.",
+    "descriptor_limit_cases": 30000,
+    "observer_checks": 9,
+    "host_sampler_capacity": "32 host resources retain 16 guest S# uses in both numeric classes",
+    "decision": "RETAIN_DRAFT_PR127_NATIVE_RECOVERY_PENDING_NO_MAIN_PROMOTION",
+    "limits": [
+      "No new native candidate game run or menu/world/video recovery.",
+      "GoW last actual run still GPU_CONTEXT_LOST; this upload skipped GoW.",
+      "GCN mip selection and border semantics require hardware comparison.",
+      "Scaled/converted formats mapped to integer host images still lack correct linear interpolation; generic nearest integer binding is not proof of those paths.",
+      "OS-uninterruptible tasks cannot be guaranteed killed by a userspace deadline; no further game launch is allowed while the prior stop is unconfirmed.",
+      "Dedicated ordered DS seed and shader re-entry remain incomplete."
+    ],
+    "hardware_probe": {
+      "file": "integer-sampler-openorbis.zip",
+      "sha256": "e43f1d7b09e4f0d4c7c1896ab55f83d61b3001fd7ac3f431ccc3166d3a6f9774",
+      "library_file_id": "libfile_e58d956be4d481918f4dcfbabd23dee5",
+      "assembly": "PASS_LLVM18_BONAIRE",
+      "host_C11": "PASS_GCC14_WALL_WEXTRA_WERROR",
+      "SDK_link": "NOT_RUN",
+      "PS4_execution": "NOT_RUN",
+      "dispatches": 144,
+      "scope": "Shared S# across R8_UNORM/UINT/SINT; all 16 XY min/mag combinations and 3 mip modes, eight fractional x positions, bounded fence; float control observational."
+    },
+    "runner_sha256": {
+      "shadps4-universal-two-game-check.sh": "da332dba1320f541de54c18432fedf97f927b6b6761da287a810e0719d64c4ab",
+      "run_universal_verified_graphics.py": "752f700f4afb398d769db88944fbf58902d66389dc01881c87396f0b1235dfb2",
+      "shadps4_native_120_observer_20261026.py": "a5b976d9e00a46fff0d9100ae51db464a348cdcbb46d779b66b37b19cc23d855"
+    }
+  },
+  "failed_attempts": [
+    {
+      "attempt": "candidate full build 1",
+      "result": "FAILED_COMPILE",
+      "details": "HashCombine accepts two arguments; initial sampler cache-key edit supplied three. Changed to nested HashCombine; subsequent full build/link PASS."
+    },
+    {
+      "attempt": "observer proc snapshot harness 1",
+      "result": "FAILED_ENVIRONMENT_ASSUMPTION",
+      "details": "Current process PID is not exposed under this executor /proc namespace, so the harness incorrectly expected a live thread list. Production collector already captured the read error. Added an injectable proc root and checked bounded 140-thread fixture plus missing-process case; nine shutdown/proc checks pass."
+    }
+  ],
+  "diagnosis": {
+    "first_native_validation": "VUID-vkCmdDraw-magFilter-04553",
+    "format": "VK_FORMAT_R8_UINT",
+    "binding": 4,
+    "shader_variable": "fs_img2",
+    "captured_shader": "fs_0x00000000361a48f5_0.spv",
+    "captured_opcode": "OpImageSampleExplicitLod with integer result and float sampler fs_samp1, LOD0",
+    "shader_sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23",
+    "prior_compile_gate": "cs shader79ab8f30 compiled without the previous shader-module sampled-type error; not a complete atomic-semantic or visual pass.",
+    "observer": "After TERM2s and KILL3s child wait expired; exit_code null and owned_child_terminated false. No captured GPU-loss message; do not infer absence of a driver hang."
+  },
+  "implementation": [
+    "SamplerResource distinguishes integer uses and links the indexed integer alias.",
+    "Ordinary shader resources split shared S# by numeric class; indexed branches select the matching alias, including genuine uniform S# without sampler-array support.",
+    "Sampler cache hashes numeric class separately; integer sampler disables interpolation/anisotropy and uses integer border enumerants with original custom bits.",
+    "Host sampler capacity32 and paired descriptor budgets prevent alias exhaustion; shader binary 23/meta 14 invalidate stale metadata.",
+    "Owned shutdown waits bounded to remaining 120s; explicit unconfirmed-stop result remains authoritative, with up to128 read-only thread snapshots."
+  ],
+  "production_modules": [
+    {
+      "file": "mode0-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode0-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode0-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode1-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode1-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode1-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode2-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode2-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode2-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode3-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode3-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode3-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode4-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode4-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode4-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode5-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode5-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode5-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode6-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode6-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode6-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode7-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode7-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode7-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode8-dim0.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode8-dim1.spv",
+      "exit": 0,
+      "detail": ""
+    },
+    {
+      "file": "mode8-dim2.spv",
+      "exit": 0,
+      "detail": ""
+    }
+  ],
+  "typed_sampler_pairs": {
+    "pairs": 168,
+    "modules": [
+      {
+        "module": "mode3-dim1.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode5-dim0.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode5-dim1.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode3-dim2.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode4-dim1.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode6-dim2.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode8-dim1.spvasm",
+        "sampled_pairs": 32,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode3-dim0.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode7-dim1.spvasm",
+        "sampled_pairs": 9,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode6-dim0.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode0-dim0.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode7-dim0.spvasm",
+        "sampled_pairs": 9,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode1-dim1.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode0-dim1.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode6-dim1.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode5-dim2.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode4-dim0.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode2-dim0.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode2-dim1.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode2-dim2.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode8-dim2.spvasm",
+        "sampled_pairs": 32,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode4-dim2.spvasm",
+        "sampled_pairs": 3,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode1-dim2.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode8-dim0.spvasm",
+        "sampled_pairs": 32,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode7-dim2.spvasm",
+        "sampled_pairs": 9,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode0-dim2.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      },
+      {
+        "module": "mode1-dim0.spvasm",
+        "sampled_pairs": 1,
+        "typed_sampler_match": true
+      }
+    ]
+  },
+  "observer_checks": [
+    {
+      "scenario": "normal_TERM",
+      "elapsed": 0.0012332820006122347,
+      "exit": -15,
+      "pass": true
+    },
+    {
+      "scenario": "ignores_TERM",
+      "elapsed": 1.5013738659999945,
+      "exit": -9,
+      "pass": true
+    },
+    {
+      "scenario": "uninterruptible_fixture",
+      "deadline_remaining": 0,
+      "waited": 0.0,
+      "pass": true
+    },
+    {
+      "scenario": "uninterruptible_fixture",
+      "deadline_remaining": 0.25,
+      "waited": 0.25,
+      "pass": true
+    },
+    {
+      "scenario": "uninterruptible_fixture",
+      "deadline_remaining": 0.75,
+      "waited": 0.75,
+      "pass": true
+    },
+    {
+      "scenario": "uninterruptible_fixture",
+      "deadline_remaining": 1.75,
+      "waited": 1.75,
+      "pass": true
+    },
+    {
+      "scenario": "uninterruptible_fixture",
+      "deadline_remaining": 120,
+      "waited": 2.0,
+      "pass": true
+    },
+    {
+      "scenario": "bounded_proc_fixture",
+      "pass": true
+    },
+    {
+      "scenario": "exited_or_unreadable_proc",
+      "pass": true
+    }
+  ],
+  "native_spirv_validation": [
+    {
+      "file": "cs_0x00000000e64d44b6_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "52bb40e7c063386af82c59914a0f838f503b4388bb564fa1df6509c3d36438e5"
+    },
+    {
+      "file": "cs_0x0000000059302a6e_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "bcbdad079aa59b0203a023853c50e892f0090dbfbddc7e28339e3fba61061fa3"
+    },
+    {
+      "file": "cs_0x00000000e1fb67ac_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee"
+    },
+    {
+      "file": "cs_0x00000000745c455a_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "e437c660074d01f50c158fcbda9b4db7a5b0e6013ea4a58e30f6353b9f91ebc8"
+    },
+    {
+      "file": "fs_0x00000000361a48f5_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23"
+    },
+    {
+      "file": "fs_0x000000008e743c8e_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "bc2b45d7c959c3031ac53a518bdf31fc7102c7f942efdd2fb613dc092ef2968d"
+    },
+    {
+      "file": "vs_0x000000003bb29d09_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "c043627bc0cc8663a89bfda9ba9f83c451a7338ad72109cd9149e544603d6173"
+    },
+    {
+      "file": "vs_0x000000009911cadd_0.spv",
+      "exit_code": 0,
+      "detail": "",
+      "sha256": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6"
+    }
+  ],
+  "primary_reference": {
+    "GCN_integer_filtering": "Pinned Mesa src/amd/llvm/ac_nir_to_llvm.c lower_gather4_integer comment documents hardware forcing nearest for integer textures; exact PS4 behavior remains to be measured by shared probe.",
+    "mesa_commit": "1c853169eff74d19a521094ac26964acb4652e93",
+    "URL": "https://gitlab.freedesktop.org/mesa/mesa/-/blob/1c853169eff74d19a521094ac26964acb4652e93/src/amd/llvm/ac_nir_to_llvm.c",
+    "vulkan_VUID": "https://docs.vulkan.org/spec/latest/chapters/drawing.html#VUID-vkCmdDraw-magFilter-04553"
+  },
+  "preservation": {
+    "parent": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+    "all_prior_ancestry_retained": true,
+    "journal_prior_rows": 413,
+    "journal_prior_bytes": 862969,
+    "journal_prior_sha256": "1a9f417b687f9a3c8403c31f7bb649bce62d1f6dd6919f9592340d044aca16d4",
+    "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "code_files": [
+      "scripts/shadps4-universal-two-game-check.sh",
+      "src/shader_recompiler/backend/spirv/emit_spirv_image.cpp",
+      "src/shader_recompiler/ir/passes/resource_patching_pass.cpp",
+      "src/shader_recompiler/resource.h",
+      "src/video_core/renderer_vulkan/vk_pipeline_cache.cpp",
+      "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp",
+      "src/video_core/renderer_vulkan/vk_rasterizer.cpp",
+      "src/video_core/texture_cache/sampler.cpp",
+      "src/video_core/texture_cache/sampler.h",
+      "src/video_core/texture_cache/texture_cache.cpp",
+      "src/video_core/texture_cache/texture_cache.h",
+      "tools/development/run_universal_verified_graphics.py",
+      "tools/development/shadps4_native_120_observer_20261026.py"
+    ]
+  },
+  "ollama": "Native run unloaded qwen3.8-greek:latest after free VRAM 5,449,068,544B; launch free 25,633,161,216B. Existing restoration remains unproven. Stop was unconfirmed; no automatic GPU-model reload or service restart is attempted by this PR.",
+  "next_test": "Build exact PR127 source; GoT first then GoW, validation and DS capture, <=120s each, no automatic input. Existing-game/display preflight must pass. Stop remaining tests after GPU failure or unconfirmed owned stop."
+}

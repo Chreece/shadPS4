@@ -1,0 +1,242 @@
+{
+  "schema_version": 2,
+  "record_id": "pr132-native-gpu-wait-pool-followup-20261103",
+  "reviewed_at": "2026-11-03T18:25:36.831089+00:00",
+  "source_commit": "e61db6125991597203095da53f61fb6daa3c4c22",
+  "source_tree": "973c36676f13da60b0af4caaf2b74a99ca550ede",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "pr": 133,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/133",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "result": "BUILD_AND_HOST_CHECKS_PASS_NATIVE_PENDING",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "native_evidence": {
+    "archive": "universal-two-games-20261103T175550Z-186170.tar.gz",
+    "archive_sha256": "e34bb15e97ae04ba334e198f74ba6239d4f218b02a1ed4c4c918288504da9e68",
+    "library_file_id": "libfile_4d5fc5734ff08191b68c9879ce4babf2",
+    "source_commit": "2812bc6f3e0c9f1d333d2062cab27907ff49d35c",
+    "binary_sha256": "fc0e0c1844761bbecd8bceb91157699d3e0ede72715e9f105a672b5a4a1cdd3a",
+    "build_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "tested_games": [
+      "CUSA34384"
+    ],
+    "gow": {
+      "elapsed_seconds": 120.0,
+      "exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+      "exit_code": null,
+      "owned_child_terminated": false,
+      "owned_child_pid": 313524,
+      "gpu_failure": null,
+      "console_lines": 5949,
+      "warning_lines": 463,
+      "error_lines": 191,
+      "full_console_bytes": 898629,
+      "validation_layer_active": true,
+      "first_validation_failure": null,
+      "gpu_memory_fault_reports": 0,
+      "srt_source_preparations": 28,
+      "visual": "Both screenshots at80s and110s show the emulator loading screen for God of War Ragnarok / Waiting for game video. The 60 FPS overlay is not game/video progress.",
+      "video": "NOT_OBSERVED",
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "audio": "NOT_AUDITED",
+      "stop_state": {
+        "leader_tid": 313524,
+        "leader_state": "Z",
+        "worker_tid": 314547,
+        "worker_name": "AsyncHTTPQueue",
+        "worker_state": "D",
+        "worker_wchan": "dma_fence_default_wait",
+        "threads": 2,
+        "sigkill_pending": true,
+        "limitation": "Post-stop thread state; it does not establish which guest command originally stalled or that Semaphore::Wait returned an error."
+      },
+      "screenshots": [
+        {
+          "file": "frame-080s.png",
+          "sha256": "25f9c55b4525a5b6b7aea3e45fbf8bd90435b071d8303f8e20907311db667fbc"
+        },
+        {
+          "file": "frame-110s.png",
+          "sha256": "40e6c82dc5ff83834d58b449d652155f8a74c45f8ec1b125a6f4bd46c64d2314"
+        }
+      ]
+    },
+    "got": "NOT_RUN_STOPPED_AFTER_UNCONFIRMED_GOW_EXIT",
+    "configured_readbacks_mode": 0,
+    "automatic_coherence_enabled": true,
+    "vram_free_before": 5165862912,
+    "vram_free_at_launch": 25597640704,
+    "ollama_unloaded": [
+      "qwen3.8-greek:latest"
+    ],
+    "ollama_attempts": [
+      {
+        "transport": "direct-local-http",
+        "error": "[Errno 104] Connection reset by peer"
+      },
+      {
+        "transport": "ollama-0d489daca772-before",
+        "exit_code": 127
+      },
+      {
+        "transport": "docker:8f919e1ace79",
+        "listed_models": [
+          "qwen3.8-greek:latest"
+        ],
+        "post_unload_query_succeeded": true
+      }
+    ],
+    "kernel_journal": "Unavailable to the unprivileged collector; no sudo.",
+    "descriptor_pool_evidence": {
+      "sampled_images_per_set": 22356,
+      "samplers_per_set": 4968,
+      "impossible_batch_sizes": [
+        32,
+        16,
+        8,
+        4,
+        2
+      ],
+      "exact_pool_fallbacks": 36,
+      "note": "18 fallbacks from normal maxSets1024 pools and 18 from exhausted dedicated maxSets1 pools; every fallback succeeds. Validation warns about allocation requests exceeding remaining descriptors or sets. No VUID/error is recorded."
+    },
+    "diagnostics_minimum_events": {
+      "image_readback": 32,
+      "image_read_demand": 16,
+      "image_buffer_write": 16,
+      "buffer_readback": 8
+    },
+    "timing_observation": "After initial progress, sampled image work recurs at roughly 10.2-second intervals. The archive does not identify the responsible Vulkan wait or command.",
+    "captured_spirv": {
+      "modules": 16,
+      "validation": "PASS spirv-val --target-env vulkan1.3; structural validation does not validate guest semantics."
+    },
+    "ordered_gds": "Capture requested; no completed capture. Dedicated seed and guest re-entry remain unfinished."
+  },
+  "changes": [
+    "Retry semaphore waits only for VK_TIMEOUT; report other Vulkan errors through a non-returning failure path. Use one-second calls and sampled elapsed/timeline diagnostics; never advance unfinished GPU work.",
+    "Cap descriptor batches using remaining sets and per-type descriptor counts. Deduct only successful allocations, including exact-layout fallback; restore capacity only after GPU-safe pool reset. Cached sets are not double-charged.",
+    "Recognize owned emulator processes through executable or comm and inspect every thread, including zombie leaders with live workers. Capture thread states during observation and before a blocked build.",
+    "Run the verified process preflight before building, append its result to the same host journal, and preserve evidence with UPLOAD_THIS even when blocked."
+  ],
+  "validation": {
+    "release": "PASS GCC14 Release/X11, including published implementation source rebuild; existing compiler warnings remain",
+    "retained_universal_cpu_suite": "PASS",
+    "actual_binary_startup": "PASS scenarios=3 GPU_NOT_RUN",
+    "binary_sha256": "600c7e8d8a6f9b62e9c44e9c267106fb5d8336d7cdfa0e3ab42c3af2b01deb5b",
+    "host_reproduction": {
+      "method": "Verbatim extracted production Semaphore::Wait, DescriptorHeap::Commit and CreateDescriptorPool compiled against simulated Vulkan driver boundaries. No real GPU execution.",
+      "wait_checks": 37,
+      "wait_before_failures": 6,
+      "wait_after_failures": 0,
+      "pool_checks": 20166,
+      "pool_before_failures": 10077,
+      "pool_after_failures": 0,
+      "coverage": [
+        "cached and refreshed timeline completion",
+        "timeouts remain pending until driver success",
+        "device-loss and host/device-memory errors fail after one driver call",
+        "large exact-layout demands",
+        "dedicated fallback and exhausted maxSets1 pools",
+        "mixed layouts and cached batches",
+        "GPU-safe reset/reuse",
+        "fragmentation retries",
+        "unexpected allocation errors"
+      ],
+      "initial_harness_failure": "The first temporary fake-map implementation lacked const iterator accessors; no-op log macros also made an existing log argument unused under Werror. Fixed the harness, not production code; reran baseline and candidate successfully."
+    },
+    "sanitizers": "PASS ASan/UBSan all 20203 assertions; leak detection disabled for the established container limitation",
+    "process_preflight": "PASS: original misses zombie leader with live D worker and no exe link; candidate identifies it, ignores pure zombie/dead processes, uses executable/comm fallback, blocks matched unreadable tasks, and captures thread status/wchan.",
+    "wrapper_integration": "PASS isolated fixtures: blocked prior emulator returns2 before build; clear preflight reaches stub build (intentional exit77); both journal and print UPLOAD_THIS. No game launch. Only filesystem/proc fixtures and downloads/build stubbed; no service changes.",
+    "python_compile": "PASS observer and graphics runner",
+    "shell_syntax": "PASS wrapper",
+    "diff_check": "PASS",
+    "new_repository_tests": false,
+    "logs": {
+      "nov3k-after-pool.log": {
+        "sha256": "ea41228e026a2eeb8cf4241e550f225415f9ac5e145bb98ea95688b7368615d4",
+        "bytes": 29
+      },
+      "nov3k-after-wait.log": {
+        "sha256": "735f544414130772bef3636ed84a5b243aa15517377e8e5f88c8cd644634a879",
+        "bytes": 26
+      },
+      "nov3k-before-pool.log": {
+        "sha256": "0d0940923dafc4225c37253737ecf6a1dd2e9cc56cbc95fad4928790706ea1a2",
+        "bytes": 33
+      },
+      "nov3k-before-wait.log": {
+        "sha256": "01483f4be702c7a19984c7fe111083e9bed545ca916ccbe2f9a5f88b797fdb88",
+        "bytes": 26
+      },
+      "nov3k-build.log": {
+        "sha256": "58829628406693625af7878e12103e111be80d6441da9a0516e24026695d6829",
+        "bytes": 21589
+      },
+      "nov3k-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3k-cpu.log": {
+        "sha256": "ffa97b386b0b246f5cbd0c6596d57f8333e8ec02b0dc28e1740a7d9f363f3a90",
+        "bytes": 6219
+      },
+      "nov3k-final-build.log": {
+        "sha256": "046040f2e5fc3dfb60be7dbef7f95c5c2498724d8fe011929c180de548b222c7",
+        "bytes": 177
+      },
+      "nov3k-final-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3k-native-spirv.log": {
+        "sha256": "903d743ef1211480c6d64a9773e630d58bb1c7d2283e94a7f4d96a77ce0417ec",
+        "bytes": 573
+      },
+      "nov3k-process.log": {
+        "sha256": "281520259a2f3711c0cfc48bae416d51ac48a226639e6edc078615fd5b16f407",
+        "bytes": 183
+      },
+      "nov3k-published-build.log": {
+        "sha256": "ebe58bcaf1801bb78351353ec6014a2695b10307282552c3c81b712a2cb16124",
+        "bytes": 14527
+      },
+      "nov3k-published-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3k-sanitized-pool.log": {
+        "sha256": "ea41228e026a2eeb8cf4241e550f225415f9ac5e145bb98ea95688b7368615d4",
+        "bytes": 29
+      },
+      "nov3k-sanitized-wait.log": {
+        "sha256": "735f544414130772bef3636ed84a5b243aa15517377e8e5f88c8cd644634a879",
+        "bytes": 26
+      },
+      "nov3k-wrapper.log": {
+        "sha256": "7a6a1f881487a92525b0ad94ebae459a9d92f48c7db6754363bd1a58cd9fdb01",
+        "bytes": 144
+      }
+    }
+  },
+  "references": [
+    "https://docs.vulkan.org/refpages/latest/refpages/source/vkWaitSemaphores.html"
+  ],
+  "preservation": {
+    "prior_journal_rows": 439,
+    "prior_journal_sha256": "97f690f74ff40ddbfd8861efd10266a47de6ca5555af63c82c05f96701bf68dd",
+    "retained_code": "All prior fixes and DS work preserved; upstream remains an ancestor; no merges or main updates.",
+    "wrapper_sha256": "06cc28ce753efdb2e3f662b0b9aa25ae11b0fcab32cd0fa47030b4ddbac86bda",
+    "graphics_runner_sha256": "dfb726ae61aed70aee242e18442a327447660ff6e8eb338ef552062c9adbdcc2",
+    "observer_sha256": "aafaa0b05300c19e0ad11d5fcc48df9002db6c7ff69c30ea8b90c5d290b27e41"
+  },
+  "limits": [
+    "These independently reproduced host defects are not proven to cause the observed kernel GPU fence wait; no native recovery claim.",
+    "A Vulkan timeout is not completion, and its requested duration cannot guarantee a driver returns promptly. Kernel D-state cannot be repaired by an application-level retry policy.",
+    "No title/shader/vendor switches or readback-setting changes. Previous eligible-image layout/alias limitations remain.",
+    "This candidate changes host API error/allocation handling and test observation, not guest instruction semantics. The existing OpenOrbis coherence probe remains pending hardware execution; no new homebrew probe is required for these host-only changes.",
+    "DS ordered dedicated seed and actual guest shader re-entry remain unfinished."
+  ],
+  "next_test": "Pinned common source GoW then GoT only if safe, <=120s each, no automatic input or settings changes. Before building, refuse any remaining live/unreadable emulator worker and archive evidence. Keep >=8GiB VRAM/conditional Ollama unload, upstream freshness check, and stop remaining games after GPU failure or unconfirmed exit."
+}

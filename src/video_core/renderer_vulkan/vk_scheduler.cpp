@@ -215,6 +215,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
     sessions.clear();
 
+    VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, signal_value,
+                                          "kind=submit command-buffers=%zu waits=%u",
+                                          cmd_buffers.size(), info.num_wait_semas);
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 

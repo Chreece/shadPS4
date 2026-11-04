@@ -1,0 +1,289 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-02T15:37:06.897754+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pr": 118,
+  "archive": {
+    "filename": "universal-two-games-20261102T085801Z-3511758.tar(1).gz",
+    "bytes": 20109022,
+    "sha256": "a7356cee3b2b2b8fbf52b1254f128ca8d11cd3ec22ca9e008c89abd06d2ab854",
+    "source_commit": "48d0a918248faf89f7a2731d564f1ce97e270456",
+    "binary_sha256": "cd59a2118b1a04e6af5d8d5c0ced482d3de36f8fb0e6acd874bf9f2425eb5383"
+  },
+  "native_build": {
+    "timestamp_utc": "2026-11-02T09:11:45.825888+00:00",
+    "source_commit": "48d0a918248faf89f7a2731d564f1ce97e270456",
+    "upstream_commit": "16157ae67cccb7176c5e830070ec16d5dd729bce",
+    "binary_sha256": "cd59a2118b1a04e6af5d8d5c0ced482d3de36f8fb0e6acd874bf9f2425eb5383",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0
+  },
+  "gow": {
+    "game": "CUSA34384",
+    "result": "ORDERED_GDS_FIRST_PASS_CAPTURED_CONTINUATION_PENDING",
+    "native": {
+      "binary_sha256": "cd59a2118b1a04e6af5d8d5c0ced482d3de36f8fb0e6acd874bf9f2425eb5383",
+      "duration_limit": 120,
+      "time_to_sigterm": 118,
+      "graphics_visual_acceptance": "NOT_OBSERVED",
+      "audio_audible_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED",
+      "screenshots": [
+        "frame-008s.png"
+      ],
+      "owned_child_terminated": true,
+      "exit_code": -11,
+      "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+      "elapsed_seconds": 10.187,
+      "gpu_failure": null,
+      "srt_rejections": {
+        "Phi": 3906,
+        "GetAttributeU32": 2
+      },
+      "console_lines": 18344,
+      "warning_lines": 335,
+      "error_lines": 9054,
+      "selected_diagnostic_lines": 420,
+      "full_console_bytes": 2740192,
+      "console_excerpt_complete": false,
+      "gpu_memory_fault_reports": 0,
+      "srt_source_preparations": 33,
+      "memory_histograms_truncated": false,
+      "native_fault": {
+        "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+      }
+    },
+    "visual_review": "frame-008s: loading panel and Waiting for game video over black; no guest image",
+    "capture_sha256": "a15f9304f24dc25a2cfabfff5cc84a1d7aad0b9601534b03378b1c1344df8d21",
+    "capture_bytes": 97152,
+    "packets": {
+      "header": [
+        843338567,
+        2,
+        1,
+        7,
+        7,
+        13808,
+        104,
+        52,
+        7,
+        1,
+        1,
+        64
+      ],
+      "packets": [
+        {
+          "slot": 0,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40000",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 1,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40001",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 2,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40002",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 3,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40003",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 4,
+          "site": "0x41d4",
+          "control": "0x300",
+          "m0": "0x40004",
+          "exec": 1,
+          "lane": 0,
+          "payload": 12,
+          "saved_v5": 12,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 5,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40005",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        },
+        {
+          "slot": 6,
+          "site": "0x4158",
+          "control": "0x1300",
+          "m0": "0x40006",
+          "exec": 1,
+          "lane": 0,
+          "payload": 0,
+          "saved_v5": 0,
+          "flags": 7,
+          "abi": 3
+        }
+      ]
+    },
+    "original_shader_bytes": 24024,
+    "original_shader_sha256": "97d6b31e16cc6c7660b78792faa15df49f49d10dad9ed97faa98fd3e137f999e",
+    "capture_spirv_sha256": "de1cc0ca1e632d92fb183ca927a3071ea549d314b55a4c720ecb23d232d7e83d",
+    "established": "All seven flags-7 / ABI-3 GPU operands match the saved decoded v5 lane: six exchange zeros, one add 12. Production validator accepts original and rejects seven independent payload mutations.",
+    "continuation_blockers": [
+      "No dedicated CIK counter seed provenance; no guest re-entry dispatch.",
+      "Independent decoder finds v7 read after exchange at 0x4190 and after add at 0x422c. Do not assume the old counter return is dead.",
+      "1536 LDS bytes per group are retained on the GPU but absent from this evidence container. No offline complete-LDS replay is claimed."
+    ],
+    "creation_order_scope": "Live M0 low-13 IDs form a complete 0..6 permutation with zero crawler bits and pass existing CIK-compute validation; this does not authenticate a counter seed or implement continuation."
+  },
+  "got": {
+    "game": "CUSA11456",
+    "result": "GAME_OR_OBSERVER_FAILED",
+    "native": {
+      "binary_sha256": "cd59a2118b1a04e6af5d8d5c0ced482d3de36f8fb0e6acd874bf9f2425eb5383",
+      "duration_limit": 120,
+      "time_to_sigterm": 118,
+      "graphics_visual_acceptance": "NOT_OBSERVED",
+      "audio_audible_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED",
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png"
+      ],
+      "owned_child_terminated": true,
+      "exit_code": -9,
+      "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+      "exit_reason": "GPU_CONTEXT_LOST",
+      "elapsed_seconds": 41.413,
+      "srt_rejections": {
+        "Phi": 72,
+        "GetAttributeU32": 29
+      },
+      "console_lines": 6467,
+      "warning_lines": 362,
+      "error_lines": 1460,
+      "selected_diagnostic_lines": 420,
+      "full_console_bytes": 879600,
+      "console_excerpt_complete": true,
+      "gpu_memory_fault_reports": 0,
+      "srt_source_preparations": 6,
+      "memory_histograms_truncated": false,
+      "native_fault": {
+        "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+      }
+    },
+    "visual_review": "frame-025s: black with FPS overlay, no rendered scenery",
+    "causality": "Context loss after 41.413 seconds; no GPU memory fault report. Neither SRT warning totals nor structural SPIR-V validity establish the cause. Uniform store expansion remains root=0 count_word=34 count=4.",
+    "capture_limit": "All 17 prioritized/recent final IR files present; the 32 binary-file budget omits the final two recent compute kernels. Raw game data is kept out of git."
+  },
+  "spirv_validation": {
+    "target_env": "vulkan1.3",
+    "modules": 31,
+    "passed": 31,
+    "scope": "Structural validation of captured modules only, not runtime or rendering correctness."
+  },
+  "upstream_integration": {
+    "previous_upstream": "16157ae67cccb7176c5e830070ec16d5dd729bce",
+    "current_upstream": "d4ea43b9ff7369365a2dcf9b15315c65aeb7f6f9",
+    "changes": [
+      "2831b681: empty pending-operation queue fast path",
+      "d4ea43b9: system service video codec activation and parameters"
+    ],
+    "rebase": "Two retained commits rebased cleanly, no merge and no conflict.",
+    "archive_branch": "archive/universal-native-20261102-48d0a918",
+    "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45"
+  },
+  "srt_order_fix": {
+    "path": "src/shader_recompiler/ir/passes/flatten_extended_userdata_pass.cpp",
+    "defect": "PointerListCompare(a,a) returns true for an instruction-backed index, violating the strict-weak-order requirement of boost::container::flat_map.",
+    "change": "Return false for identical instruction pointers before scanning instruction order. Preserve all actual Phi/index values and distinct instruction order.",
+    "cache": "ShaderBinaryVersion 16 -> 17 invalidates both cached metadata and binaries via LoadShaderMeta.",
+    "baseline": {
+      "checks": 8076,
+      "failures": 1632,
+      "same_dynamic_key_insertions": 100,
+      "stored_entries": 100,
+      "expected_entries": 1,
+      "source_file_blob_sha": "afdeb6d1c477d8d1df4bb47b0c4bed24ee60caf1",
+      "source_commit": "48d0a918248faf89f7a2731d564f1ce97e270456"
+    },
+    "fixed": {
+      "checks": 8076,
+      "failures": 0,
+      "stored_entries": 1,
+      "source_file_blob_sha": "19a2be3268cd1ad03ab51edf55a44db55d1593fb"
+    },
+    "fixture": "Exact production comparator extracted into a temporary executable using real IR::Value, IR::Inst, IR::Block and boost flat_map. Covers irreflexivity, asymmetry, transitivity, duplicate insertion/lookup and 100 shuffled mixed-key sequences. Actual production IR cpp files compiled with ASan/UBSan. No tests committed.",
+    "limitations": "No captured pre-resource IR duplicate dynamic ReadConst key was established by the exploratory scan. This is independently reproduced compiler correctness, not a proven GoT reset cause.",
+    "sanitizers": "ASan/UBSan pass; LeakSanitizer disabled after this host reported its ptrace limitation."
+  },
+  "validation": {
+    "validated_source_tree_before_evidence_records": "595b8c0bea5a11103764f5654da73a096f36281f",
+    "release_binary_sha256": "4f383dd6f5cb2f35a27eaab7d9d587c11718b7af80c5c933abb78698effa78c6",
+    "full_native_build": "PASS GCC14 Release X11; incremental confirmation no remaining work",
+    "existing_cpu_suite": "PASS 31 CTest cases in nine suites, renderer contracts, 10418 SRT JIT checks, sparse, descriptor, VMA and HLE ABI checks",
+    "native_startup": "PASS 3 isolated XDG scenarios",
+    "actual_gpu_checkpoint_validation": "PASS all seven live packets; reject seven payload mutations; 8 checks under ASan/UBSan",
+    "logs": {
+      "nov2-d4-build.log": "08b223493b2fbc152ca74906cd7efbb24735c666e8782eeb574e7a29d8a0197c",
+      "nov2-d4-cpu.log": "540a5c8980caef6cac9a31803ef261f2c146e18a651b8a02751b97de22d725dd",
+      "nov2-d4-startup.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+      "nov2-srt-order-before.log": "fff6728bd8d23cb9d541ebe48bfb1791d2d80e17b40f23683f52f97ab0552a03",
+      "nov2-srt-order-after.log": "4add2d8dfbc2a35c0938588c9568a5ef7209147e4c8e1e6592288d3467a7de2e",
+      "nov2-native-checkpoints.log": "432cc5d3c992266f0b972371be1e17c24fe09eeb2d8e870cfa3bc95b878ca7fd"
+    }
+  },
+  "hardware_probe": {
+    "filename": "srt-index-openorbis.zip",
+    "bytes": 5077,
+    "sha256": "611bc0d1e289fc0d4350cef4b595bad35b3de5ebc3557993117218ab5c22c805",
+    "library_file_id": "libfile_2c83eabf54808191ac584be5b28daf99",
+    "cases": "6 dispatches, 64 lanes, 8 observations each = 3072 words; repeated index, independent equal scalar index, adjacent dwords, nested pointer",
+    "validation": "PASS LLVM18.1.3 Bonaire assembly and strict host C11 syntax; OpenOrbis link and PS4 run NOT_PERFORMED"
+  },
+  "decision": "Keep PR118 draft and main unchanged. Retain the native-proven DS operand capture and locally proven SRT comparator repair. Neither game is fixed or accepted for gameplay. Next native candidate tests this generic compiler change on current upstream; retain bounded one-shot GoW capture and then GoT.",
+  "publication_refresh": {
+    "detected_before_ref_update": true,
+    "previous_upstream": "d4ea43b9ff7369365a2dcf9b15315c65aeb7f6f9",
+    "latest_upstream": "e25f2d34070548bab5249c80b3922a7acac73fe4",
+    "change": "ci: Remove CMake config cache (#5606), .github/workflows/build.yml only, 44 deletions",
+    "rebase": "All three local commits rebased cleanly; git diff confirms src, CMakeLists.txt, cmake, scripts, tests and tools identical to the validated candidate.",
+    "validation": "PASS full native target rebuilt on e25f2d34 and all three actual startup scenarios. The prior CPU/ASan/UBSan results cover byte-identical emulator code.",
+    "binary_sha256": "7c71771f4fcf1b5a891a31b16037f2e6adf2fbbe93204c7f2b3e918f445e1395",
+    "build_log_sha256": "b8916ef4249ba40191fc6820af061caf9ae5aa6b6231d8a7e9496daee0c7b2f0",
+    "startup_log_sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9"
+  }
+}
