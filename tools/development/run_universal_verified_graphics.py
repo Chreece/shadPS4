@@ -4,6 +4,7 @@ import datetime as dt
 import fcntl
 import hashlib
 import importlib.util
+import ipaddress
 import json
 import os
 import re
@@ -19,7 +20,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '6e7cb1d3ee21dbe0aef06a4f2529c6f7ddd7b725b60096f1a5afee1b1c3a48b3'
+OBSERVER_SHA256 = '316df1e2ac4bd5c0a3609eefb7238f843730abb183bccb0af3539876dff35eaf'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -35,6 +36,9 @@ def save(p, value):
 def collect_shader_diagnostics(runtime, out, console, captures):
     blocked = []
     recent = []
+    recorded_work_hashes = []
+    waiting_work_hashes = []
+    work_reason = None
     current_hash = None
     capture_completed = False
     validation_hashes = []
@@ -56,6 +60,23 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         with console.open(errors='replace') as f:
             for line in f:
                 line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                work_begin = re.match(r'GRAPHICS_WORK_BEGIN reason=(\S+)', line)
+                if work_begin:
+                    work_reason = work_begin.group(1)
+                elif line.startswith('GRAPHICS_WORK_END'):
+                    work_reason = None
+                work = re.match(r'GRAPHICS_WORK seq=\d+ .*\bshader=([0-9a-fA-F]+)\b', line)
+                if work:
+                    shader_hash = format(int(work.group(1), 16), '016x')
+                    if shader_hash in recorded_work_hashes:
+                        recorded_work_hashes.remove(shader_hash)
+                    recorded_work_hashes.append(shader_hash)
+                    recorded_work_hashes = recorded_work_hashes[-16:]
+                    if work_reason in ('wait-timeout', 'wait-error'):
+                        if shader_hash in waiting_work_hashes:
+                            waiting_work_hashes.remove(shader_hash)
+                        waiting_work_hashes.append(shader_hash)
+                        waiting_work_hashes = waiting_work_hashes[-16:]
                 automatic_coherence |= 'GPU memory coherence: automatic' in line
                 mode = re.search(r'GPU readbacksMode: (\d+)\b', line)
                 if mode:
@@ -100,6 +121,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         if match and match.group(1) not in priority:
             priority.append(match.group(1))
     priority.extend(h for h in reversed(blocked) if h not in priority)
+    priority.extend(h for h in reversed(waiting_work_hashes) if h not in priority)
+    priority.extend(h for h in reversed(recorded_work_hashes) if h not in priority)
     priority.extend(h for h in reversed(resource_warning_hashes) if h not in priority)
     priority.extend(h for h in reversed(recent) if h not in priority)
     dumps = runtime / 'user/shader/dumps'
@@ -154,6 +177,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             'resource_warning_hashes': list(reversed(resource_warning_hashes)),
             'observed_readbacks_modes': sorted(readbacks_modes),
             'automatic_coherence_enabled': automatic_coherence,
+            'recorded_gpu_work_hashes': list(reversed(recorded_work_hashes)),
+            'waiting_gpu_work_hashes': list(reversed(waiting_work_hashes)),
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
@@ -312,77 +337,136 @@ def free_vram():
     return max(cards)[1]
 
 
-def ollama(path, body=None):
+def ollama(path, body=None, base_url='http://127.0.0.1:11434', timeout=15):
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request('http://127.0.0.1:11434/api/' + path, data=data,
+    req = urllib.request.Request(base_url + '/api/' + path, data=data,
                                  headers={'Content-Type': 'application/json'})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=15) as response:
+    with opener.open(req, timeout=timeout) as response:
         return json.load(response)
 
 
-def unload_models(out, record):
-    attempts = []
-    record['ollama_attempts'] = attempts
-    print('VRAM_LOW_TRYING_LOCAL_OLLAMA_API', flush=True)
-    try:
-        models = ollama('ps').get('models', [])
-        save(out / 'ollama-before.json', models)
-        for model in models:
-            name = model.get('name') or model.get('model')
-            if name:
-                ollama('generate', {'model': name, 'keep_alive': 0, 'stream': False})
-                record['ollama_unloaded'].append(name)
-        attempts.append({'transport': 'direct-local-http', 'result': 'SUCCESS'})
-        return
-    except Exception as exc:
-        attempts.append({'transport': 'direct-local-http', 'error': str(exc)})
-        print('LOCAL_API_FAILED_TRYING_CONTAINER_CLI', flush=True)
-
-    def command(argv, label):
-        try:
-            result = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True,
-                                    text=True, timeout=30)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            attempts.append({'transport': label, 'error': str(exc)})
-            return None
-        (out / (label + '.txt')).write_text(result.stdout + result.stderr)
-        if result.returncode:
-            attempts.append({'transport': label, 'exit_code': result.returncode})
-            return None
-        return result.stdout
-
+def ollama_endpoints(record):
+    yield 'http://127.0.0.1:11434'
     if not shutil.which('docker'):
-        attempts.append({'transport': 'docker', 'error': 'CLI_NOT_INSTALLED'})
         return
-    listing = command(['docker', 'ps', '--format', '{{.ID}}\t{{.Image}}\t{{.Names}}'],
-                      'docker-running-containers')
-    if listing is None:
+    try:
+        listing = subprocess.run(
+            ['docker', 'ps', '--format', '{{.ID}}\t{{.Image}}\t{{.Names}}'],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+        if listing.returncode:
+            raise RuntimeError('DOCKER_PS_FAILED')
+        for row in listing.stdout.splitlines():
+            fields = row.split('\t')
+            if len(fields) != 3 or 'ollama' not in (fields[1] + ' ' + fields[2]).lower():
+                continue
+            container = fields[0]
+            if not re.fullmatch(r'[0-9a-f]{12,64}', container):
+                continue
+            result = subprocess.run(
+                ['docker', 'inspect', '--format', '{{json .NetworkSettings.Networks}}', container],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+            if result.returncode:
+                continue
+            for network in json.loads(result.stdout).values():
+                address = ipaddress.ip_address(network.get('IPAddress') or '0.0.0.0')
+                if address.version == 4 and address.is_private and not address.is_unspecified:
+                    yield 'http://' + str(address) + ':11434'
+    except (OSError, ValueError, subprocess.TimeoutExpired, RuntimeError) as exc:
+        record['ollama_attempts'].append({'transport': 'docker-discovery', 'error': str(exc)})
+
+
+def unload_models(out, record):
+    record['ollama_attempts'] = []
+    record['ollama_restore_leases'] = []
+    print('VRAM_LOW_SNAPSHOTTING_LOCAL_OLLAMA_MODELS', flush=True)
+    for endpoint in ollama_endpoints(record):
+        try:
+            models = ollama('ps', base_url=endpoint).get('models', [])
+            leases = []
+            for model in models:
+                name = model.get('name') or model.get('model')
+                context = model.get('context_length')
+                expiry = dt.datetime.fromisoformat(model['expires_at'].replace('Z', '+00:00'))
+                if (not isinstance(name, str) or not name or not isinstance(context, int) or
+                        isinstance(context, bool) or context <= 0 or expiry.tzinfo is None):
+                    raise ValueError('MODEL_RESTORE_METADATA_INCOMPLETE')
+                leases.append({'endpoint': endpoint, 'model': name, 'context_length': context,
+                               'expires_at': expiry.isoformat(), 'digest': model.get('digest'),
+                               'size_vram': model.get('size_vram'), 'status': 'CAPTURED'})
+            save(out / 'ollama-before.json', models)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            record['ollama_attempts'].append({'transport': endpoint, 'error': str(exc)})
+            continue
+        for lease in leases:
+            lease['status'] = 'UNLOAD_REQUESTED'
+            record['ollama_restore_leases'].append(lease)
+            save(out / 'ollama-restore.json', record['ollama_restore_leases'])
+            ollama('generate', {'model': lease['model'], 'keep_alive': 0, 'stream': False},
+                   base_url=endpoint)
+            lease['status'] = 'UNLOADED'
+            record['ollama_unloaded'].append(lease['model'])
+            save(out / 'ollama-restore.json', record['ollama_restore_leases'])
+        record['ollama_attempts'].append({'transport': endpoint, 'result': 'SUCCESS'})
         return
-    for row in listing.splitlines():
-        fields = row.split('\t')
-        if len(fields) != 3 or 'ollama' not in (fields[1] + ' ' + fields[2]).lower():
+    raise RuntimeError('NO_LOCAL_OLLAMA_API_WITH_RESTORABLE_MODEL_METADATA')
+
+
+def restore_models(out, record, observer):
+    leases = record.get('ollama_restore_leases', [])
+    if not leases:
+        return
+    native = record.get('native', {})
+    unsafe = (native.get('gpu_failure') or
+              record.get('game_launched') and not native.get('owned_child_terminated', False))
+    if not unsafe:
+        try:
+            unsafe = observer is None or bool(observer.existing_games())
+        except Exception:
+            unsafe = True
+    for lease in leases:
+        if unsafe:
+            lease['status'] = 'DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS'
             continue
-        container = fields[0]
-        if not container or any(c not in '0123456789abcdef' for c in container):
-            continue
-        prefix = ['docker', 'exec', container, 'ollama']
-        before = command(prefix + ['ps'], 'ollama-' + container + '-before')
-        if before is None:
-            continue
-        rows = [line.split() for line in before.splitlines() if line.strip()]
-        if not rows or rows[0][0] != 'NAME':
-            attempts.append({'transport': 'docker:' + container, 'error': 'UNRECOGNIZED_PS_OUTPUT'})
-            continue
-        names = [row[0] for row in rows[1:] if len(row) >= 2 and not row[0].startswith('-')]
-        for index, name in enumerate(names):
-            print('UNLOADING_CONTAINER_MODEL=' + name, flush=True)
-            stopped = command(prefix + ['stop', name], 'ollama-' + container + '-stop-' + str(index))
-            if stopped is not None:
-                record['ollama_unloaded'].append(name)
-        after = command(prefix + ['ps'], 'ollama-' + container + '-after')
-        attempts.append({'transport': 'docker:' + container, 'listed_models': names,
-                         'post_unload_query_succeeded': after is not None})
+        try:
+            models = ollama('ps', base_url=lease['endpoint']).get('models', [])
+            current = next((model for model in models
+                            if (model.get('name') or model.get('model')) == lease['model']), None)
+            if current is not None:
+                if (current.get('context_length') != lease['context_length'] or
+                        lease.get('digest') and current.get('digest') != lease['digest']):
+                    raise RuntimeError('MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN')
+                lease['status'] = 'ALREADY_LOADED'
+                continue
+            expiry = dt.datetime.fromisoformat(lease['expires_at'])
+            remaining = int((expiry - dt.datetime.now(dt.timezone.utc)).total_seconds())
+            if remaining <= 0:
+                lease['status'] = 'ORIGINAL_EXPIRY_ELAPSED'
+                continue
+            if lease.get('digest'):
+                installed = ollama('tags', base_url=lease['endpoint']).get('models', [])
+                tagged = next((model for model in installed
+                               if (model.get('name') or model.get('model')) == lease['model']), {})
+                if tagged.get('digest') != lease['digest']:
+                    raise RuntimeError('MODEL_TAG_CHANGED_DURING_TEST_NOT_LOADED')
+            print('RESTORING_OLLAMA_MODEL=' + lease['model'], flush=True)
+            ollama('generate', {'model': lease['model'], 'stream': False,
+                               'keep_alive': str(remaining) + 's',
+                               'options': {'num_ctx': lease['context_length']}},
+                   base_url=lease['endpoint'], timeout=60)
+            models = ollama('ps', base_url=lease['endpoint']).get('models', [])
+            restored = next((model for model in models
+                             if (model.get('name') or model.get('model')) == lease['model']), {})
+            if (restored.get('context_length') != lease['context_length'] or
+                    lease.get('digest') and restored.get('digest') != lease['digest']):
+                raise RuntimeError('RESTORED_MODEL_CONTEXT_OR_DIGEST_NOT_CONFIRMED')
+            lease['status'] = 'RESTORED'
+            lease['restored_size_vram'] = restored.get('size_vram')
+        except Exception as exc:
+            lease['status'] = 'RESTORE_FAILED'
+            lease['error'] = str(exc)
+            record['stop_remaining_tests'] = True
+    save(out / 'ollama-restore.json', leases)
 
 
 def profile_source(project):
@@ -702,6 +786,7 @@ def main():
                 record['shader_diagnostics']['capture_completed_marker'] and
                 not record['stop_remaining_tests']):
             record['result'] = 'ORDERED_GDS_FIRST_PASS_CAPTURED_CONTINUATION_PENDING'
+        restore_models(out, record, module)
         record['exit_code'] = rc
         save(out / 'result.json', record)
         for folder in [project / 'docs/emulator', project / 'games' / game.parent.name / 'docs/emulator']:
