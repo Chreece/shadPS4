@@ -235,6 +235,7 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
     }
 
     dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+    ++image_upload_count;
 }
 
 void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
