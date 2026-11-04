@@ -1134,6 +1134,7 @@ set(SHADER_RECOMPILER src/shader_recompiler/profile.h
                       src/shader_recompiler/ir/passes/lower_wave64_pass.cpp
                       src/shader_recompiler/ir/passes/phi_simplification_pass.cpp
                       src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp
+                      src/shader_recompiler/ir/passes/full_wave_reduction_pass.cpp
                       src/shader_recompiler/ir/passes/resource_discover_pass.cpp
                       src/shader_recompiler/ir/passes/resource_pass.h
                       src/shader_recompiler/ir/passes/resource_patching_pass.cpp
