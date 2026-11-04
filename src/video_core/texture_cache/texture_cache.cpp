@@ -57,13 +57,7 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
       buffer_cache{buffer_cache_}, page_manager{page_manager_}, slot_images{MAX_IMAGES},
       slot_image_views{MAX_IMAGE_VIEWS}, slot_samplers{MAX_SAMPLERS},
       blit_helper{instance, scheduler},
-      tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()},
-      // Precise mode requires GPU-written linear images to become visible to
-      // later CPU reads. Preserve the existing eligible linear/tiny-image
-      // download pipeline even if its independent UI toggle was disabled.
-      // No global config mutation or eager large tiled-image downloads.
-      readback_linear_images{EmulatorSettings.IsReadbackLinearImagesEnabled() ||
-                             EmulatorSettings.GetReadbacksMode() == GpuReadbacksMode::Precise} {
+      tile_manager{instance, scheduler, runtime, buffer_cache.GetStreamBuffer()} {
 
     u32 max_samplers = instance.GetMaxSamplerAllocationCount();
     trigger_gc_samplers = max_samplers * 3 / 4;
@@ -163,6 +157,9 @@ void TextureCache::DownloadImageMemory(ImageId image_id, DownloadMemoryFlags fla
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image_addr), download.mapped,
                                                   copy_size);
+        GraphicsDiagnostics::Emit(
+            GraphicsDiagnostics::Event::ImageReadback, "address=%#llx bytes=%u sync=%u",
+            static_cast<unsigned long long>(image_addr), copy_size, static_cast<unsigned>(is_sync));
         if (discard_buffer_cache) {
             buffer_cache.UnmarkRegionAsGpuModified(image_addr, copy_size, true);
         }
@@ -769,7 +766,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
     Image& image = slot_images[image_id];
     if (desc.type == BindingType::Storage) {
         image.flags |= ImageFlagBits::GpuModified;
-        if (readback_linear_images && (!image.info.props.is_tiled || image.info.size.width <= 8) &&
+        if ((!image.info.props.is_tiled || image.info.size.width <= 8) &&
             image.info.guest_address != 0) {
             std::unique_lock lk{download_images_mutex};
             download_images.emplace(image_id);
@@ -807,7 +804,8 @@ void TextureCache::UnregisterMeta(VAddr address, u64 owner_uid) {
 ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& desc) {
     Image& image = slot_images[image_id];
     image.flags |= ImageFlagBits::GpuModified;
-    if (readback_linear_images && (!image.info.props.is_tiled || image.info.size.width <= 8)) {
+    if ((!image.info.props.is_tiled || image.info.size.width <= 8) &&
+        image.info.guest_address != 0) {
         std::unique_lock lk{download_images_mutex};
         download_images.emplace(image_id);
     }
