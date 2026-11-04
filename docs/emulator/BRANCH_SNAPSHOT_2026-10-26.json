@@ -1,0 +1,1770 @@
+{
+  "schema_version": 1,
+  "as_of": "2026-10-26",
+  "repo": "Chreece/shadPS4",
+  "upstream_main": "2cdefaa1298c6e4ece6c74bd84e90f3906282d51",
+  "fork_main_pre_diary": "01beb8e0fbbea4462bbc661f0019624e959c53dd",
+  "total": 352,
+  "branches": [
+    {
+      "ref": "Pre-release-shadPS4-esde-unified-20261018",
+      "commit": "3347123a496415e6f41b61a6730b623bfff36cf5",
+      "protected": false
+    },
+    {
+      "ref": "Pre-release-shadPS4-generic-ci-20261021",
+      "commit": "a97b0636870fc2554a07cf3f8a1a33f0c88759d1",
+      "protected": false
+    },
+    {
+      "ref": "audit/world-recovery-capture-20261021",
+      "commit": "a9767c61d49438311c4997b77916fcb7a9a39e81",
+      "protected": false
+    },
+    {
+      "ref": "build/pes-confirmed-manual-20261005",
+      "commit": "54baa49bd178ac2f0e9e51da31fd355807a01f5a",
+      "protected": false
+    },
+    {
+      "ref": "build/pes-current-baseline",
+      "commit": "97f52cf59bdaf90d562b11ffca908d203cf8cb18",
+      "protected": false
+    },
+    {
+      "ref": "ci/generic-large-indexed-final-20261023",
+      "commit": "b452e56733a4b5d9190586ed0f5a19ec065ba2cc",
+      "protected": false
+    },
+    {
+      "ref": "diag/pes-predication-packets-20261005",
+      "commit": "46302d507ba016e7569f517143955bed2009208d",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-active-menu-gpu-work-20261019",
+      "commit": "022983a77fe5d73eb17f81de12e9177ea0145f37",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-gds-dma-source-20261019",
+      "commit": "68761ebfa07b48024393659c67b18750873b06ac",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-host-segv-20261018",
+      "commit": "f0040b18efcc25f60cd50ec7acbb16448ce48a71",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-indexed-sample-feedback-20261019",
+      "commit": "caefce3aef21a0d6ff86f80e10657bfe118cfb37",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-indirect-gpu-args-20261018",
+      "commit": "8151dda7ec61f4213d35b61d825dc73ad52a62c5",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-indirect-producer-origin-20261019",
+      "commit": "ced136c70e31b02e0c61b3918e6a46aa3dd3563d",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-material-source-proof-20261018",
+      "commit": "bb063d9633656fcd4ed08ad97a8cec708c52a37d",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-depth-provenance-20261018",
+      "commit": "696b06bd2a78be457a56b581f40e4609ff41bdfa",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-pixel-chain-20261018",
+      "commit": "f9703c57c1756c8982db5a7d7e9b494992129037",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-sharp-provenance-20261018",
+      "commit": "0c8d879acc156f8305df6d5b33f6d30e59e30570",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-source-graph-20261018",
+      "commit": "e0ea3155f0ff638a0554d6810278b44f7b8b22a4",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-spv-lookup-proof-20261018",
+      "commit": "07a53f61c531ad8268d376373800712c8a96974e",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-spv-stage-isolation-20261018",
+      "commit": "0b5955d117e08033311b2dce824d552dcf11fd4f",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-menu-synchronized-pixels-20261018",
+      "commit": "5b7bf8892ed03e80f409ff9a35fe54fcee2294f9",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-ollama-controlled-run-20261018",
+      "commit": "83b5449ea4e869c9e6c4b5cdb8837bbab212ad3b",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-postfreeze-guarded-recovery-20261018",
+      "commit": "156266cb78e84ea8d6cfc3c958d180a5ee3b2050",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-presented-menu-pass-20261018",
+      "commit": "fc043c841239327f4edbfa3cdc19ef97bc5045f4",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-scene-gpu-invocations-20261018",
+      "commit": "541b0b57e86823e0989970ee3d3654ede8d9bd70",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-scene-immediate-output-20261019",
+      "commit": "0143274aea3962018fae16253c6fdbfde834af0c",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/got-srt-compute-root-20261019",
+      "commit": "f5509e7b8a9cb4e8a3770db1f04c25a6c5d0d1b1",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-audio-host-scheduler-20261019",
+      "commit": "6b37b0c5a444d68e77b69ee65bbc170550a44e3e",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-buffer-cadence-analysis-20261018",
+      "commit": "3cc15a28e3db8329703061ad4efe8bc5339354c0",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-live-srt-source-audit-20261018",
+      "commit": "3446a85fb9e99270e5beb8ecc68656bb09632ce5",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-missing-assets-20261018",
+      "commit": "4821ee9ba0524d265ef6045d5bb50812538a4f36",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-permutation-protected-base-20261019",
+      "commit": "bd481677c76dd099d303f5518b551352dfaef30f",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-permutation-scene-proof-20261019",
+      "commit": "664412d6570208b5f03e36eb3c4a8f9e24cf7a3c",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-ragnarok-evidence-ledger-20261019",
+      "commit": "7e0bb4ec0172b0c4cb4bef6dae4de5a554117a8c",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/gow-srt-flatbuf-provenance-20261019",
+      "commit": "2fcda56dd26521c385e2dd376d21c50c083d1879",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/world-compute-buffers-20261020",
+      "commit": "04bd01f65d5c1b50030dcf7ea130cb6d4e402107",
+      "protected": false
+    },
+    {
+      "ref": "diagnostic/world-vertex-inputs-20261020",
+      "commit": "5f531ad473132fe89467b5553418f300403d566c",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/coherence-gpu-boundary-20261022",
+      "commit": "fee4f1e8ae8e5793214540dbb00bbb7ef27568b4",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/generic-fmt-fault-backtrace-20261025",
+      "commit": "1ec0b2ac35976a85324cc4470ea119bd86289678",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/generic-srt-buffer-range-120s-20261024",
+      "commit": "10be1878695a1d907a2645b9afe1c1e3333e3349",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/got-srt-pending-parents-20261026",
+      "commit": "b032d76f4a19d61ae2d27148e3b793f20d89be10",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/gpu-indexed-sharp-rejections-20261025",
+      "commit": "2bccd2e56221f5f3bab3b5fc1e825751481d39ea",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/image-resource-runtime-20261023",
+      "commit": "9f4c2da6107cb2b31578cc4b35f5e4ed85637dab",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/offline-spirv-validator-20261022",
+      "commit": "bf95dd270bc6d7e6b09f2e5a78b8d919a1e5ef72",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/radv-context-failure-20261021",
+      "commit": "2fbf6fdfe237179300a010b1fe512531610ec191",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/reference-shader-corpus-20261022",
+      "commit": "333b25ed598dfbb42cbe9a05245dae5865b5d5d5",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/same-binary-readback-control-20261022",
+      "commit": "88786a96b479505d716bd1fd2cd32a0bd2d326d8",
+      "protected": false
+    },
+    {
+      "ref": "diagnostics/srt-sharp-producer-evidence-20261025",
+      "commit": "a194239ef265652306c392301ce7b6f953e24964",
+      "protected": false
+    },
+    {
+      "ref": "draft/jaguar-reciprocal-hardware-20261009",
+      "commit": "31a118b127c0c1f0c8b0c32fa9ce21923fa0ccaa",
+      "protected": false
+    },
+    {
+      "ref": "draft/jaguar-xsave-capabilities-20261009",
+      "commit": "915dc0d30db946499c7f7854622234b3c32a6637",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-dynamic-tsharp-gpu-index-20261017",
+      "commit": "5dd4dc458d507ea5a604df9da201a4030e243d3c",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-general-sbuffer-address-only-uniform-20261017",
+      "commit": "052fd0dc8e895dbc3b4059cdeaf0cf7ccd5eae16",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-general-sbuffer-bounds-20261017",
+      "commit": "042a479f32c04f7c5cc716dc0a9547d2542c1495",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-gow-native-memory-perf-20261017",
+      "commit": "75c5635ab920d0da75ca475470015dc982a9e763",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-gow-shreg-and-table-identity-20261017",
+      "commit": "e9f470b359845a456139a865aa1d7b3001f0dbfd",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-gpu-resource-branches-20261017",
+      "commit": "3043e549dc311b77fe20a690686f3385490c3461",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-gpu-tsharp-id-feedback-20261017",
+      "commit": "bee2a08762b6b11b44c07b28e82ca5783c5bbfd1",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-gpuvm-sparse-map-20261018",
+      "commit": "f294847d32120aa57606b3ebcbb0a654cf5a7d50",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-indexed-image-select-20261017",
+      "commit": "32ee18df9e419d4e318bae001b4d8db73d21af7f",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-large-guest-tsharp-indexed-20261017",
+      "commit": "bc1172e0f96d3fa3b0dc4da7940089d04ea85a41",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-real-tsharp-array-binding-20261017",
+      "commit": "42b22028c9aef3752327ade040a4371a87a5208c",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-sbuffer-gpu-bounds-20261017",
+      "commit": "e18b6742450c2d780e582328c2af46e2b5c88c8e",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-scene-depth-ab-20261018",
+      "commit": "3917d030379445ec87b6a95a06ad746e140fc59b",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-scene-depth-clip-20261018",
+      "commit": "dbd86eb1ee3f9b5280918f70ec140bfe2d598e63",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-scene-raster-coverage-20261018",
+      "commit": "a2ed4b1373bf868c4053557fdd10fafca3b61d19",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-sharp-phi-20261016",
+      "commit": "6afda240189e97744864e87715d0cb3b34e6be80",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-srt-proven-identities-20261017",
+      "commit": "c13dd676ab0e2f031876fd6ff6a3bee33e49ba25",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-srt-root-cause-trace-20261017",
+      "commit": "7be9204b692388986cc6985b3017e030f575279a",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-strided-gpu-tsharp-536-20261017",
+      "commit": "461fba573f7c4e73b34880b3b0f9029aa5341d8a",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-tsharp-table-census-20261017",
+      "commit": "9d11cc62f866c0da19603395c902ccc0a3762d42",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-universal-native-sbuffer-srt-20261017",
+      "commit": "6c9b99d7ce74d6b8664b53861928f839c9340e37",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-universal-sharp-masks-20261017",
+      "commit": "e7913e0a758dfdff61ab90190a49e94d22263826",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-upstream-menu-main-20261017",
+      "commit": "a87e981dd3e7649362a84dfc3c1402b1a221fcc0",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-upstream-phi-world-main-20261017",
+      "commit": "20c2c3e561688f64b52a256d84ac1e240d40c55d",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-vulkan-nonuniform-image-array-20261017",
+      "commit": "894390f1e50d59fef77538e47774982e245d9dcd",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-wave-gow-general-20261016",
+      "commit": "393c6f3e90c605acc808f0b0d202037726ded44c",
+      "protected": false
+    },
+    {
+      "ref": "experiment/got-wave-umin-20261016",
+      "commit": "50f55a071a1a96803e9a9542fd321ec85fdde698",
+      "protected": false
+    },
+    {
+      "ref": "experiment/gow-srt-forward-dependency-20261018",
+      "commit": "d7bb2381c6dd0dc172bf7a0d6db14c6f2f5d05b4",
+      "protected": false
+    },
+    {
+      "ref": "experiment/minmax-alpha-shader-20261017",
+      "commit": "b627ecb700125dfe6dda943417999d91c1ff22bd",
+      "protected": false
+    },
+    {
+      "ref": "experiment/minmax-srcalpha-one-20261017",
+      "commit": "182fc760d18dfff13e0bb833cf2d3800b3d100a4",
+      "protected": false
+    },
+    {
+      "ref": "experiment/render-audit-general-20261016",
+      "commit": "db106df0a396cfb3aff8bc11a44778c334e055de",
+      "protected": false
+    },
+    {
+      "ref": "experiment/resource-audit-general-20261016",
+      "commit": "080870c685ecd0d0820854aa93c8de60c8e7bbf6",
+      "protected": false
+    },
+    {
+      "ref": "experiment/shader-dynamic-sbuffer-20261016",
+      "commit": "90cc23618f4a66d373ab68bbda22a3cd2654bb3e",
+      "protected": false
+    },
+    {
+      "ref": "experiment/shader-runtime-srt-20261016",
+      "commit": "b9dbdcc00a565b2389e72b7af668a0510841b239",
+      "protected": false
+    },
+    {
+      "ref": "experiment/sharp-mixed-source-20261016",
+      "commit": "d67ebdd2eae8819bfa5b56b738a8934c1bb32725",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-global-dependencies-20261016",
+      "commit": "ae69c1bb1a0fd0012452524370ec527e4b54804b",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-inline-readconst-general-20261016",
+      "commit": "41248c321ed53fb8f45283197ae706102e4c337e",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-multiuse-general-20261016",
+      "commit": "a0dd9abc6d3d5857bfc5fc3a5370f0f04210016b",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-native-complete-20261016",
+      "commit": "19bf17ddc34436ded63121a4a55723d83b52aa4d",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-pc-relative-readconst-20261016",
+      "commit": "bf9d1984023036e3d489918c8913ea70e80871a3",
+      "protected": false
+    },
+    {
+      "ref": "experiment/srt-source-audit-general-20261016",
+      "commit": "ba4db17aa54c14b525f40dc7b7ea3a483cbcaba3",
+      "protected": false
+    },
+    {
+      "ref": "feat/ngs2-audio-foundation",
+      "commit": "f1c1c79073b811ada98b963d6a87c066b66e2bc8",
+      "protected": false
+    },
+    {
+      "ref": "feat/ngs2-audio-upstream",
+      "commit": "c342130813aea2d245a04d4f734506ba8731385f",
+      "protected": false
+    },
+    {
+      "ref": "fix/atomic-fault-feedback-20261022",
+      "commit": "5b1598dd7821dd2b0db01d432ade301626380b3c",
+      "protected": false
+    },
+    {
+      "ref": "fix/automatic-demand-coherence-20261022",
+      "commit": "f1ad2d69162795d0162e828e15ca782f00c4b1b1",
+      "protected": false
+    },
+    {
+      "ref": "fix/base-instance-step-rate-20261005",
+      "commit": "d94199aafb470c49b620084dff9bb1e9c277d70d",
+      "protected": false
+    },
+    {
+      "ref": "fix/builtin-cpu-id-native-20261016",
+      "commit": "7aa49348e8743f93b4aa3c41ec151a0702d78b43",
+      "protected": false
+    },
+    {
+      "ref": "fix/complete-vulkan-buffer-image-copy-ranges-20261022",
+      "commit": "e5db2b9967e4a69e76ff3fb7e8dcf1139ae058b3",
+      "protected": false
+    },
+    {
+      "ref": "fix/depth-image-copy-sync",
+      "commit": "bc479ce3207347c1c0ed72df49755c9cf7121205",
+      "protected": false
+    },
+    {
+      "ref": "fix/dynamic-sharp-indexing-general-20261014",
+      "commit": "5eff6ffd1d08c4c79f600e4eec26e1be0b80cbfe",
+      "protected": false
+    },
+    {
+      "ref": "fix/dynamic-sharp-table-indexing-20261014",
+      "commit": "b654b2d34a12238b408eeb1507e3cd9425076690",
+      "protected": false
+    },
+    {
+      "ref": "fix/emulator-owned-cpu-id-short-traps-20261016",
+      "commit": "d373f2a744caf66a83e4fa31aaeff261a9f76d58",
+      "protected": false
+    },
+    {
+      "ref": "fix/gamepad-home-exit",
+      "commit": "3ccdf15bcb0e77fed173b33ee96e006245d5d988",
+      "protected": false
+    },
+    {
+      "ref": "fix/gamepad-quit-input",
+      "commit": "075bd16f79dd7ea4342f5a3d1790e1c52cf77fcd",
+      "protected": false
+    },
+    {
+      "ref": "fix/gcn-bitcmp64-width-correct-20261015",
+      "commit": "7da3f43857894b7d4f2e4b0209418e2440d0198b",
+      "protected": false
+    },
+    {
+      "ref": "fix/gcn-depth-htile-20261020",
+      "commit": "0a858a4c6358c82ac815eb74adcc9ea353cbdc9f",
+      "protected": false
+    },
+    {
+      "ref": "fix/gcn-legacy-reciprocal-code-20261020",
+      "commit": "84025a9a581b2f2c8b6f1434dfc4697da7fa4086",
+      "protected": false
+    },
+    {
+      "ref": "fix/gds-coherence-and-producer-20261019",
+      "commit": "c5c06c4815350afe655502bc3af69d57aa704efc",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-audio-buffer-latency-20261015",
+      "commit": "8674f61d61df0d2a5217b1b0d069d4fc3281b87b",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-audio-multiport-deadlock-20261015",
+      "commit": "9c4a99ed399f1ee9b2fe5c54a9bfe75ad12fb27e",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-audio-port-health-20261017",
+      "commit": "711c62a011b98f9259eb928162c3689a596e5363",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-cpu-id-translation-selective-metadata-20261016",
+      "commit": "c8e923219a3c127b20b502ac545a5b0948c41b59",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-mprotect-sparse-range-20261016",
+      "commit": "a2309f0710b2d7a7bd15a86413cad88a4e59ba99",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-readonly-stream-64k-20261018",
+      "commit": "1d48cb329afe9dd50b21aef64ba195266efc6329",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-shader-resource-observability-20261017",
+      "commit": "c3f99507413913c51c152c03676e7e7fc7c2cbe2",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-spirv-f64-phi-20261016",
+      "commit": "f6f58d762a3676e30cb8c1a17d108bcfed2973e2",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-spirv-phi-64bit-types-20261015",
+      "commit": "8b429401e903b5ee03698ea2546e48fc73ee4c29",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-srt-findilsb32-20261016",
+      "commit": "8c2d4054d9f511ef36317d9ebb8515293c2f6fdb",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-srt-offset-arithmetic-20261015",
+      "commit": "9165f7e9bbab0d3fb846c980f63dcdfa272d4f53",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-srt-offset-arithmetic-20261017",
+      "commit": "6ca6de2a4be1992641c12edb7aa09996b6c254fe",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-srt-uniform-lane-20261016",
+      "commit": "f1f819865860f6c6961174e47fa279cf717f4272",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-vulkan-descriptor-layout-consistency-20261016",
+      "commit": "4635f779c1b4c6ecada57eb8fbae65578f7f19ec",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-vulkan-integer-sampler-20261016",
+      "commit": "f001a586bb72fa2b8ce52d2002bd966bd71c1614",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-vulkan-sparse-arena-limits-20261016",
+      "commit": "ffe826fbc1bdb1b2664ba9c5cd6ca9bddeefc6d4",
+      "protected": false
+    },
+    {
+      "ref": "fix/general-vulkan-storage-depth-alias-20261016",
+      "commit": "8b06ab19ffec830d7ad3398377fe10962cd0f461",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-buffer-dma-dirty-gate-20261016",
+      "commit": "cad74e0d22a1cdaab0560145fbd24fd802d33b18",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-copy-mip-overlap-20261024",
+      "commit": "d4018b5c1c24a18f624bf90cbe8c4fcaa79da2ec",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-descriptor-identity-20261024",
+      "commit": "cf65927da12a1985e97a7c58cfd2a161a0d77270",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-dma-dirty-generation-20261015",
+      "commit": "ccdb4d38f752538a0c73c8e2b9832ae42f058a56",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-dynamic-constant-reads-20261015",
+      "commit": "c583c658eb48770eeb3970b5f7ea4ce89a1a85ff",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-frame-metrics-20261015",
+      "commit": "3cb476400a33aa731332441379d37239480e1159",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-gpu-cpu-scope-probe-20261015",
+      "commit": "9af33cc55404eb6505de96ac0130d499fececa92",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-gpu-indexed-image-tables-20261023",
+      "commit": "8ec165ff44d76f74453cb148b42adc3ad2242dea",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-gpu-writable-range-readback-20261025",
+      "commit": "b1bbf9bd782134fa007066d05f27f23df7ac9558",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-hle-highres-wait-20261016",
+      "commit": "73b4a09a45b938c03b71d52d009fa45fcaf127e1",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-indexed-descriptor-coherence-20261025",
+      "commit": "f6a0ccc519f8d13a708de703e3116524419c8377",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-indexed-selector-wrap-20261024",
+      "commit": "cde55802368075ac83fa8239fab9f02bf03449ef",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-indexed-strided-record-index-20261025",
+      "commit": "08ec86588d402ad0c748fed9ffbe03643c7ac702",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-indexed-table-runtime-capacity-20261024",
+      "commit": "7a3c0e0553a3faa9952d3894921304f981e70ad4",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-indexed-uniform-sampler-20261024",
+      "commit": "d58904dc08a2f80dd59f194ec90d130cb59fb6d3",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-large-indexed-images-20261023",
+      "commit": "dc0d7880b94d479371296970fd0f9fcdd4e7fbaf",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-packed-fragment-color-exports-20261025",
+      "commit": "62b3fc27eb26c3b75f33061bbbd3ade1ed4bd41a",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-pm4-shader-register-windows-20261017",
+      "commit": "3c7d96738e982755c2c53f48ccbe08c5949218a7",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-recovery-ci-20261023",
+      "commit": "024d66b0e999ff5fde0e6782ead5030b1c28ab96",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-scalar-alu-exec-waterfall-20261025",
+      "commit": "2d6b3aa6c1651f67cde4bfa9398ede47c9f3cf76",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-srt-alias-read-dedup-20261024",
+      "commit": "bd35e9611fa0249b67a77ae05adfdd5bae81a213",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-srt-canonical-unbounded-20261025",
+      "commit": "35eb1e8ac9e2e52673180fe49276c5ab0be7107e",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-srt-dynamic-preflight-20261015",
+      "commit": "efa903763d7789f3c9fb89be5ac3c8b2a3be2600",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-srt-emission-checkpoint-20261026",
+      "commit": "c05501ef3af9008ff80b942256010edae493b4f8",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-srt-readfirstlane-offset-20261015",
+      "commit": "5d9aa0b4c0ddfd849ed691b92ca30c6fb3160a78",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-stencil-reference-20261024",
+      "commit": "f189c5cd0c5f190c399a8057eab350c43c20c8c3",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-stencil-reference-compatible-masks-20261025",
+      "commit": "fe8bcb7ce5cd9a2f9c10f6257e863fbf6016d428",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-unflattened-readconst-gpu-20261025",
+      "commit": "72c786e67e1daf0d05ef4c1c2db341ed60d7e5aa",
+      "protected": false
+    },
+    {
+      "ref": "fix/generic-uniform-lane-srt-20261024",
+      "commit": "9df149476c80490daef655f8da4138c6882b8247",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-bounded-gpu-texture-index-20261017",
+      "commit": "a56d71936607e90da6d41f0fa5449ddbf90fe4e3",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-indexed-material-flatbuf-bounds-20261018",
+      "commit": "bb205692eba04619e3c4aed2cc0ecd9bb36454de",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-indexed-table-cache-20261018",
+      "commit": "493825eabee2bd6071fb04b6549ac8ec5cbdd3df",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-latest-generic-world-20261023",
+      "commit": "5f8238769c5d17e0b50839d93d9c4459c007ef06",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-lds-phi-correctness-20261019",
+      "commit": "1532fab2af6ecbb5514ec2c0554584077cf90c65",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-live-material-permutations-20261018",
+      "commit": "48078011ac34a33bd826b7d1a824b1bb7ba2f480",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-menu-gpu-attribute-tsharp-20261018",
+      "commit": "75ae79f6219649dc373da092b1145ce988a01129",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-strided-sampler-indexed-20261018",
+      "commit": "d72990fbd8fe6483a921fa2c015e1d65b1e1f336",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-strided-table-coherence-20261018",
+      "commit": "463a7189b21af0e32c1efae9cbc2b2f53ed8ba87",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-texture-slot-pressure-20261018",
+      "commit": "29c32e56375ed167952954edf0cd09b02a5d24de",
+      "protected": false
+    },
+    {
+      "ref": "fix/got-v33-gow-srt-port-20261013",
+      "commit": "f905ac7c561df01bc21d6a6b255e8503a8e31083",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow102-srt-coherency-20261014",
+      "commit": "a15bbaea19cec49b35ded694c2ff96c66d2c1821",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow103-srt-arithmetic-20261015",
+      "commit": "905d502b30008715d8b15ff62ff91f553e18ce41",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow104-dynamic-tsharp-20261015",
+      "commit": "2a18fc65cd660966ae288708ca69474f05646cc5",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow104-proven-write-extent-20261015",
+      "commit": "6a53c676f580671f5393f86d806e44f35b64ea68",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow105-generic-srt-coherence-20261015",
+      "commit": "b6b49a452905fd207aaa7ae4ed9dcf9518c8005b",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow105-generic-srt-coherency-20261015",
+      "commit": "f2b776ca19366f6baae2819faad9a50dc0877e6d",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow105-generic-srt-order-20261015",
+      "commit": "addfa1e7d08556ea350f9de686c981f5e3cc5d71",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow105-generic-srt-planner-20261015",
+      "commit": "376feb9efb712fce492a188ba34495f636859e24",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow106-targeted-srt-coherence-20261015",
+      "commit": "641529b9cef853ec51c64ba42ef33bf1719a987b",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow107-selective-readback-20261015",
+      "commit": "f727c1aef4eb57e522a11faafaa641dce04c7fdd",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow108-selective-write-fault-20261015",
+      "commit": "343ae209e22391aff8ca513b536a858bb5ee4bfd",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow109-clean-general-provenance-20261015",
+      "commit": "5894c0f5796b7e430a7273492c3026911102a2fa",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow110-upstream-main-generic-20261015",
+      "commit": "745506e3ef2fd4df87ef703e6a10ac06945cd2bf",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-audio3d-queue-coherency-20261019",
+      "commit": "f8989ad9d81e5778238da2454d548d82f8e4ca5d",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-continue-menu-rearm-20261019",
+      "commit": "ef3c70310b8e5b4e1d81276c9ef5285817e70abf",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-deferred-uffd-overlay-integrity-20261017",
+      "commit": "617c5231e8a811fe739247c0d834e3ae22bf8367",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-permutation-resource-metadata-20261019",
+      "commit": "7f8fc067288b15a7dd36a7b2d669ccd4f2f53ec1",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-preserve-rendered-graphics-20261017",
+      "commit": "67f12bbe51132c138f0eb58c21a0f39d715ad383",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-proven-graphics-perf-20261018",
+      "commit": "061711d00e29cf05542891e0b770df018f54706e",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-proven-renderer-log-hotpath-20261017",
+      "commit": "e41070e772b3613355b6909b033facce904d366b",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-srt-deferred-producer-20261019",
+      "commit": "de503fe75217ab7f270002e27661d75a0a7cd085",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-srt-dynamic-left-shift-20261019",
+      "commit": "8eeec7b55be1d6cacf58132f2ea4695778b2fade",
+      "protected": false
+    },
+    {
+      "ref": "fix/gow-ssh-hup-safe-cleanup-20261019",
+      "commit": "372283254b33a2ec5ff0409e0f3f2368307c8487",
+      "protected": false
+    },
+    {
+      "ref": "fix/graphics-depth-growth-init",
+      "commit": "e78385ae5d02676c904e4e2cd45d6661b88a8b81",
+      "protected": false
+    },
+    {
+      "ref": "fix/htile-cost-and-gameplay-capture-20261020",
+      "commit": "d47d4f4820f078c6348d3e07ad219b2da8386ce0",
+      "protected": false
+    },
+    {
+      "ref": "fix/image-copy-common-layers",
+      "commit": "cfd24762e75302c644b1287881c9f104822cc4dd",
+      "protected": false
+    },
+    {
+      "ref": "fix/implicit-memory-dependencies-20261022",
+      "commit": "0bde46afaa33b29051b9d8a2c1b31f9c0f6876d6",
+      "protected": false
+    },
+    {
+      "ref": "fix/indirect-buffer-read-hazards-20261019",
+      "commit": "4531e278179f0aeb0292c6e347e7b0a718caf490",
+      "protected": false
+    },
+    {
+      "ref": "fix/installer-rollback-core",
+      "commit": "669f46368f7dc1b37f4d070e4c9b66f7dc4a8ed8",
+      "protected": false
+    },
+    {
+      "ref": "fix/kernel-hle-stack-align-upstream-20261015",
+      "commit": "c76e11c0fa4e60338acc427457599fad8e0d4863",
+      "protected": false
+    },
+    {
+      "ref": "fix/kernel-null-module-path-20261015",
+      "commit": "40a445e1a9378afee4237f84a9cdd9bd5f2b6a2f",
+      "protected": false
+    },
+    {
+      "ref": "fix/kernel-unlink-errors",
+      "commit": "d0af073bc6e51407311afce9ac00bb816a8ff612",
+      "protected": false
+    },
+    {
+      "ref": "fix/launcher-display-session",
+      "commit": "ef2265fc3e1cd6fc7eaf98024058fcc5b0286364",
+      "protected": false
+    },
+    {
+      "ref": "fix/linux-guest-cpu-identity-main-20261015",
+      "commit": "9ed382c13a2ace050bf3d705b2d447156bb70cf7",
+      "protected": false
+    },
+    {
+      "ref": "fix/linux-native-tsc-inheritance-main-20261015",
+      "commit": "02530271810d8645f65b6494b77b964bc2d26426",
+      "protected": false
+    },
+    {
+      "ref": "fix/linux-sdl-gamepad-hotplug-20261017",
+      "commit": "105c07c7ae8942cfe51d9284647593ce853ddb7f",
+      "protected": false
+    },
+    {
+      "ref": "fix/linux-userfaultfd-deferred-gpu-invalidation-20261016",
+      "commit": "4eba1484301fc1fcc60408c4b270c768b58c93bb",
+      "protected": false
+    },
+    {
+      "ref": "fix/linux-userfaultfd-registration-lifecycle-20261016",
+      "commit": "eabc3f127b58585811d4a7fbdb4308beac99894c",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-cpu-guest-module-ranges-20261016",
+      "commit": "e99a4dc96dfae2bc56c65767adc7d29f0a3f2bb5",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-cpu-identity-merged-20261016",
+      "commit": "c89fc789a4c2eb409d66f353ab1ce036e8f8a62d",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-cpu-rendered-gfx-restore-20261016",
+      "commit": "bd27922a086cc1abd2a0f31839998fe5c854de2f",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-cpuid-no-dynamorio-20261025",
+      "commit": "935078d587d2b7a095d5c5d653a6b798a8f9bfcc",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-hle-clock-with-tsc-faults-20261016",
+      "commit": "f66d8326e3eda973dfb45ad92a81436f6f6bb979",
+      "protected": false
+    },
+    {
+      "ref": "fix/native-masked-minimum-20261022",
+      "commit": "28d632b9245e8c83366f5624ebd767261425982f",
+      "protected": false
+    },
+    {
+      "ref": "fix/ngs2-direct-filters",
+      "commit": "8807fdfae0ade3cad0ffad486651c955e135ab6b",
+      "protected": false
+    },
+    {
+      "ref": "fix/ngs2-matrix-routing",
+      "commit": "a98e113fb0639f17f6c51481c432451f34b40525",
+      "protected": false
+    },
+    {
+      "ref": "fix/ngs2-stream-resampling",
+      "commit": "a9c09a9fbf8ec0ca170c2bb6c5b2e01717c8e890",
+      "protected": false
+    },
+    {
+      "ref": "fix/occlusion-count-control",
+      "commit": "77155ef62cf2e83b91c40e8557930931c5bd57f6",
+      "protected": false
+    },
+    {
+      "ref": "fix/occlusion-query-writeback",
+      "commit": "66db3a63949890267b2c2e32ba49dcf92ea30df2",
+      "protected": false
+    },
+    {
+      "ref": "fix/pes-static-zpass-predication-20261005",
+      "commit": "8d91919e296d210d185894140c0b2c885c7a871c",
+      "protected": false
+    },
+    {
+      "ref": "fix/pes-zpass-wait-predication-20261005",
+      "commit": "d62628f2d6c3e4f24776f21c762a31138d5f1a24",
+      "protected": false
+    },
+    {
+      "ref": "fix/pes-zpass-wait-predication-playtest-20261005",
+      "commit": "6dd93b4efda1eca0c118b36d669f904803fcf4d8",
+      "protected": false
+    },
+    {
+      "ref": "fix/portable-guest-cpu-identity-20261016",
+      "commit": "f1291aa69c1ae8e13717d8a9449ecd6c99e94fba",
+      "protected": false
+    },
+    {
+      "ref": "fix/presentation-frame-sync",
+      "commit": "287e0d09d90e9b0b147fa76fb96049ad99cc6ac8",
+      "protected": false
+    },
+    {
+      "ref": "fix/preserve-gpu-image-mips",
+      "commit": "c293dbcadbcb545676947500936df69fcda7a8bf",
+      "protected": false
+    },
+    {
+      "ref": "fix/restore-generic-kernel-hooks-20261025",
+      "commit": "04588651b93bd71c9b82264eca8ac8e608a49236",
+      "protected": false
+    },
+    {
+      "ref": "fix/shader-resource-ranges-20261021",
+      "commit": "cdd9c2f4863efb6f64030568290d4e70ed6bf345",
+      "protected": false
+    },
+    {
+      "ref": "fix/shared-srt-dependency-scheduling-20261022",
+      "commit": "872556ac0a25f2c3923374d2312556a97d4f56fc",
+      "protected": false
+    },
+    {
+      "ref": "fix/shared-ubnorm-nz-20261022",
+      "commit": "f94c4f09e6111c0f9ff9fd1c5125c762ae88eb07",
+      "protected": false
+    },
+    {
+      "ref": "fix/sparse-arena-buffer-limits",
+      "commit": "201124a6c533020ffd9cabf5d84fb6d8e207a864",
+      "protected": false
+    },
+    {
+      "ref": "fix/sparse-bda-memory-allocation",
+      "commit": "bac09c8b84834991154adcdda65c1b445089bdff",
+      "protected": false
+    },
+    {
+      "ref": "fix/sparse-queue-family",
+      "commit": "0a7790aaa11c5ec0009cc66976bb90a8ce7078e5",
+      "protected": false
+    },
+    {
+      "ref": "fix/sparse-submit-wait-stages",
+      "commit": "d2994ae76538aff261f8a121e266bcd08fb2d746",
+      "protected": false
+    },
+    {
+      "ref": "fix/spirv-image-atomic-view",
+      "commit": "9e0697e147f36a35e5f18ddfd59681ee8ab0036a",
+      "protected": false
+    },
+    {
+      "ref": "fix/srt-bfe-width32-20261018",
+      "commit": "904791ae5655ce760e56015726390fcd2a8227b3",
+      "protected": false
+    },
+    {
+      "ref": "fix/srt-dynamic-left-shift-20261018",
+      "commit": "cda1cc7c1e4ca412937b18e2d80561b8c13867a6",
+      "protected": false
+    },
+    {
+      "ref": "fix/srt-lane-required-reads-20261021",
+      "commit": "36980d28f9710f0d41afecd991a4d0a0edd53963",
+      "protected": false
+    },
+    {
+      "ref": "fix/srt-offset-readfirstlane-20261014",
+      "commit": "a3bdf3fc4c761d368064efc0fb67979f31b318a0",
+      "protected": false
+    },
+    {
+      "ref": "fix/srt-walker-pushptr-stack-balance-20261014",
+      "commit": "e11b667aa26bd73d271e44b3211d310b1870ffc8",
+      "protected": false
+    },
+    {
+      "ref": "fix/startup-loading-screen-20261005",
+      "commit": "0b7ff78483e831db2d424b2351f5d931a56a1555",
+      "protected": false
+    },
+    {
+      "ref": "fix/sunshine-display-inheritance",
+      "commit": "d614a4e4ff61fe8a0feb6cc8e6a988cf89264041",
+      "protected": false
+    },
+    {
+      "ref": "fix/sunshine-session-cleanup",
+      "commit": "1baa9f7645fd238d51f99b89385038a3d4fd6754",
+      "protected": false
+    },
+    {
+      "ref": "fix/sunshine-x11-authority",
+      "commit": "b2175f489626c389aaaffaa5ba23a1a8cbe4b062",
+      "protected": false
+    },
+    {
+      "ref": "fix/texture-cache-gpu-overlap-dirty-20261014",
+      "commit": "8da95bd1f373a5136c9f24c185de6876a34f3006",
+      "protected": false
+    },
+    {
+      "ref": "fix/texture-subresource-containment",
+      "commit": "fc8945dfdd08dfa51fd2537e16b639240123b4f4",
+      "protected": false
+    },
+    {
+      "ref": "fix/tiled-mip-layout",
+      "commit": "261f339244bd3179089ed131be371df4c1b670b2",
+      "protected": false
+    },
+    {
+      "ref": "fix/tiling-uniform-width",
+      "commit": "1522b405a109f9f5f1db3c0852b62c1e27c2539b",
+      "protected": false
+    },
+    {
+      "ref": "fix/typed-float-atomic-emulation-20261022",
+      "commit": "8329755a6da9c1827c3153de4f82d0638ee19ff8",
+      "protected": false
+    },
+    {
+      "ref": "fix/userservice-missing-user",
+      "commit": "e2251423f46f0bc20e07f5d9e127af141adb7e26",
+      "protected": false
+    },
+    {
+      "ref": "fix/vsharp-clear-stride-records-20261014",
+      "commit": "c4b62e569c81ea84f63eab0c2046298aa5c7ce72",
+      "protected": false
+    },
+    {
+      "ref": "fix/vulkan11-uniform-storage-16bit",
+      "commit": "047cc7cf992f8cf60fdc4f0adfdcfcfb27bbed7d",
+      "protected": false
+    },
+    {
+      "ref": "fix/vulkan-image-descriptor-contract-20261016",
+      "commit": "ad9b5e93863b64d546a4d8afe94b8b75465a1c38",
+      "protected": false
+    },
+    {
+      "ref": "fix/vulkan-image-descriptor-intent-main-20261016",
+      "commit": "3c53718e9a4d9ca3d4f1610cb340708959f7738e",
+      "protected": false
+    },
+    {
+      "ref": "fix/vulkan-sparse-queue-upstream-20261015",
+      "commit": "05f9a40c9fb5d10a96bae52d0e38ee707d5053ef",
+      "protected": false
+    },
+    {
+      "ref": "fix/vulkan-sparse-scalar-recip-20261015",
+      "commit": "6a89b2789de21b110fbe51ecf275e4cf32d40b40",
+      "protected": false
+    },
+    {
+      "ref": "fix/world-graphics-dma-hazards-20261021",
+      "commit": "94ed29b7c5767718ead87164558d6ec7523bcc9a",
+      "protected": false
+    },
+    {
+      "ref": "fix/world-graphics-invariance-20261021",
+      "commit": "3484546c6696188bef94f8d489252ed0810a05c4",
+      "protected": false
+    },
+    {
+      "ref": "got/proven-progress-20261026",
+      "commit": "a9ee4b761a9996553435cb2bde3e3bdf9cdaacc1",
+      "protected": false
+    },
+    {
+      "ref": "gow/proven-progress-20261026",
+      "commit": "86ff0a059b12810bcd2864131df52991434aac5e",
+      "protected": false
+    },
+    {
+      "ref": "import/gow-protected-gameplay-3965a497-20261025",
+      "commit": "3965a497532edb7b18027692ab04eb97fa4c145b",
+      "protected": false
+    },
+    {
+      "ref": "import/upstream-audio3d-feeder-5492-20261025",
+      "commit": "9f55474ad45778f8ac08e923574f214d492997f2",
+      "protected": false
+    },
+    {
+      "ref": "integration/all-generic-fixes-20261023",
+      "commit": "b04334a4446ac272721918336c45bde1c995679f",
+      "protected": false
+    },
+    {
+      "ref": "integration/all-proven-generic-fixes-20261023",
+      "commit": "0acec3b82dcfeb2f289342be80657b4fb8a028d6",
+      "protected": false
+    },
+    {
+      "ref": "integration/fullstack-gow-got-20261019",
+      "commit": "a2c0393bb6b2894045c922b8a3870f462c292480",
+      "protected": false
+    },
+    {
+      "ref": "integration/generic-large-indexed-final-20261023",
+      "commit": "9299c429cb72a2dadf9211d20c4c18769675338c",
+      "protected": false
+    },
+    {
+      "ref": "integration/gow84-ds-ordered-count-20261013",
+      "commit": "c19f883ba41aa48fa39f3db4e1916d4bca8b384e",
+      "protected": false
+    },
+    {
+      "ref": "integration/gow-ragnarok-upstream-got-20261025",
+      "commit": "a4f6065bad9220467eb71933a229af94a7489375",
+      "protected": false
+    },
+    {
+      "ref": "integration/universal-esde-core-20261019",
+      "commit": "52e65666cf30bb21943da44aaa54dc285cdb6ea7",
+      "protected": false
+    },
+    {
+      "ref": "integration/upstream-main-got-20261015",
+      "commit": "b4844b644d565b47006b53ccbb11a11274df7327",
+      "protected": false
+    },
+    {
+      "ref": "main",
+      "commit": "01beb8e0fbbea4462bbc661f0019624e959c53dd",
+      "protected": false
+    },
+    {
+      "ref": "maintenance/got-experiment-diary-20261026",
+      "commit": "a84d9830e3961be2716d66d8b5df1d95b7421d77",
+      "protected": false
+    },
+    {
+      "ref": "ops/shadps4-hard-120-second-test-limit-20261025",
+      "commit": "eaa8edb36d75b3638992cade8a6cd8c155740962",
+      "protected": false
+    },
+    {
+      "ref": "packaging/runtime-mask-short-launch-20261023",
+      "commit": "fee4f1e8ae8e5793214540dbb00bbb7ef27568b4",
+      "protected": false
+    },
+    {
+      "ref": "playtest/efootball-proven-plus-5230-20261006",
+      "commit": "b85e97f496ee44821525a570b04826494911cc70",
+      "protected": false
+    },
+    {
+      "ref": "playtest/main-sparse-guest-current-cpu-20261006",
+      "commit": "69cedb414f168a661d2d08da01b3726a510e5103",
+      "protected": false
+    },
+    {
+      "ref": "playtest/pes-confirmed-20261005",
+      "commit": "ab46655439abc75d491e403fe2447ec3d58c4176",
+      "protected": false
+    },
+    {
+      "ref": "playtest/pes-tlg-render-fixes-20261005",
+      "commit": "b342dadd45ece8367708cc233c239a9e6ff0b5bd",
+      "protected": false
+    },
+    {
+      "ref": "playtest/pes-v019-goodgfx-cpu-20261005",
+      "commit": "ac691d782afa92019a1be5f493d7fc522c878270",
+      "protected": false
+    },
+    {
+      "ref": "playtest/upstream-main-plus-sparse-queue-20261006",
+      "commit": "bebdecc4e6736f76a3a995ba66b6c512409815d1",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/depth-growth",
+      "commit": "44cac8539484e1f0e59bbd4ba4ea8d00a892c954",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/depth-transfer",
+      "commit": "17198a07daa4a50e4c0388a5002d2c4fee3fe636",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/gamepad-quit",
+      "commit": "4651f38dc15757be7b9428b402f9a223cfc05743",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/guest-current-cpu-20261006",
+      "commit": "9811afcdcfd14172adc7a13514b91442c5e5ef88",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/jaguar-feature-filter-20261008",
+      "commit": "c48f374d6a7649f7debdd58fc1aa0f81911131f3",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/kernel-unlink",
+      "commit": "53c1def065426d33026b373f8a2344a3b22ec1d1",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/linux-guest-cpu-id-20261007",
+      "commit": "9712a016e4e6e6994b2576d38ec18d0f3e80a778",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/presentation-sync",
+      "commit": "15fd8f56366c913c5205181dd057aa8cbdc14f8d",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/sparse-device-address",
+      "commit": "a7618751ec17a2e55ff7624f758350edeab7ba19",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/sparse-queue",
+      "commit": "b0adb63c43f50e6eff7d30e96414c1a62bc56b90",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/sse4a-fallbacks-20261008",
+      "commit": "954159aaa990ab72637251799a85da0d2ffbd94e",
+      "protected": false
+    },
+    {
+      "ref": "pr-ready/userservice-color",
+      "commit": "89d2333f161abf0ad86afb7f8b7eb62efe5c09d4",
+      "protected": false
+    },
+    {
+      "ref": "proof/got-main-retained-graphics-20261015",
+      "commit": "6d3a3ed67117ee3369de0ee3a40884d5841406b7",
+      "protected": false
+    },
+    {
+      "ref": "proof/got-world-visible-pm4-tsharp-20261017",
+      "commit": "67b88749abbeb8410a08f62be89d6bcdbbc29ccd",
+      "protected": false
+    },
+    {
+      "ref": "proof/gow-main-generic-fixes-20261015",
+      "commit": "c50a9be097bcd8963b2524ac479b2258146e518c",
+      "protected": false
+    },
+    {
+      "ref": "proof/gow-upstream-clean-generic-20261015",
+      "commit": "ebbfb286b2448d1f3edfba791932d760d058049f",
+      "protected": false
+    },
+    {
+      "ref": "ps4-cpu-tests-fpkg-v3",
+      "commit": "9bfae4bb175955b8e0eb8f1fe9551bb305233d5a",
+      "protected": false
+    },
+    {
+      "ref": "rebase/gow-native-cpu-upstream-32021e41-20261017",
+      "commit": "67cfefd05e9ee6429507dff271b5dd75c739068e",
+      "protected": false
+    },
+    {
+      "ref": "rebase/gow-native-upstream-32021e41-20261017",
+      "commit": "d386df2498206fdcf3d66101600555d5a58a5905",
+      "protected": false
+    },
+    {
+      "ref": "rebase/retained-linux-fault-lifecycle-20261021",
+      "commit": "0b6e33d970dc51b6ee4e8df44e2518b8e637355a",
+      "protected": false
+    },
+    {
+      "ref": "rebase/upstream-base-32021e41-20261017",
+      "commit": "32021e41bc52f744c80d122e732e24e97496c98d",
+      "protected": false
+    },
+    {
+      "ref": "rebase/upstream-generic-20261021",
+      "commit": "12a07a6d83007f76012f762e68fedb5954aa0f8a",
+      "protected": false
+    },
+    {
+      "ref": "rebase/upstream-generic-c2814041-20261021",
+      "commit": "c0a3a1eb2661739dfc6d08932a2d226637c66f9e",
+      "protected": false
+    },
+    {
+      "ref": "rebase/v0.19.0-confirmed-fixes",
+      "commit": "7466eacab8e97a630807fa9b3ed5da1f298a665e",
+      "protected": false
+    },
+    {
+      "ref": "release/esde-proven-20261014",
+      "commit": "86138906aebce0c5698764a567b74b921aeebf39",
+      "protected": false
+    },
+    {
+      "ref": "replay/fp64-phi-base-20261021",
+      "commit": "361e8e746041e9f5d76b587e1b519c517738902c",
+      "protected": false
+    },
+    {
+      "ref": "replay/fp64-phi-patch-20261021",
+      "commit": "278af53d9e6697d5a8ff5621abf90cf8903db743",
+      "protected": false
+    },
+    {
+      "ref": "replay/image-binding-base-20261021",
+      "commit": "cb97f73f2ceae041de9eef8c3711e98775eb3a60",
+      "protected": false
+    },
+    {
+      "ref": "replay/image-binding-patch-20261021",
+      "commit": "7086a7cbdad8ac8129e6ad7dbb9e49d216bf3523",
+      "protected": false
+    },
+    {
+      "ref": "replay/integer-sampler-base-20261021",
+      "commit": "58be35e0254af8085a390cea0c5a709acb3627be",
+      "protected": false
+    },
+    {
+      "ref": "replay/integer-sampler-isolated-20261021",
+      "commit": "0342a2552848cd080961fa135fcf157273589d55",
+      "protected": false
+    },
+    {
+      "ref": "replay/isolated-shader-metadata-base-20261021",
+      "commit": "14284088a332ad922c8b12262c301db76513fdaa",
+      "protected": false
+    },
+    {
+      "ref": "replay/isolated-shader-metadata-patch-20261021",
+      "commit": "78ee16bf3deca7fa05af843fc3d98d54da902d94",
+      "protected": false
+    },
+    {
+      "ref": "replay/isolated-vulkan16-20261021",
+      "commit": "b9a484da9b06ce1b198831f9ecd890924a5e181b",
+      "protected": false
+    },
+    {
+      "ref": "replay/native-core-extracted-20261021",
+      "commit": "defcf352b65ea907eca9db05370b105fe19ca214",
+      "protected": false
+    },
+    {
+      "ref": "replay/pm4-boundary-base-20261021",
+      "commit": "15ac7a39dc42209cfbb24371b3e1d2ae4bf72c31",
+      "protected": false
+    },
+    {
+      "ref": "replay/pm4-boundary-patch-20261021",
+      "commit": "96216d0ebff93972597e21e63ff33c3dbe489be8",
+      "protected": false
+    },
+    {
+      "ref": "replay/srt-arithmetic-base-20261021",
+      "commit": "62f3a4f4037574ea551b20b977b4750e9d9f598b",
+      "protected": false
+    },
+    {
+      "ref": "replay/srt-arithmetic-patch-20261021",
+      "commit": "5e4c7aef8e98cd72ab4b1dce84c227867235c4da",
+      "protected": false
+    },
+    {
+      "ref": "replay/startup-ui-c2814041-20261021",
+      "commit": "a4dfb9be06b429b1fcfffcc575a008f37948eb66",
+      "protected": false
+    },
+    {
+      "ref": "replay/startup-ui-inline-patch-20261021",
+      "commit": "45f158f338a8daad2c1117ed5d9f5c48da106596",
+      "protected": false
+    },
+    {
+      "ref": "restore/gow-rendered-baseline-20261016",
+      "commit": "ebbfb286b2448d1f3edfba791932d760d058049f",
+      "protected": false
+    },
+    {
+      "ref": "sync/upstream-main-2cdefaa-20261026",
+      "commit": "2cdefaa1298c6e4ece6c74bd84e90f3906282d51",
+      "protected": false
+    },
+    {
+      "ref": "test/generic-equivalent-indexed-sharp-sources-20261025",
+      "commit": "1345795aaca8c3f4e544283dd759cca6c1efbd57",
+      "protected": false
+    },
+    {
+      "ref": "test/generic-indexed-image-uniform-sampler-20261025",
+      "commit": "54a6c1e7488e13eb60e213605824562306050cdf",
+      "protected": false
+    },
+    {
+      "ref": "test/generic-precise-linear-image-coherence-20261025",
+      "commit": "9186264c71dbae224e5cc3b4a858e3f6381f0637",
+      "protected": false
+    },
+    {
+      "ref": "test/generic-precise-tiled-image-readbacks-20261025",
+      "commit": "42675f176f5ea0c86395bf298e34d5885ae4e8b8",
+      "protected": false
+    },
+    {
+      "ref": "test/got-general-srt-arithmetic-main-20261015",
+      "commit": "0c9ab4c3149d26a90bd4992ef2ada7abc49f89ce",
+      "protected": false
+    },
+    {
+      "ref": "test/got-general-srt-legality-main-20261015",
+      "commit": "cd3dfb91babaf5e4d02987d8dd45d8afaa391a29",
+      "protected": false
+    },
+    {
+      "ref": "test/got-gow-general-f64-phi-20261015",
+      "commit": "dcd1ba7e11f854dd28f06584077150475f331ba5",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio3d-associated-drain-20261017",
+      "commit": "267288f9ef298000ec50b5603ce228d668c885a5",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio3d-queue-isolated-build-20261019",
+      "commit": "2608d5501307378a0816a05b9cca39b6bb2a874f",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-batch-sync-20261017",
+      "commit": "181d5f9c8775002e399956b88e0a17d95bf08562",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-frame-cadence-20261018",
+      "commit": "449973eca3e1828e124a33528b2422bb1c734e6f",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-onset-aligned-ab-20261018",
+      "commit": "ab2f73e55cd9950be5c880c708e54efb98cd26ee",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-outer-pacing-20261017",
+      "commit": "805b78aa138199492463f102c06e848918ffbb41",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-uffd-ab-20261018",
+      "commit": "9009e9f13f3f06d0db6afea920712fec0e5ce032",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-audio-underrun-clock-20261019",
+      "commit": "0b4d06570e4365c27affa002c951ee9b5f683312",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-automated-scene-aligned-ab-20261018",
+      "commit": "63dbfc1f942ceddcb8f2fcbddd9f53bfa8caafe7",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-autonav-recovery-20261018",
+      "commit": "7d852b24231a1ef976cb2c709fffb88b96c02562",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-fullgfx-runtime-logging-20261017",
+      "commit": "d41efef13566ff409d900e2abca186918e484631",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-got-shared-shader-correctness-20261019",
+      "commit": "970f4c6e13bc90141be718cf08138f02bbe197d1",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-gpu-invalidate-timing-20261018",
+      "commit": "82fb822c5e9967d0335d24c05d0473a2a81641c3",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-gpuwrite-transition-summary-20261018",
+      "commit": "0780f7f67ee35cbeea57f5cf4b679b4043ae4a66",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-large-buffer-cpu-timing-20261018",
+      "commit": "ae17808375f32210dd9c299e8048ec19e2299061",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-multiuse-existing-binary-isolation-20261018",
+      "commit": "fabf4eeed65ae3c4685711aa7e03c0f7789db99d",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-ollama-vram-isolation-20261018",
+      "commit": "4c3dff53c741247a0ad16920c248b3ad5174318f",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-preserved-graphics-audio3d-srt-20261019",
+      "commit": "e04fc8ab8c1ca6323fcf8af98f21e294128edbdd",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-queue-resource-rootcause-20261018",
+      "commit": "31876e0fe2c597e1615d55d9805e674e1c83287d",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-sparse-cpu-upload-20261018",
+      "commit": "f2bced1b8c377747333be7ad5414dfd2d73a2068",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-srt-multiuse-source-fix-20261018",
+      "commit": "1ee153c008a1ee59dfea6b0fc52dba1468223a8e",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-srt-wave-uniform-inline-20261019",
+      "commit": "b14d56f09bb959d9c3dda2252ae210828651868c",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-uffd-audio-latency-20261017",
+      "commit": "e8ff3f5709f4ef00794a903324d906ac8bb92e8a",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-uffd-batched-read-20261017",
+      "commit": "f909c3abb1ac1e7c8d87de833d3659f7d0b8fc87",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-uffd-callback-batch-20261018",
+      "commit": "38414d7de2141cc42b782c0293fca40895f900a8",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-uffd-readfirst-20261018",
+      "commit": "04f8c007e6506bc2043738b95aa8264b6f23d5d7",
+      "protected": false
+    },
+    {
+      "ref": "test/gow-uffd-wp-hotregions-20261018",
+      "commit": "b31f975cb2b2f99edc6be24c2de28584044dc647",
+      "protected": false
+    },
+    {
+      "ref": "tools/repair-esde-default-20261024",
+      "commit": "a3478d1b0d56cabbd73a7408843af392a960460d",
+      "protected": false
+    }
+  ]
+}

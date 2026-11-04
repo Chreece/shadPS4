@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-fragment-draw-probe-prepared-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "REVERSIBLE_EXACT_SOURCE_INSTRUMENTATION_LOCAL_TESTED_NATIVE_NOT_RUN",
+  "game_id": "CUSA11456",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "parent_review": "20261029T123019020806199Z-menu-fragments-reviewed.json",
+  "motivation": "Both b5c898c7 and 7eaf40ad current SPV and normalized IR are identical to Oct28. 7eaf40ad has 8 Undef result values whose SSA reach a conditional DemoteToHelperInvocationEXT, including boolean Phi chain. Whether these FS are executed and whether missing menu pixels are discarded remains unknown. Do not alter alpha or fabricate resources based on static SSA alone.",
+  "branch": "diagnostics/c925-menu-fragment-focus-20261029",
+  "commit": "80f1ab86825a06f4e06c4a240169fb5665cf4fc2",
+  "pr": 114,
+  "tests": {
+    "GCC_CPP20_WERROR": "PASS extracted real RecordFragmentDraw helper and rate limiter",
+    "Clang_CPP20_WERROR": "PASS extracted real helper and rate limiter",
+    "python_source": "PASS exact SHA256 source transform, rejects modified/repeated source, only two draw callsites",
+    "runner_restore": "PASS temporary source/object/ELF restoration (normal, simulated interrupted build, refusing unexpected external source edit)",
+    "earlier_local_failure": "The initial stub LOG_INFO fixture generated unused-parameter compiler warnings with -Werror. Replaced test-only inert logging with argument-consuming stub; actual tested generated C++ passes both compilers. No emulator native build attempted in model environment."
+  },
+  "files": [
+    {
+      "path": "tools/development/c925_menu_fragment_focus/apply_draw_probe.py",
+      "sha256": "21b1c5167892928750fc0468df15f0f13cc4e9bb5eb5f4059633fdf50424f05e",
+      "git_blob": "b679dc44d6712ddf9acab762e9adacc48c728d60"
+    },
+    {
+      "path": "tools/development/c925_menu_fragment_focus/run_draw_probe.py",
+      "sha256": "4c869c604fa7f32944902f3dd8aca97e90f96b0f41c0ba46e9e7e79237c16052",
+      "git_blob": "9c8bbfe158432421abbf0e39cd8770f7dbee51db"
+    },
+    {
+      "path": "tools/development/c925_menu_fragment_focus/test_draw_probe.py",
+      "sha256": "7b3e3abe039e97db7b45d39b77ae9138e7558f88a3bebebed75a2b14a0a86754",
+      "git_blob": "474821506771492d7d015d53cc5fe83d198728b7"
+    },
+    {
+      "path": "tools/development/c925_menu_fragment_focus/test_run_draw_probe.py",
+      "sha256": "5462a00fff9729f5c1cbc6531f3e5a23d09b22168300927f84cbe14049d8041c",
+      "git_blob": "cc58e292da30afa1a49dae3b6d2981000481af61"
+    }
+  ],
+  "native_scope": "One transient modification to exact SHA-checked vk_rasterizer.cpp, only after BindResources in Draw and DrawIndirect. Logs per fragment program hash, draw kind, index status/count, instances, MRT and write mask, color mode, image/sampler resource counts. Logging rate limited first4 + powers2. No shader emission, alpha, render-state, descriptor or GPU command change. Requires currently accepted PR109 ELF89ffa... and original PR109 source postimages, no other emulator active, settled Ninja build tree, original source/object/ELF checkpoint. After compile and one private-profile no-input 118+2-second run, source, object, and ELF restored byte-identical; refuses overwriting unexpectedly externally edited source. Restores Ollama as needed, retains8GiB floor and original save/X11/SSH/Sunshine protections. Full runtime result pending.",
+  "decision": "NO_GRAPHICS_FIX_PROMOTED_DIAGNOSTIC_PENDING; KEEP_ALL_PREVIOUSLY_ACCEPTED_EMULATOR_CORRECTIONS",
+  "next_test": "Run pinned self-test then transient native probe. Analyze whether b5c898c7 and7eaf40ad actually occur in submitted menu draws, MRT masks and fragment texture declarations, correlate with the menu screenshot. Only then consider correctness fix for sample inputs, Undef/Phi, alpha or render target."
+}
