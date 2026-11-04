@@ -1,0 +1,248 @@
+{
+  "schema_version": 2,
+  "review_id": "ordered-gds-operand-correction-20261101",
+  "timestamp_utc": "2026-11-01T19:18:51.778420+00:00",
+  "source_parent": "43b739c135545d13979597491cb3679b7eb7846a",
+  "upstream_commit": "8a66adabf74072e24162b098d7bfd3156b475393",
+  "archive": {
+    "file": "universal-two-games-20261101T184331Z-1617567.tar.gz",
+    "sha256": "afcebfc3536e6a7d582a40bb0b7e00b54ccedab8725f6357f35d9d17f3bdc73c",
+    "bytes": 18748736
+  },
+  "reviewed_runs": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T185849Z-1771000",
+      "timestamp_utc": "2026-11-01T18:58:49.677204+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "exit_code": 1,
+      "source_commit": "43b739c135545d13979597491cb3679b7eb7846a",
+      "binary_sha256": "0ccbc6120b93cf98e6f3de493b7eb170d0ad9eda7f550f5faca06b7b1c818408",
+      "game_launched": true,
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "installed_binary_changed": false,
+      "graphics_verified": false,
+      "uploaded_archive_sha256": "afcebfc3536e6a7d582a40bb0b7e00b54ccedab8725f6357f35d9d17f3bdc73c",
+      "review_file": "docs/emulator/reviews/20261101-ordered-gds-operand-correction.json",
+      "elapsed_seconds": 10.421,
+      "screenshots": [],
+      "gpu_failure": null,
+      "guest_continuation_executed": false,
+      "reviewed_result": "FIRST_REAL_GCN_CHECKPOINT_CAPTURED_CONTINUATION_PENDING",
+      "decision": "Keep PR118 draft and fork main unchanged."
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261101T185902Z-1773076",
+      "timestamp_utc": "2026-11-01T18:59:02.505652+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "exit_code": 1,
+      "source_commit": "43b739c135545d13979597491cb3679b7eb7846a",
+      "binary_sha256": "0ccbc6120b93cf98e6f3de493b7eb170d0ad9eda7f550f5faca06b7b1c818408",
+      "game_launched": true,
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "installed_binary_changed": false,
+      "graphics_verified": false,
+      "uploaded_archive_sha256": "afcebfc3536e6a7d582a40bb0b7e00b54ccedab8725f6357f35d9d17f3bdc73c",
+      "review_file": "docs/emulator/reviews/20261101-ordered-gds-operand-correction.json",
+      "elapsed_seconds": 41.586,
+      "screenshots": [],
+      "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+      "guest_continuation_executed": false,
+      "reviewed_result": "GPU_CONTEXT_LOST_NO_GRAPHICS_ACCEPTANCE",
+      "decision": "Keep PR118 draft and fork main unchanged."
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261101T184332Z-1617973",
+      "timestamp_utc": "2026-11-01T18:58:49.305506+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "COMPLETE_BUILD_ONLY",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "exit_code": 0,
+      "source_commit": "43b739c135545d13979597491cb3679b7eb7846a",
+      "upstream_commit": "8a66adabf74072e24162b098d7bfd3156b475393",
+      "binary_sha256": "0ccbc6120b93cf98e6f3de493b7eb170d0ad9eda7f550f5faca06b7b1c818408",
+      "game_launched": false,
+      "installed_binary_changed": false,
+      "graphics_verified": false,
+      "uploaded_archive_sha256": "afcebfc3536e6a7d582a40bb0b7e00b54ccedab8725f6357f35d9d17f3bdc73c",
+      "review_file": "docs/emulator/reviews/20261101-ordered-gds-operand-correction.json",
+      "reviewed_result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "decision": "Native build of 43b739 confirmed; this does not validate graphics or a later candidate."
+    }
+  ],
+  "gow_checkpoint": {
+    "file": "ordered-gds-00000000dbaa6ae4-1.bin",
+    "bytes": 97152,
+    "sha256": "3cdd6e7d95a1735b4d260634c423caf135fda6e3850db5064ce0bb434d0eb199",
+    "shader_hash": "00000000dbaa6ae4",
+    "groups": [
+      7,
+      1,
+      1
+    ],
+    "threads": [
+      64,
+      1,
+      1
+    ],
+    "waves": 7,
+    "sgprs": 104,
+    "vgprs": 52,
+    "lds_bytes_per_group": 1536,
+    "exec_masks": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "source_vgpr": 5,
+    "destination_vgpr": 7,
+    "actual_source_operands_by_slot": [
+      0,
+      0,
+      0,
+      0,
+      12,
+      0,
+      0
+    ],
+    "old_packet_payloads_by_slot": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "source_evidence": "Uploaded raw shader from the earlier ordered-count archive; SHA-256 97d6b31e16cc6c7660b78792faa15df49f49d10dad9ed97faa98fd3e137f999e. Both instruction sites independently decode ADDR=v5; current native checkpoint VGPR images supply the listed values. Private raw shader and checkpoint bytes are not committed.",
+    "sites": [
+      {
+        "pc": "0x4158",
+        "control": "0x1300",
+        "operation": "exchange",
+        "slots": [
+          0,
+          1,
+          2,
+          3,
+          5,
+          6
+        ]
+      },
+      {
+        "pc": "0x41d4",
+        "control": "0x0300",
+        "operation": "add",
+        "slots": [
+          4
+        ]
+      }
+    ],
+    "m0_by_slot": [
+      "0x40000",
+      "0x40001",
+      "0x40002",
+      "0x40003",
+      "0x40004",
+      "0x40005",
+      "0x40006"
+    ],
+    "native_stop": "Deliberate PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION; 10.421 seconds, exit -11. All seven checkpoints passed the old structural validation, whose popcount-based payload rule was insufficient.",
+    "not_proven": [
+      "Actual PS4 ordered-counter payload behavior",
+      "Counter storage mapping and initialization lifetime",
+      "Portable multi-wave continuation",
+      "Graphics or gameplay success"
+    ]
+  },
+  "got_failure": {
+    "game": "CUSA11456",
+    "elapsed_seconds": 41.586,
+    "exit_code": -9,
+    "gpu_context_lost": true,
+    "gpu_memory_fault_reports": 0,
+    "message": "RADV CS context lost; guilty of soft recovery. Observer stopped its owned child.",
+    "uniform_store_expansion": {
+      "shader": "000000008ced785b",
+      "count_word": 34,
+      "first": 0,
+      "count": 4
+    },
+    "causality": "No evidence establishes the uniform-store expansion or DS capture as the cause. No DS packet was emitted for this title. Do not mark the black screen or context loss fixed.",
+    "remaining_shader_rejections": {
+      "Phi": 72,
+      "GetAttributeU32": 29
+    }
+  },
+  "changes": [
+    "Capture first EXEC-active ADDR source value through the existing subgroup read-lane operation; use a valid read lane and zero payload when EXEC is zero.",
+    "Carry decoded source VGPR in immutable site metadata; compare packet payload to that VGPR/lane in the complete saved register image.",
+    "Explicit-operand packet flags 7 and checkpoint ABI 3 reject old flags-3/ABI-2 population-count captures; evidence container version advances to 2.",
+    "Host packet decode forwards the captured operand; remove the unsupported CikOrderedCountIncrement population-count replacement.",
+    "Retain capture shader evidence before other hashes, breadth-first final IR before intermediate stages, bounded private raw/SPIR-V dumps and a bounded 16 MiB console tail. Include the last eight compiled shader hashes even without a compiler rejection, to help investigate GPU resets.",
+    "Classify intentional first-pass completion separately while preserving nonzero process exit and no continuation claim; take screenshots at 8, 25, 80 and 110 seconds.",
+    "Fix ReadLaneEliminationPass null dereference on an immediate source or a WriteLane chain ending in an immediate. Retain the actual IR value while walking the chain; preserve every incoming Phi value and predecessor rather than inventing a selector result. Dynamic lane reads are left unchanged."
+  ],
+  "primary_sources": [
+    {
+      "url": "https://github.com/llvm/llvm-project/blob/release/18.x/llvm/test/CodeGen/AMDGPU/llvm.amdgcn.ds.ordered.add.ll",
+      "finding": "Bonaire test lowering explicitly moves value 31 into the operand of DS_ORDERED_COUNT. Reproduced locally with LLVM 18 llc -mcpu=bonaire -verify-machineinstrs."
+    },
+    {
+      "url": "https://reviews.llvm.org/D52944?id=175389",
+      "finding": "Original pre-GFX10 ordered-add/swap intrinsic takes a value to add or swap."
+    },
+    {
+      "url": "https://gpuopen.com/download/Vega_7nm_Shader_ISA_26November2019.pdf",
+      "finding": "Older opcode-summary population-count wording conflicts with explicit compiler operands. It is not sufficient evidence to discard captured ADDR or claim PS4 hardware behavior."
+    }
+  ],
+  "validation": {
+    "cpu_regressions": "PASS existing universal suite: 31 CTest cases in 9 suites plus renderer, SRT, sparse, descriptor, mapping and ABI contracts.",
+    "original_checkpoint_replay": "PASS 7 authentic saved GPU register images independently matched to decoded raw source VGPR. Old packet payloads differ in all seven waves. Corrected CPU-only replay with new ABI passes; stale ABI, mismatched payload/lane and out-of-range source rejected; 64 lane positions plus zero EXEC checked. No new GPU execution. Also passed AddressSanitizer and UBSan.",
+    "exact_frontend": "PASS exact production capture helper: 192 lane/operand cases plus original state, inactive EXEC and dimension checks.",
+    "spirv": "PASS 12 production capture/cut modules with actual dynamic source-lane broadcast under Vulkan 1.3 spirv-val; normal DS path still rejects unsupported continuation.",
+    "syntax": "PASS 9 affected C++ translation units with GCC 14 C++23; Python compile and Bash syntax checks passed.",
+    "evidence_collector": "PASS budget regressions with 31 and 39 prioritized shaders: capture shader first, every final IR before intermediates, last eight nonblocked compilations retained, bounded raw evidence and symlink rejection.",
+    "full_native_build": "PASS: complete shadps4 Release target linked with GCC 14 and SDL X11 desktop backend; final incremental build exit 0. No GPU/game run in this container.",
+    "new_candidate_gpu": "NOT_RUN",
+    "build_environment_attempts": [
+      "Initial configure failed before initializing all pinned submodules; initialized them without changing their pinned commits.",
+      "Initial configure lacked X11/Wayland headers; console-only configuration succeeded, then build stopped at missing libudev.h.",
+      "Extracted hash-verified Ubuntu build packages under /tmp, including udev and X11 dependencies. X11 desktop configuration now succeeds; no system package installation or service operation.",
+      "Desktop compilation later stopped at missing uuid/uuid.h; extracted hash-verified uuid development/runtime packages under /tmp and resumed. No source workaround for missing system dependencies."
+    ],
+    "read_lane_elimination": "Baseline production pass reproduced a sanitizer-detected null dereference in SearchChain. Corrected production pass passes 12,545 ASan/UBSan cases: three constant bases, all 64 read lanes, all 64 write lanes, 64 distinct-branch Phi cases and an unchanged dynamic-lane case. This is a proven compiler crash fix, not evidence that it caused GoT GPU context loss.",
+    "native_startup": "PASS existing test_cli_user_directories.py against the actual linked executable: 3 isolated XDG startup/preservation/refusal scenarios, GPU_NOT_RUN.",
+    "local_binary_sha256": "da77eece8c855eb90ce6508dfdc57cf53bd334da181f0bc2d3e1c5086cc53fcf",
+    "build_source_identity": "Local worktree on 43b739c1 with the reviewed changes; Git version metadata still identifies that parent, not the subsequently published commit. User retest rebuilds the immutable new commit.",
+    "warning_lines_by_build_attempt": {
+      "ds-operand-native-build": 3,
+      "ds-operand-native-desktop-build": 94,
+      "ds-operand-native-final-build": 28
+    },
+    "source_diff_sha256": "7fd4cea6d1caf7bfe84dc146689cbe3e124f02c25f02048b409b570d5e3e274a"
+  },
+  "hardware_probe": {
+    "file": "ds-operand-openorbis.zip",
+    "sha256": "a6801e937abbd3c378183894c7f98948a9d010a4832d4749be9600c17f8fade1",
+    "scope": "Separate authored OpenOrbis single-wave ordered exchange/add/readback experiment, 18 dispatches varying EXEC and operand. All per-lane results preserved, both model predictions recorded, bounded waits, stop after timeout. Also records constant V_READLANE and matching/unmatched V_WRITELANE-chain values (candidate 37, 37, 99).",
+    "validation": "LLVM 18 Bonaire assembly and host C11 strict syntax pass. OpenOrbis linking and PS4 execution NOT RUN. No game bytes included.",
+    "bytes": 5732,
+    "shared_separately": true
+  },
+  "decision": "Keep PR118 draft and main unchanged. Preserve proven prior fixes. Local full Release build and startup checks pass. Rebuild the published immutable commit on the native test host for another bounded capture; guest re-entry and GoT context-loss diagnosis remain open.",
+  "archive_branch": "archive/universal-capture-20261101-43b739c1"
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-upstream-integration-20261031-initial-review",
+  "timestamp_utc": "2026-10-31T16:30:01.401513+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "fork_main": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "upstream_main": "860d73b7e99559106a3ffa3d3d69f0f9237e115e",
+  "candidate_source_commit": "4c1e52fd201ac3c8942a3d70f74a7025efb90d8c",
+  "pr_audit_count": 117,
+  "imported_pr117_trial_records": 89,
+  "new_regressions": {
+    "depth_crossed_mip_layer_extent": "PASS; old lexicographic maximum fails extent assertion",
+    "srt_immediate_lhs_shift": "PASS; old second shift produces incorrect value",
+    "production_srt_jit": 10418,
+    "sparse_allocator_production": "PASS 288 ranges / 7 scenarios in recorder and real Vulkan-header modes",
+    "standalone_ctest_suites": 9,
+    "standalone_ctest_cases": 31,
+    "renderer_contract_cases": 7,
+    "descriptor_pool_fixture": "PASS five markers, assertions enabled",
+    "guest_hle_stack_alignment": "PASS",
+    "contiguous_guest_vma": "PASS"
+  },
+  "native_build": "PASS_GCC14_COMPILE_GENERATED_LINK_AND_ACTUAL_CLI_STARTUP",
+  "build_attempts": [
+    "Initial submodule checkouts incomplete; restored private dependency checkouts",
+    "SDK discovery lacked X11/Xcursor/pkgconf/udev; isolated headers/libraries supplied",
+    "ENABLE_TESTS=ON omits upstream shadps4 app target; corrected to OFF with standalone test trees",
+    "GCC13 app attempt: upstream std::ranges::to unavailable and uuid header missing; preparing GCC14 SDK"
+  ],
+  "gpu_run": false,
+  "cross_platform_builds": "NOT_RUN",
+  "decision": "RETAIN_PR118_DRAFT_PENDING_COMBINED_GAME_GPU_VALIDATION",
+  "excluded": [
+    "PR117 ordered-GDS executor and incomplete guest continuation",
+    "Experimental mixed image descriptor tables with no graphics proof",
+    "Unpublished retained C925-only production changes until exact source captured"
+  ],
+  "artifacts": [
+    {
+      "name": "got-c925-restored-live-20261031T154542Z-2526296.tar.gz",
+      "sha256": "68a3d4cd09187c104460544e7821de58d35dc436f63aa61a3e29c1a32342a7b5"
+    },
+    {
+      "name": "gds-pr117-mixed-color1d-2d-native-20261031T154035Z-2448951.tar.gz",
+      "sha256": "e2dbdc55f40968f2abea0878e5b72a231d1837f1ae783fc04eb8a4c92f1bfd04"
+    },
+    {
+      "name": "gow-mixed-fs-20261031T151839Z-2124906.tar.gz",
+      "sha256": "f9a65566bee1a4c52b93b547f2f09934ca4d769d6aa6b5bbbcf7a870ea3df344"
+    },
+    {
+      "name": "got-c925-source-rescue-20261031T153605Z-2382204.tar.gz",
+      "sha256": "b881a38756ec462c7e74ad3a703d0ab9af0d8f9817c2e35a15928953ef35c891"
+    }
+  ],
+  "artifact_assessment": {
+    "restored_live": "95s observer completed; screenshot remains dark silhouette/katana at 1FPS with no readable menu. Not a graphics pass.",
+    "mixed_color": "Native build pass only; no game/GPU run.",
+    "mixed_fs": "CPU shader evidence; mixed descriptor type incompatibility persists. Private shader data not published.",
+    "source_rescue": "Three restored source files match saved hashes; no full source tree and no new game run."
+  },
+  "published_candidate": {
+    "pull_request": 118,
+    "commit": "b887fac9766449d8c625b5d383b0da199ed2fa93",
+    "tree": "7ee9666991c1c5df2998ab54d7bda0d564e01465",
+    "production_source_tree": "aafe1aca2eeba7f42cbb8bedb4f07d0672a58319",
+    "local_candidate_commit_is_prepublication_only": true
+  },
+  "additional_validation": "GCC14 full focused runner PASS; see 20261031-universal-gcc14-cpu.json",
+  "last_updated_utc": "2026-10-31T17:17:20.739946+00:00",
+  "native_result_detail": "20261031-universal-native-link-startup.json"
+}

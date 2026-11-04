@@ -1,0 +1,644 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T18:39:12.170255+00:00",
+  "page_context": "a2058c9b-09ec-4744-acc2-b783c2953f10",
+  "source_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+  "upstream_commit": "ce7643cab4c956cd386f3410edd149df7052394d",
+  "prs": [
+    151,
+    152
+  ],
+  "archive": {
+    "filename": "universal-two-games-20261104T180226Z-2105824.tar.gz",
+    "library_file_id": "libfile_e47a795aea4c8191b7062de1f51a283c",
+    "sha256": "1f6d3a113d48c3bf4bd889d5fed444695ba4823eb77f1cff2e1a2046b64f0f8c",
+    "size_bytes": 11598328
+  },
+  "native_build": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261104T180227Z-2105862",
+    "timestamp_utc": "2026-11-04T18:17:07.566692+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "COMPLETE_BUILD_ONLY",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0,
+    "requested_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+    "source_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+    "upstream_commit": "0414fe17539aa0d77daa2030eed9178ad9903f52",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T180227Z-2105862.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-cca781769232/build/shadps4",
+    "binary_sha256": "eb441ef9a9b563c80d8b6ff6d1031e9e344e18c26ef5267099b1b28950ca07a0",
+    "complete_log_reviewed": true,
+    "build_log_sha256": "8e4996e60020fc06f7cb0cdc88973712583ac6713fc195035613b2b04f5286d8",
+    "build_log_lines": 3280,
+    "warnings": 115,
+    "errors": 0,
+    "compiler": "GCC 14",
+    "warning_multiset_matches_previous_native": true,
+    "cpu_result": "PASS",
+    "startup_cases": 3
+  },
+  "native_games": {
+    "gow": {
+      "title": "CUSA34384",
+      "source_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+      "binary_sha256": "eb441ef9a9b563c80d8b6ff6d1031e9e344e18c26ef5267099b1b28950ca07a0",
+      "elapsed_seconds": 21.028,
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "gpu_context_loss_marker": false,
+      "vuid_count": 0,
+      "gpu_memory_fault_reports": 0,
+      "fatal": {
+        "site": "emit_spirv.cpp:821",
+        "message": "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered SPIR-V atomic lowering",
+        "shader": "dbaa6ae4",
+        "ordered_sites": [
+          "0x4158",
+          "0x41d4"
+        ],
+        "dispatch_groups": 7,
+        "workgroup_size": 64,
+        "vgprs": 52,
+        "lds_bytes": 1536
+      },
+      "visual": "8s screenshot: loading only; 60 FPS overlay is not accepted gameplay performance",
+      "audio": "NOT_OBSERVED",
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "sustained_performance": "NOT_ACCEPTED",
+      "automatic_coherence_enabled": true,
+      "native_record_sha256": "b7c2dcb3654a2b45903888c72ca62c00d3573edbdcf6e858f210f9860b461e0d",
+      "full_console_bytes": 1724237,
+      "console_tail_complete": true,
+      "ollama_restore_leases": [
+        {
+          "endpoint": "http://172.23.0.2:11434",
+          "model": "qwen3.8-greek:latest",
+          "context_length": 16384,
+          "expires_at": "2319-02-14T17:25:19.529574+00:00",
+          "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+          "size_vram": 17361985862,
+          "status": "RESTORED",
+          "restored_size_vram": 17315848518
+        }
+      ],
+      "vram_free_at_launch": 25599725568
+    },
+    "got": {
+      "title": "CUSA11456",
+      "source_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+      "binary_sha256": "eb441ef9a9b563c80d8b6ff6d1031e9e344e18c26ef5267099b1b28950ca07a0",
+      "elapsed_seconds": 48.426,
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "gpu_context_loss_marker": false,
+      "vuid_count": 0,
+      "gpu_memory_fault_reports": 0,
+      "fatal": {
+        "site": "pm4_cmds.h:978 PM4CmdReleaseMem::SignalFence data_sel default",
+        "message": "Unreachable code!",
+        "raw_selector": "NOT_CAPTURED",
+        "possible_data_select_values": [
+          0,
+          6,
+          7
+        ],
+        "exact_no_data_crash_attribution": "UNPROVEN"
+      },
+      "visual": "8s loading; 25s visible blue intro footage, 26 FPS overlay; no menu/gameplay acceptance",
+      "audio": "NOT_OBSERVED",
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "sustained_performance": "NOT_ACCEPTED",
+      "automatic_coherence_enabled": true,
+      "native_record_sha256": "dab46b69e8c59feb451396a077eba97fd578e5f0e7b397ca4491bccc36848021",
+      "full_console_bytes": 1071048,
+      "console_tail_complete": true,
+      "ollama_restore_leases": [
+        {
+          "endpoint": "http://172.23.0.2:11434",
+          "model": "qwen3.8-greek:latest",
+          "context_length": 16384,
+          "expires_at": "2319-02-14T18:05:08.598323+00:00",
+          "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+          "size_vram": 17361985862,
+          "status": "ALREADY_LOADED"
+        }
+      ],
+      "vram_free_at_launch": 25484132352,
+      "remaining_resource_warnings": [
+        "5e89a8b4 buffer clamp",
+        "5065ed7b unflattened resource"
+      ],
+      "comparison": "Previous run lost GPU context at62.136s. This run reaches a different CPU packet assertion at48.426s; this is not proof of complete GPU recovery or causal attribution.",
+      "ollama_note": "ALREADY_LOADED with original digest/context16384; do not claim this runner restored it. An external reload during execution cannot be excluded."
+    }
+  },
+  "fix": {
+    "isolated_commit": "3a9a9b37e11d96815a414ceb98951066d74e4ba3",
+    "isolated_pr": 151,
+    "path": "src/video_core/amdgpu/pm4_cmds.h",
+    "insertions": 10,
+    "deletions": 2,
+    "behavior": "DATA_SEL=None performs no destination access. INT_SEL=IrqOnly requires no data and signals the existing interrupt callback. Unsupported selector diagnostics include raw control bits.",
+    "unchanged": [
+      "existing32/64-bit/clock/performance/GDS writes",
+      "INT_SEL=3 legacy behavior",
+      "Liverpool::ReleaseMem OnFence call and ordering",
+      "shader compiler/cache30",
+      "automatic coherence/global settings",
+      "all DS guards"
+    ],
+    "reference": "https://sources.debian.org/src/roct-thunk-interface/3.7.0%2Bdfsg-1/tests/kfdtest/src/PM4Packet.cpp",
+    "reference_scope": "AMD-authored InitPacketCI accepts no destination with DATA_SEL=0 and INT_SEL=0/1. INT_SEL=3 has generation-specific documented semantics; retained PS4 implementation behavior is not validated here.",
+    "native_exact_selector_unknown": true
+  },
+  "candidate_validation": {
+    "source_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+    "source_tree": "815def5927f2d0d8c394093a4ed0f158b62b52de",
+    "full_clang18_release_build": "PASS",
+    "binary_sha256": "91cef5bcb9a39d00fc2132768f8e5eeb8cbaf9048f9074f56a22217e588c5281",
+    "startup": "NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN",
+    "startup_cases": 3,
+    "cpu_suite": "PASS:31 CTests, 7 renderer contracts, 10,418 production SRT checks, sparse 288 ranges/7 scenarios in both modes, descriptor/VMA/ABI",
+    "cpu_scope": "Ran on isolated packet source before upstream VR service registration; covered emulator logic unchanged. Final integrated production header fixture and executable startup passed.",
+    "fixture": {
+      "production_header": true,
+      "baseline": {
+        "checks": 71,
+        "accepted": 15,
+        "expected_missing": 6,
+        "rejected": 2
+      },
+      "candidate": {
+        "checks": 87,
+        "accepted": 21,
+        "missing": 0,
+        "rejected": 6
+      },
+      "asan_ubsan": "PASS, leak detection disabled",
+      "after_upstream_repeat": "PASS same87 checks",
+      "covers": [
+        "DATA_SEL=0..5 with INT_SEL0/2/3",
+        "DATA_SEL=0 INT_SEL1 addresses0/4/UINT64_MAX",
+        "DATA_SEL6/7 rejected",
+        "INT_SEL4..7 rejected",
+        "32-bit upper-word preservation",
+        "64-bit exact writes",
+        "clock and performance-counter callbacks",
+        "GDS callback parameters and order before IRQ"
+      ],
+      "dependencies_stubbed": [
+        "clock",
+        "logging",
+        "assert handling"
+      ],
+      "GPU_executed": false,
+      "prior_failure": "Initial fixture did not compile due to missing fmt/format.h and explicit PM4 header constructor; fixture corrected, failed log retained. No production compile failure."
+    },
+    "captured_spirv": {
+      "modules": 49,
+      "gow": 36,
+      "got": 13,
+      "result": "PASS structural validation of native-captured modules; no new GPU execution",
+      "details_sha256": "54a1f75f296a322c7eea6a0e97f2ce743a3319cfe6dcd0162acbf2a6ace38cf7"
+    },
+    "build_logs": {
+      "nov4i-build.log": {
+        "sha256": "cf8f7ce58ad5be56a7c2b5079a8a6a470032f35bdda4b4a9acc7dad961789f36",
+        "lines": 358,
+        "warnings": 1,
+        "errors": 0
+      },
+      "nov4i-upstream-build.log": {
+        "sha256": "75839b87254b10c04675baf1645ff898fc1f01b9b391ef3db958db2988897911",
+        "lines": 737,
+        "warnings": 1,
+        "errors": 0
+      },
+      "nov4i-final-build.log": {
+        "sha256": "4d7c57e8c0c236cd9895c0c7b52e4db3e0dd2c524414fcbf18fd5eb438021fba",
+        "lines": 345,
+        "warnings": 0,
+        "errors": 0
+      }
+    },
+    "rebase": {
+      "commits": 54,
+      "conflicts": 0,
+      "all_published_trees_match_local": true,
+      "upstream_delta": [
+        "CMakeLists.txt",
+        "src/common/logging/classes.cpp",
+        "src/common/logging/classes.h",
+        "src/core/libraries/hmd/vrservicedialog.cpp",
+        "src/core/libraries/hmd/vrservicedialog.h",
+        "src/core/libraries/libs.cpp"
+      ],
+      "mapping": [
+        {
+          "old": "a23d052de4c3307fec14803c7892aace8b870ca2",
+          "local": "67fae69163c771e64cb69385118a896a97d15ee5",
+          "tree": "b52973111ea35cb84953a6533835a8b786f8f7b4",
+          "published": "12dd508caac4edba0740fa0bdcf4da75af2928ee"
+        },
+        {
+          "old": "be31b91f4737bdd61885571462b9a12884b9fc89",
+          "local": "0f35256956117b298774e8478d70177269bb3d68",
+          "tree": "8d0ac499c0e0f43815578d46e799e544191a67b8",
+          "published": "c4f54467bfd32e768f608119579cd85352d6445e"
+        },
+        {
+          "old": "b786273954090acb77cf7bc7bed02f65c3c30116",
+          "local": "0a17bdce5b47ff04133cc61fa41e3d4dae3c8938",
+          "tree": "575d368d6b4c3d7a030cceb47c72db1ac1e7f19b",
+          "published": "5c51fd1fcc724ef8f42cb5f0384e713f9e7c34ef"
+        },
+        {
+          "old": "bb946953b92b6e6c5ca7cb4d0443c2f9d99869de",
+          "local": "432e3591b93f1e58bb0e76947c8ad3da74ca5087",
+          "tree": "c91f0ac6c813331bb42a6f305b0645bff55dca14",
+          "published": "332bce6680887cc8f372f31b726b0cd4b898aaf0"
+        },
+        {
+          "old": "27ba67f4f7d4b0e33a6bf88fbdb15d6878563365",
+          "local": "0ef682b1086ca668d14a0efa0fa399909708ad48",
+          "tree": "fcf0c24dc21175ffde89edc065b124efb46c2373",
+          "published": "e711b72fe5561b9845bd07a5695fe8da3bb958b9"
+        },
+        {
+          "old": "053574001b84fb9cd2a2be1266ca15df743d4519",
+          "local": "26d17bbcf53ce75fd7214250153795fa0d35b87d",
+          "tree": "0602ac6a34d688429b4f0b16ba56cd61093538ac",
+          "published": "9e7c2470558b18ed92e9063725e98390d5d5b186"
+        },
+        {
+          "old": "f63b0019e56be64ac0ceb7aa89fa7a7d224264f2",
+          "local": "ba3a0ccec20ea3b4bd4e7f6a452d0117d74e65e0",
+          "tree": "a3b67e69c994075392aafccfb1526b1d2c396294",
+          "published": "f37c2c3746301e9d6732dbb7b6d01318698fabe6"
+        },
+        {
+          "old": "dc149e81af18777214e16075415f291332cebd02",
+          "local": "a5d8b5889e102c9bc436e2b32afdf838e92d1c0e",
+          "tree": "e210839c0b736f64e2697d818c1804aa91df9501",
+          "published": "acc69d8c7227935afad66637370e94e2efbd7a21"
+        },
+        {
+          "old": "53516da85ab293057364247b6f49c54dd5aa0fcf",
+          "local": "d3a9988a890f200b95e4455f35a1f2b8a388a1c5",
+          "tree": "68a621e9e4380212871fedc7fbbac764411890c9",
+          "published": "9c381c147f661b7bfbd7312c2f2b0c6201a924b5"
+        },
+        {
+          "old": "b3b1ee79442f98f2e2cb60968aae17f2f13077e3",
+          "local": "a875d043476d8403f60e24022334a8ac39a2e7c3",
+          "tree": "01d8ed3a21586a9b61919226edbc7bc788c5a2dd",
+          "published": "9e3f1bd1d741190a52a72d7d97e443bd8e94697e"
+        },
+        {
+          "old": "f50509f8606ad1a111a09f26efd678b5363a85b3",
+          "local": "70f5c6ee0e272e22de30bec57db9206c73430bae",
+          "tree": "a109504f3efd788d4c90efe22cc5a0254b39384d",
+          "published": "1218a43ab82dd7db0f08e25ae90c316b4b60a469"
+        },
+        {
+          "old": "ae3c20efe7a7967ff3c5c99e1812a2860f51e9b4",
+          "local": "5ddd2c5b9ebc5f2868fe1968682ef2fbe81bf551",
+          "tree": "bbfdc074c67d00844859825e4bb6c8f64b7dc1b4",
+          "published": "1fe52889bf6ca44826f8ba7723b9b03b0ecf99ce"
+        },
+        {
+          "old": "193b6953e4829e573e211b7cf091f802d6ab26a6",
+          "local": "a90b6d677b404a5aab48f1e63b1be8f110ad33ee",
+          "tree": "1b75e26da41aa2cd0ed32f827127b76324adfcc9",
+          "published": "d08c7dc57992632bf476249999b26f2c47169944"
+        },
+        {
+          "old": "e8baf7d661b4259135cefa06ba80d565f33d6476",
+          "local": "e84c2f25307c9343dbd508c2c8a83815cde00def",
+          "tree": "7454f97f012bf8be044b527dcb24907aadcb30ff",
+          "published": "7f8cc438f63220749a9de33b908689334988b1d0"
+        },
+        {
+          "old": "c7ac93bec3df881ab92140d08678fa5da74af3c9",
+          "local": "74cc9fb5a8fa0fcbf63781cefe6613c25a59cce7",
+          "tree": "8f2749e56abe48bbc2cf56bc4b222cb351239af4",
+          "published": "4770f6fb7171b808d6d782ef5b1701f4297cccce"
+        },
+        {
+          "old": "5161d191adcecac63f0ff7b18fc3dd6a5087e02f",
+          "local": "d0e8130892475249b7eb9a1d57a2693c4c337c4b",
+          "tree": "21c926c9c18942c2d3776fc368f851a55b0ff6a1",
+          "published": "143a0358efb0ceab20225831e6152cc9e7fbf002"
+        },
+        {
+          "old": "834ac744b9921c2d031d657056076c42493e8aec",
+          "local": "33eb0f4f6d061128ab8cb357a8928b3c09691dfb",
+          "tree": "ae9a0caa6180e3ffe28595f9de194328d3c2ab58",
+          "published": "a30a1c7a6ff65466f4604af5daadf86d96410672"
+        },
+        {
+          "old": "7dcbaac75afcc859686b4aeebcf0fef71cf4a6bf",
+          "local": "97ce2a984683eb71d470298b7b09982f7b7e7666",
+          "tree": "6eab2a7be6611f7ad3bacc356218f6c97d88fe23",
+          "published": "c7daf55f70a712b1252ab585fa78ef729662c7cf"
+        },
+        {
+          "old": "5e9d837fb71fc43217b177b3759ac58fd4fe6507",
+          "local": "d2f1a1d02fb0ccd81618448ad0dd1773601ca3a7",
+          "tree": "db795954017068270a7dbe20a95452d199fb4f14",
+          "published": "bb295b6237b62d71402adbb14d03a1cf6883ac53"
+        },
+        {
+          "old": "785b071bba4ff618a2f42cfb6ef667c25a142107",
+          "local": "5d7b68d8288f1b06b7002e3a13a527b66c431d4a",
+          "tree": "e1289fbfc1f44d4de0905098df0f5229e238574d",
+          "published": "4f4e2d72bb6f706ad010d28d1ecbb9f80ff1691e"
+        },
+        {
+          "old": "5daa3d5ff942e20b962775539b315e653815827c",
+          "local": "f67e0033b2fc1cf0a0b9dd47864d7dd0911a7fd4",
+          "tree": "595849ca359d32be056e5173bfde503c058c2073",
+          "published": "5309c9d91bfe47b5e55c1da6959ec936ad0b3fe3"
+        },
+        {
+          "old": "56049b0adc22603bff6af89cc3ec259b2e4ca720",
+          "local": "193b10ef4a6583698b3175e3818062bd12223347",
+          "tree": "6d458afa7444e39746f3521102b78d77609a344f",
+          "published": "52fe45140640fa22007bba156f36a406808c2e08"
+        },
+        {
+          "old": "ddc8a6f2d8e6c243ac66df5f7b1c8dc0810dcd09",
+          "local": "2533c9c2af78cffad6fc9679a3ab47cac5cf94bf",
+          "tree": "8548b4c8e51ab2443e8ac2274db2176c677f2597",
+          "published": "a6593f691db8bda4e7e737c94f4f3d3b952bfcca"
+        },
+        {
+          "old": "e1c9451ad8b8f92dfe60d6da914488702404f527",
+          "local": "9dee559d6cdd78b27a0771e00f76c852845396e9",
+          "tree": "c471b598c01df7b8f3cb7e0394fb395140f099a3",
+          "published": "6e01e7154985857d04e4e24dffb600e57f22929e"
+        },
+        {
+          "old": "750d2c802bb46b56363469e83c690ee3409adebc",
+          "local": "ec597f69d90a49c2cdf31e7dcb89445a07665d5e",
+          "tree": "61612eef08f412bed22c28478744b51a3ac65391",
+          "published": "afa064640f54b6c76cf2840ae5f8b4b20172d1d0"
+        },
+        {
+          "old": "43fceb14550e9c550301bc79099680be64dabf5b",
+          "local": "22d272ba4f7146b2c27366cb34cea165e83e0467",
+          "tree": "362f4e5fed9c8a7e8a7e9d7de6bac2b22d27e61f",
+          "published": "affa79731e593086b2d8b351c28e7362976b9e67"
+        },
+        {
+          "old": "a513ebf216eae57db26ca45eece94a98d6d1af6d",
+          "local": "64b11398ec12f5b728bd73d0ff0ee22f556f616a",
+          "tree": "5fd7f80b4cc1b44c696358c41301e5bc337bbb41",
+          "published": "300075b5fc2c607df9dca6ff4d601cdcade272c4"
+        },
+        {
+          "old": "790af3e6b24c80f329f92db8664b02a940b7ae2e",
+          "local": "0c9b0e13fe2ee6dad8252e71629a7c8e33c17e8c",
+          "tree": "be3aca2bf98d2abe9ab67611406c4d4395ab1a8a",
+          "published": "59e66364d97312875d093fb372ecff2c857ba762"
+        },
+        {
+          "old": "a6609d67e185cb8ea3b11ebf195bb90b144cbd69",
+          "local": "4d440c7cceae5acaedef65087f21744db95710d4",
+          "tree": "4d03b5953363f4e68c4a306f4dee4e7113e0aabe",
+          "published": "d7f7477242e18f91349e15dc6b0e4ee4788fd493"
+        },
+        {
+          "old": "8c3b6d923b1958b56ca07de84ea1b633846ac645",
+          "local": "b11b062b664ac9013e0f339c6182a8a737ecfad1",
+          "tree": "f4d9f89bf7b9071da0b629a049eb5657e600bd91",
+          "published": "b12a13f2851e4ea68d57f30615683c78c7992520"
+        },
+        {
+          "old": "db7496a3019fd8ad77bac80719e4648b1725353a",
+          "local": "c95796fdded447c78226361673c2b6090b01f060",
+          "tree": "85526a2303f52bacba6af94cd13cfe46cea88b86",
+          "published": "8aaa5258695d8cde1a229fb097a47d617c564b20"
+        },
+        {
+          "old": "ee7849fee3ae1c1161e2f6a5aab0af75c6579608",
+          "local": "b0010fce0680349b196614bc9dd88f422ea93dde",
+          "tree": "21497b27bb8558a627e36cb3cdc30b7432995aa7",
+          "published": "dc16ad443c051b280789725a1a46cd86fb73ecc9"
+        },
+        {
+          "old": "a024a1551a579ce417c744271f4003a4946bdaa6",
+          "local": "9a94cb421f9d8b534032c2ba38ad6cfd0ccdcf17",
+          "tree": "a92be85988bfc341867c0b3d3ef71e81e618c4d6",
+          "published": "f99ebb9f134fad424235919df4578acc1f3e6d11"
+        },
+        {
+          "old": "788db8dcc438af9e6be366c8ee9291459716633a",
+          "local": "f3de10039b77d6db60124c11cdbf10bdb0ad7799",
+          "tree": "d4d8e8ae776e593ece0117ca474cf3ce73258541",
+          "published": "bccaaf76951e7883c79c19f700106f374776925c"
+        },
+        {
+          "old": "fb91348a7db9c87c1fc8b9bba1767519769d8ead",
+          "local": "2cc0a17810846b65706aef1f0382f05ff338e0a8",
+          "tree": "06963bd5ab5dca937cd4eb6d1e46df715c676844",
+          "published": "5efa9cc05e22c0a46b351024b1e323e6bbca10d3"
+        },
+        {
+          "old": "b9bc2be4293cf6642e82ebda631f27aa3c86116c",
+          "local": "a69a0e0a3406040d48521fcd86ba9bf2d1e926a9",
+          "tree": "3151091089e7f501a172091f4f97088bef775df5",
+          "published": "0007dbcffb451412b818d81ac76ba0d067b7189f"
+        },
+        {
+          "old": "b8653179eaf9d4ad09b006d8ce46e934f82b97c4",
+          "local": "93dd6906119ef0bc03756420803f123731d243f3",
+          "tree": "64085188dc470802813c5279d8160dfe72c168c6",
+          "published": "638e994f6464387d24c343ee78c4a4e0a84ba850"
+        },
+        {
+          "old": "669ddf7efbf66a4d99a179560de6b157e56e3c2e",
+          "local": "06b566c704695caf0ddbd9007661f5e8e0b08baa",
+          "tree": "8effaa78cd55e1b55695803ed59d9c4582adc0e7",
+          "published": "e548103a7f41e151b1087e502e6e228daf5465be"
+        },
+        {
+          "old": "438ea1c8cd1eb0ae40edaf61517ea77b7fbc59ab",
+          "local": "e50a61c5327c4f108dd2d941804b959a58ff9856",
+          "tree": "6b3666f53c7e6d52a219abe39a43a0ef0b3cc965",
+          "published": "73039aea67487a1e78949fe6657fcf4524c9e1fb"
+        },
+        {
+          "old": "2b6b4fdf6c563f940e543623cc09d5a8bb4eb5dd",
+          "local": "82f34aa1561248a26a594f89567383866dd00207",
+          "tree": "c280b3576e556ed5426d6e0087c419d5fefacace",
+          "published": "d4680d851e88ea09f82d2a7094598b21d0993658"
+        },
+        {
+          "old": "0cf1b4200f5939bec5cc24698a965200be6570cc",
+          "local": "a987bde52161b24eb7d6324f11e4fe68bbaf0e36",
+          "tree": "75b41614470cb3e56f2dabf62557259a8b211863",
+          "published": "5d02ab84becf1c3c0d54ed4cd811f81848792f06"
+        },
+        {
+          "old": "56e2bcb795edff05491a2c1f4b1abaa04e358329",
+          "local": "d58eb5305e7556180f2bec9a9072c54642f7b58e",
+          "tree": "676aa9720647605e81b7f64b0a22539303b4910e",
+          "published": "8d64069223173a13ecf4fdfae44a1c04f5705225"
+        },
+        {
+          "old": "ce675fb88ef176a8f93873da3fab09154edc6cce",
+          "local": "386760495bac001b51eca5fe86576be96214349c",
+          "tree": "d7ea287f78c969786fadf208f8d3f72e5f2dee92",
+          "published": "3f3f36e480bf266ef1c0c557e16bf90c4a53fd9c"
+        },
+        {
+          "old": "b88af0625785a1db73d94e450167c472fc5b8d35",
+          "local": "65ec22d8e54020756a7019f23d6b483f6cfb3f10",
+          "tree": "2869bcfefdaf563a52ea0d36b8e82b3d8040ba79",
+          "published": "664530077df95d0c1e99a685d96405917827a2ef"
+        },
+        {
+          "old": "bd13ecd586b8a0bc9f3940feb48247481439ce71",
+          "local": "9f2541cc80c20374ecc61f74747683d905132b70",
+          "tree": "37a5dbe88a367d6257cde671bc8dc35ffa75d14a",
+          "published": "2f150ff9a07184329a8f2b8c94e8ad14bd6621c1"
+        },
+        {
+          "old": "3736dee1ca0631c3f57473b17251c612d8b12140",
+          "local": "305ab1c3d9f0c820feadd546038b5f6de8ec07fb",
+          "tree": "f9014bdcf5e0bf241d97d6b499171b0fc1ace56e",
+          "published": "d6e45c48b953cd144a2e68de31720da6aab7f6ac"
+        },
+        {
+          "old": "09fc737c614a1642d36267399a2a94e2fa35d427",
+          "local": "29bab46f0c93eb129f82886005d71abef1838fd3",
+          "tree": "4c3f652e75902bede0973bc1ad2adb26fec6bdf1",
+          "published": "b2533fddf6f15f73e6218a2227d9dd6065f760bb"
+        },
+        {
+          "old": "36741ee05edafa5f34178a6783ec0ba07a459499",
+          "local": "dc291739b2c75eb26732da633e8ac6bd90963475",
+          "tree": "e94ce627777acbb7bd98320f5664ae88b30594ec",
+          "published": "cbcfe14dc22ecc68afc96e67be48d3ad47261e57"
+        },
+        {
+          "old": "d580bcb815d386f50f56a6810f4122fc0075b21a",
+          "local": "2ca7803928d71c91c18caabd3f5e5eb141ccc779",
+          "tree": "126a6c1149011fdc819982d480dc874a16e00133",
+          "published": "95c1f04231aeffe3236d526b87d1fb08e2033e4f"
+        },
+        {
+          "old": "9634a6f110b67c79b9dac2c56e50be2564e549ce",
+          "local": "e1a4d1f811fb6164a3d4aee8b7696d44f5fd4015",
+          "tree": "356aa3ecee7394d378b3315159dcf7a7a43af80f",
+          "published": "feb363103f4a6ab285bbba982dc1b9bdda8dc286"
+        },
+        {
+          "old": "3b59204d19e3a79966157178c29a376a302efc8e",
+          "local": "11a54948e6d51b9fe5fe682ab218a872028b419b",
+          "tree": "c72fea65843f35e04852abccf1848681c3c98e55",
+          "published": "bcc22b5660700d1ab9b8e59afddc044d06804069"
+        },
+        {
+          "old": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+          "local": "122c44f75696a191414be25c8b3a1dea15c792e5",
+          "tree": "9fbb217333efe39cba2eccd51c173c1525b26312",
+          "published": "a13e13dbf593bbbe5e3f6f45c89bb8e14d32e696"
+        },
+        {
+          "old": "29f647dad9fec3d9bfc8f47aa988412007441073",
+          "local": "84a271cf01c0f074403d3410bea24ff7b9ca6640",
+          "tree": "22b13a08ebfc7fcf52957159d70400f8f5750b97",
+          "published": "9ef1d308363f8d639732bf4ed290751f585ca54c"
+        },
+        {
+          "old": "3a9a9b37e11d96815a414ceb98951066d74e4ba3",
+          "local": "b14e0dc8f38bf28b56630db9615747fa8ee3fb79",
+          "tree": "815def5927f2d0d8c394093a4ed0f158b62b52de",
+          "published": "de307020a418c8e3653867097fb175fac2bbf4df"
+        }
+      ]
+    }
+  },
+  "homebrew": {
+    "authorship": "Original OpenOrbis C probe; no game shader or binary",
+    "cases": [
+      "DATA0/IRQ0",
+      "DATA0/IRQ1",
+      "DATA1/IRQ0",
+      "DATA1/IRQ2",
+      "DATA2/IRQ0",
+      "DATA2/IRQ2"
+    ],
+    "method": "Six compute ring packet sequences; sentinel/zero destinations,following64-bit completion marker,interrupt event delivery/absence",
+    "host_syntax": "PASS gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only",
+    "sdk_link": "UNVERIFIED",
+    "ps4_execution": "UNVERIFIED",
+    "bounds": "5s completion polling plus1s event wait per case; blocked driver calls are not bounded",
+    "limitations": [
+      "Not shader-work GPU completion ordering",
+      "Not cache visibility under shader traffic",
+      "Not INT_SEL=3",
+      "Not DS ordered-count initialization/continuation",
+      "Not game recovery"
+    ]
+  },
+  "artifacts": [
+    {
+      "local_path": "/workspace/scratch/e77588f59ff3/release-mem-evidence/release-mem-openorbis-20261104.zip",
+      "filename": "release-mem-openorbis-20261104.zip",
+      "sha256": "925783122f0044c6dc03c53419960bdbd101d08b28283fbc7d4ec0a265550446",
+      "size_bytes": 3100,
+      "library_file_id": "libfile_49794996de148191835e53a385b005ff",
+      "file_id": "file_00000000a134820cb4283849567e7b31",
+      "saved": true
+    },
+    {
+      "local_path": "/workspace/scratch/e77588f59ff3/release-mem-evidence/release-mem-host-evidence-20261104.zip",
+      "filename": "release-mem-host-evidence-20261104.zip",
+      "sha256": "f0ccabec1ed4f4fd57a2aabae2151967436bda01ce4f0af8c6d98aeac6d042fe",
+      "size_bytes": 54230,
+      "library_file_id": "libfile_74128891910c8191a065c7a0338992ac",
+      "file_id": "file_00000000d14c81f9aee60811bc00b41e",
+      "saved": true
+    }
+  ],
+  "handoff": {
+    "source": "de307020a418c8e3653867097fb175fac2bbf4df",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "f32469c222a4e9a4c510081ab69f3d823c63bda405b04155627d21fcb3fd1d13",
+    "first_game": "CUSA34384",
+    "same_binary_for_both": true,
+    "native_build_mode": "build",
+    "native_build_note": "Build new isolated source; never relabel the previous binary.",
+    "term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "minimum_free_vram_gib": 8,
+    "exact_conditional_model_leases": true,
+    "stop_after_gpu_loss_or_live_child": true,
+    "defer_restoration_after_gpu_loss_or_live_child": true,
+    "per_game_settings": false,
+    "automatic_input": false,
+    "boundary_fixture": "ONEPASTE case=pass expected_exit=0 handoff=True PASS\nONEPASTE case=bad_checksum expected_exit=1 handoff=False PASS\nONEPASTE case=download_fail expected_exit=22 handoff=False PASS\nDOWNLOAD_AND_NATIVE_RUN_BOUNDARIES_STUBBED; GPU_NOT_RUN",
+    "bash": "bash <<'BASH'\nset -Eeuo pipefail\nSOURCE=de307020a418c8e3653867097fb175fac2bbf4df\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nBASH\n"
+  },
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "limits": [
+    "The exact GoT data selector was not captured; DATA_SEL=0 is a supported generic capability gap, not proven exact fault attribution.",
+    "GoW DS ordered-counter initialization and authentic guest continuation remain incomplete; guard retained.",
+    "Existing INT_SEL=3 and broader GPU completion ordering are unchanged and not newly validated.",
+    "No new native GPU/PS4 execution is available in this host; native GPU/lifetime,menu/gameplay/audio,same-scene,cross-title and cross-platform acceptance remain pending.",
+    "Automatic coherence is global; no per-game option/hash/vendor/address case was added."
+  ]
+}

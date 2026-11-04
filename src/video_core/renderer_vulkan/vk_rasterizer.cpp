@@ -1,17 +1,34 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <atomic>
+#include <cstdlib>
+#include <fstream>
+#include <limits>
+#include <stdexcept>
+#include <string_view>
 #include "common/debug.h"
+#include "common/path_util.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
+#include "shader_recompiler/compact_image_indices.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
+#include "shader_recompiler/frontend/ordered_gds_resume_state.h"
+#include "shader_recompiler/guest_descriptor_coherence.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
+#include "video_core/renderer_vulkan/vk_indirect_read_sync.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
+#include "video_core/renderer_vulkan/vk_occlusion_query.h"
+#include "video_core/renderer_vulkan/vk_ordered_gds_transfer.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -23,6 +40,13 @@
 #include <vulkan/vulkan_format_traits.hpp>
 
 namespace Vulkan {
+
+// An explicitly opted-in, one-shot GPU capture probe; absolutely not a
+// per-game shader override, and never active during normal gameplay.
+static bool IsPr117OneShotCaptureProbe() {
+    const char* const value = std::getenv("SHADPS4_PR117_CAPTURE_ONCE");
+    return value && std::string_view{value} == "1";
+}
 
 static Shader::PushData MakeUserData(const AmdGpu::Regs& regs) {
     // TODO(roamic): Add support for multiple viewports and geometry shaders when ViewportIndex
@@ -41,7 +65,8 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
       buffer_cache{instance, scheduler, runtime, liverpool_, texture_cache, page_manager},
       texture_cache{instance, scheduler, runtime, liverpool_, buffer_cache, page_manager},
       liverpool{liverpool_}, memory{Core::Memory::Instance()},
-      pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift()},
+      pipeline_cache{instance, scheduler, liverpool, buffer_cache.GetSparsePageShift(),
+                     buffer_cache.GetBdaPageTableBuffer()->SizeBytes() / sizeof(u64)},
       host_markers_enabled{EmulatorSettings.IsVkHostMarkersEnabled()},
       guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()},
       submit_draw_interval{EmulatorSettings.GetSubmitDrawInterval()} {
@@ -57,6 +82,43 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 }
 
 Rasterizer::~Rasterizer() = default;
+
+Rasterizer::OrderedGdsCaptureBinding::OrderedGdsCaptureBinding(
+    Rasterizer& rasterizer_, const OrderedGdsEpochDeviceBuffers& epoch_)
+    : rasterizer{rasterizer_}, epoch{epoch_} {
+    ASSERT_MSG(!rasterizer.active_ordered_gds_capture_,
+               "nested or stale GCN ordered GDS capture binding");
+    ASSERT_MSG(epoch.AuthorizedEpoch() != 0 && epoch.CaptureAuthority().size() == epoch.plan.waves,
+               "real guest epoch tokens must be supplied before capture binding");
+    ASSERT_MSG(epoch.capture_registers.Handle() != VK_NULL_HANDLE &&
+                   epoch.capture_packets.Handle() != VK_NULL_HANDLE &&
+                   epoch.capture_registers.Handle() != epoch.resume_registers.Handle() &&
+                   epoch.capture_registers.Handle() != epoch.capture_packets.Handle() &&
+                   epoch.capture_packets.Handle() != epoch.resume_packets.Handle() &&
+                   epoch.capture_registers.SizeBytes() == epoch.plan.register_layout.total_bytes &&
+                   epoch.capture_packets.SizeBytes() == epoch.plan.packet_bytes,
+               "invalid independent GCN packet/register checkpoint owner");
+    rasterizer.active_ordered_gds_capture_ = &epoch;
+}
+
+Rasterizer::OrderedGdsCaptureBinding::~OrderedGdsCaptureBinding() {
+    ASSERT_MSG(rasterizer.active_ordered_gds_capture_ == &epoch,
+               "GCN ordered GDS capture scope identity changed");
+    rasterizer.active_ordered_gds_capture_ = nullptr;
+}
+
+OcclusionQuery& Rasterizer::GetOcclusionQuery() {
+    if (!occlusion) {
+        occlusion = std::make_unique<OcclusionQuery>(instance, scheduler);
+    }
+    return *occlusion;
+}
+
+void Rasterizer::SubmitPendingQueries() {
+    if (occlusion) {
+        occlusion->SubmitPending();
+    }
+}
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;
@@ -181,6 +243,7 @@ void Rasterizer::EliminateFastClear() {
     ScopeMarkerBegin(fmt::format("EliminateFastClear:MRT={:#x}:M={:#x}", col_buf.Address(),
                                  col_buf.CmaskAddress()));
     runtime.ClearImage(&image, desc.view_info.range, clear_value);
+    texture_cache.TrackGpuImage(image_id);
     ScopeMarkerEnd();
 }
 
@@ -200,15 +263,17 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
 
+    const u64 preparation_tick = scheduler.CurrentTick();
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
     const auto state = BeginRendering(pipeline);
 
-    BindVertexBuffers(pipeline);
+    const auto vertex_buffers = PrepareVertexBuffers(pipeline);
+    std::optional<IndexBufferBinding> index_buffer;
     if (is_indexed) {
-        BindIndexBuffer(index_offset);
+        index_buffer = PrepareIndexBuffer(index_offset);
     }
 
     if (needs_barrier) {
@@ -217,6 +282,8 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto& vs_info = pipeline->GetStage(Shader::SwStage::Vertex);
@@ -224,14 +291,43 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto [vertex_offset, instance_offset] = GetDrawOffsets(regs, vs_info, fetch_shader);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    BindVertexBuffers(cmdbuf, vertex_buffers);
+    if (index_buffer) {
+        BindIndexBuffer(cmdbuf, *index_buffer);
+    }
+    if (scheduler.CurrentTick() != preparation_tick) {
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::DrawPreparationFlush,
+            "begin-tick=%llu draw-tick=%llu indexed=%u",
+            static_cast<unsigned long long>(preparation_tick),
+            static_cast<unsigned long long>(scheduler.CurrentTick()),
+            static_cast<unsigned>(is_indexed));
+    }
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage) {
+            scheduler.RecordWork("kind=shader stage=%u shader=%llx flatbuf-words=%zu",
+                                 static_cast<unsigned>(stage->hw_stage),
+                                 static_cast<unsigned long long>(stage->pgm_hash),
+                                 stage->flattened_ud_buf.size());
+        }
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    if (occlusion) {
+        occlusion->BeginDraw(cmdbuf, query);
+    }
 
+    scheduler.RecordWork("kind=draw indexed=%u vertices=%u instances=%u",
+                         static_cast<unsigned>(is_indexed), regs.num_indices,
+                         regs.num_instances.NumInstances());
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
                            s32(vertex_offset), instance_offset);
     } else {
         cmdbuf.draw(regs.num_indices, regs.num_instances.NumInstances(), vertex_offset,
                     instance_offset);
+    }
+    if (occlusion) {
+        occlusion->EndDraw(cmdbuf, query);
     }
     DebugState.IncDrawCall();
 
@@ -260,15 +356,17 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         return;
     }
 
+    const u64 preparation_tick = scheduler.CurrentTick();
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
     const auto state = BeginRendering(pipeline);
 
-    BindVertexBuffers(pipeline);
+    const auto vertex_buffers = PrepareVertexBuffers(pipeline);
+    std::optional<IndexBufferBinding> index_buffer;
     if (is_indexed) {
-        BindIndexBuffer(0, true);
+        index_buffer = PrepareIndexBuffer(0, true);
     }
 
     const auto size = stride * max_count;
@@ -291,11 +389,41 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     pipeline->BindResources(set_writes, push_data);
     UpdateDynamicState(pipeline, is_indexed);
+    const auto query = occlusion ? occlusion->PrepareDraw(liverpool->regs.depth_count_control)
+                                  : std::nullopt;
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    BindVertexBuffers(cmdbuf, vertex_buffers);
+    if (index_buffer) {
+        BindIndexBuffer(cmdbuf, *index_buffer);
+    }
+    if (scheduler.CurrentTick() != preparation_tick) {
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::DrawPreparationFlush,
+            "begin-tick=%llu draw-tick=%llu indexed=%u",
+            static_cast<unsigned long long>(preparation_tick),
+            static_cast<unsigned long long>(scheduler.CurrentTick()),
+            static_cast<unsigned>(is_indexed));
+    }
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage) {
+            scheduler.RecordWork("kind=shader stage=%u shader=%llx flatbuf-words=%zu",
+                                 static_cast<unsigned>(stage->hw_stage),
+                                 static_cast<unsigned long long>(stage->pgm_hash),
+                                 stage->flattened_ud_buf.size());
+        }
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    if (occlusion) {
+        occlusion->BeginDraw(cmdbuf, query);
+    }
 
+    scheduler.RecordWork("kind=draw-indirect indexed=%u address=%llx count-address=%llx "
+                         "max-count=%u stride=%u",
+                         static_cast<unsigned>(is_indexed),
+                         static_cast<unsigned long long>(arg_address + offset),
+                         static_cast<unsigned long long>(count_address), max_count, stride);
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
 
@@ -318,6 +446,18 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         DebugState.IncDrawCall();
     }
 
+    if (occlusion) {
+        occlusion->EndDraw(cmdbuf, query);
+    }
+    // Vulkan consumes these at DRAW_INDIRECT, not in a fragment or
+    // compute shader. Preserve the producer read for a later GPU writer.
+    constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+    runtime.AccessBuffer(buffer, base, stride * max_count, BufferAccessStage(indirect_read, false),
+                         indirect_read);
+    if (count_address != 0) {
+        runtime.AccessBuffer(count_buffer, count_offset, sizeof(u32),
+                             BufferAccessStage(indirect_read, false), indirect_read);
+    }
     ResetBindings(false);
 }
 
@@ -334,6 +474,34 @@ void Rasterizer::DispatchDirect() {
     }
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (cs.uses_ordered_gds) {
+        if (!IsPr117OneShotCaptureProbe()) {
+            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
+        }
+        // The original pre-DS GCN executes on the GPU. Stop this process
+        // after its authenticated readback: returning from DispatchDirect
+        // here would falsely signal completion without guest re-entry.
+        auto owner = AllocateOrderedGdsEpochBuffers(
+            {cs_program.dim_x, cs_program.dim_y, cs_program.dim_z},
+            {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
+             cs_program.num_thread_z.full},
+            cs_program.NumVgprs(), cs_program.SharedMemSize());
+        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
+        const auto packets = DispatchOriginalGcnOrderedCaptureDirect(*owner, epoch);
+        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
+            const auto& p = packets[index];
+            LOG_WARNING(Render_Vulkan,
+                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
+                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
+                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0, p.exec_hi, p.exec_lo,
+                        p.encoded_control);
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
+                    "source=vkCmdDispatch; stopping before unimplemented re-entry",
+                    epoch, packets.size());
+        throw std::runtime_error("PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
+    }
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
     }
@@ -351,6 +519,10 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.RecordWork("kind=dispatch shader=%llx groups=%u,%u,%u threads=%u,%u,%u",
+                         static_cast<unsigned long long>(cs.pgm_hash), cs_program.dim_x,
+                         cs_program.dim_y, cs_program.dim_z, cs_program.num_thread_x.full,
+                         cs_program.num_thread_y.full, cs_program.num_thread_z.full);
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
@@ -367,6 +539,34 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     if (!pipeline) {
         return;
+    }
+
+    const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (cs.uses_ordered_gds) {
+        if (!IsPr117OneShotCaptureProbe()) {
+            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
+        }
+        auto owner = AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+            address, offset, size,
+            {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
+             cs_program.num_thread_z.full},
+            cs_program.NumVgprs(), cs_program.SharedMemSize());
+        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
+        const auto packets =
+            DispatchOriginalGcnOrderedCaptureIndirect(*owner, epoch, address, offset, size);
+        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
+            const auto& p = packets[index];
+            LOG_WARNING(Render_Vulkan,
+                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
+                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
+                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0, p.exec_hi, p.exec_lo,
+                        p.encoded_control);
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
+                    "source=vkCmdDispatchIndirect; stopping before unimplemented re-entry",
+                    epoch, packets.size());
+        throw std::runtime_error("PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
     }
 
     if (!BindResources(pipeline)) {
@@ -386,9 +586,17 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.RecordWork("kind=dispatch-indirect shader=%llx address=%llx bytes=%u",
+                         static_cast<unsigned long long>(cs.pgm_hash),
+                         static_cast<unsigned long long>(address + offset), size);
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
 
+    // A future write must wait for the indirect command processor to
+    // FINISH reading these arguments, not merely for shader execution.
+    constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+    runtime.AccessBuffer(buffer, base, sizeof(VkDispatchIndirectCommand),
+                         BufferAccessStage(indirect_read, true), indirect_read);
     ResetBindings(true);
 }
 
@@ -405,6 +613,498 @@ void Rasterizer::FlushPeriodically() {
     }
 }
 
+std::unique_ptr<OrderedGdsEpochDeviceBuffers> Rasterizer::AllocateOrderedGdsEpochBuffers(
+    Shader::Gcn::OrderedGds::DispatchExtent groups,
+    Shader::Gcn::OrderedGds::DispatchExtent local_threads, u32 allocated_vgprs,
+    u32 guest_shared_lds_bytes) {
+    // The constructor rejects unbounded, partial-wave or unsupported LDS
+    // dimensions before it creates any GPU buffers. The caller owns these
+    // resources through the eventual second pass; no implicit game dispatch.
+    return std::make_unique<OrderedGdsEpochDeviceBuffers>(instance, groups, local_threads,
+                                                          allocated_vgprs, guest_shared_lds_bytes);
+}
+
+std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+Rasterizer::AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+    VAddr address, u32 offset, u32 available_bytes,
+    Shader::Gcn::OrderedGds::DispatchExtent local_threads, u32 allocated_vgprs,
+    u32 guest_shared_lds_bytes) {
+    using Shader::Gcn::OrderedGds::GpuIndirectDispatchCommand;
+    constexpr u32 bytes = sizeof(GpuIndirectDispatchCommand);
+    if (active_ordered_gds_capture_ || available_bytes < bytes ||
+        ((address | VAddr(offset)) & 3u) != 0 ||
+        address > std::numeric_limits<VAddr>::max() - offset) {
+        throw std::invalid_argument("indirect ordered GDS capture source invalid");
+    }
+    // ObtainBuffer returns the actual backing GPU buffer+offset. The source
+    // can have been written by a prior GPU dispatch: only synchronized GPU
+    // readback may establish the required guest wave-slot count.
+    auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, bytes);
+    needs_barrier |= runtime.IsBufferAccessed(buffer, base, bytes, false);
+    if (needs_barrier) {
+        runtime.FlushBarriers();
+    }
+    const auto actual =
+        OrderedGdsIndirectDispatchTransfer::Download(runtime, scheduler, *buffer, base);
+    // Plan::Require checks full-wave64 topology, total wave/LDS storage and
+    // aggregate VRAM budget before any capture GPU allocation is created.
+    return AllocateOrderedGdsEpochBuffers(actual, local_threads, allocated_vgprs,
+                                          guest_shared_lds_bytes);
+}
+
+u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(OrderedGdsEpochDeviceBuffers& owner) {
+    // Host *identity* tickets are owned by this Rasterizer instance, not by
+    // per-dispatch temporary vectors or Vulkan invocation-arrival ordering.
+    // The validated owner carries exact wave count and independent SSBOs.
+    // Actual guest LDS is device-local for the whole split-dispatch owner.
+    // Clear it only on first use, never on each GDS resolution epoch.
+    owner.PreparePersistentLds(runtime);
+    const auto issued = ordered_gds_epoch_issuer_.Issue(owner.plan.waves);
+    owner.PrepareEpochAuthority(runtime, scheduler, issued.epoch, issued.tokens_by_slot);
+    return issued.epoch;
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(OrderedGdsEpochDeviceBuffers& owner,
+                                                    u32 expected_epoch) {
+    return DispatchOriginalGcnOrderedCaptureImpl(owner, expected_epoch, false, 0, 0, 0);
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureIndirect(OrderedGdsEpochDeviceBuffers& owner,
+                                                      u32 expected_epoch, VAddr address, u32 offset,
+                                                      u32 available_bytes) {
+    return DispatchOriginalGcnOrderedCaptureImpl(owner, expected_epoch, true, address, offset,
+                                                 available_bytes);
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& owner,
+                                                  u32 expected_epoch, bool indirect, VAddr address,
+                                                  u32 offset, u32 available_bytes) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // This API deliberately does NOT replace DispatchDirect(). The original
+    // guest shader executes its pre-DS memory writes here; replaying the
+    // shader from PC=0 would double those side effects. The epoch owner must
+    // survive until an authentic post-DS continuation finishes.
+    if (!expected_epoch || owner.AuthorizedEpoch() != expected_epoch ||
+        owner.CaptureAuthority().size() != owner.plan.waves || active_ordered_gds_capture_) {
+        throw std::invalid_argument("unowned or overlapping original-GCN capture dispatch");
+    }
+    scheduler.PopPendingOperations();
+    const auto& cs_program = liverpool->GetCsRegs();
+    DispatchExtent groups{cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
+    const DispatchExtent local{cs_program.num_thread_x.full, cs_program.num_thread_y.full,
+                               cs_program.num_thread_z.full};
+    const VideoCore::Buffer* indirect_command_buffer{};
+    u64 indirect_command_offset{};
+    if (indirect) {
+        constexpr u32 CommandBytes = sizeof(GpuIndirectDispatchCommand);
+        if (available_bytes < CommandBytes || ((address | VAddr(offset)) & 3u) != 0 ||
+            address > std::numeric_limits<VAddr>::max() - offset) {
+            throw std::invalid_argument("original GCN GPU indirect command invalid");
+        }
+        auto [buffer, base] = buffer_cache.ObtainBuffer(address + offset, CommandBytes);
+        needs_barrier |= runtime.IsBufferAccessed(buffer, base, CommandBytes, false);
+        if (needs_barrier) {
+            runtime.FlushBarriers();
+        }
+        groups = OrderedGdsIndirectDispatchTransfer::Download(runtime, scheduler, *buffer, base);
+        indirect_command_buffer = buffer;
+        indirect_command_offset = base;
+    }
+    if (owner.groups.x != groups.x || owner.groups.y != groups.y || owner.groups.z != groups.z ||
+        owner.local_threads.x != local.x || owner.local_threads.y != local.y ||
+        owner.local_threads.z != local.z) {
+        throw std::invalid_argument(
+            "CIK capture owner does not match original guest 3D dispatch dimensions");
+    }
+    // The full plan must be recomputed from LIVE guest registers before
+    // touching GPU memory, not inferred from a stale shader hash or an old
+    // indirect command. The constructor already enforces the VRAM bound.
+    const auto required = GcnOrderedGdsDevicePlan::Require(groups, local, cs_program.NumVgprs(),
+                                                           cs_program.SharedMemSize());
+    if (owner.plan.waves != required.waves ||
+        owner.plan.epoch_auth_bytes != required.epoch_auth_bytes ||
+        owner.plan.packet_bytes != required.packet_bytes ||
+        owner.plan.register_layout.total_bytes != required.register_layout.total_bytes ||
+        owner.plan.combined_device_bytes != required.combined_device_bytes) {
+        throw std::invalid_argument("stale original GCN capture buffer plan");
+    }
+
+    const ComputePipeline* pipeline = pipeline_cache.GetOrderedGdsCapturePipeline();
+    if (!pipeline) {
+        throw std::runtime_error("original-GCN capture pipeline not compiled");
+    }
+    const auto& stage = pipeline->GetStage(Shader::SwStage::Compute);
+    if (!stage.uses_ordered_gds || stage.hw_stage != Shader::HwStage::Compute ||
+        stage.ordered_gds_sites.empty()) {
+        throw std::invalid_argument("capture pipeline has no decoded original GCN DS site");
+    }
+    std::vector<VerifiedGcnOrderedSite> sites;
+    sites.reserve(stage.ordered_gds_sites.size());
+    for (const auto& site : stage.ordered_gds_sites) {
+        sites.push_back({site.pc, site.destination_vgpr, site.encoded_control, site.source_vgpr});
+    }
+
+    // A missing GPU writer must remain invalid after readback. Clear only
+    // epoch-local packet and register buffers; NEVER clear persistent guest
+    // LDS after its initial allocation or a post-DS attempt.
+    runtime.FillBuffer(&owner.capture_packets, 0, owner.plan.packet_bytes, 0);
+    runtime.FillBuffer(&owner.capture_registers, 0, owner.plan.register_layout.total_bytes, 0);
+    {
+        OrderedGdsCaptureBinding live_scope{*this, owner};
+        if (!BindResources(pipeline)) {
+            throw std::runtime_error("original guest GCN capture resources unavailable");
+        }
+        if (needs_barrier) {
+            runtime.FlushBarriers();
+        }
+        scheduler.EndRendering();
+        pipeline->BindResources(set_writes, push_data);
+        const auto command = scheduler.CommandBuffer();
+        command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+        if (indirect) {
+            ASSERT_MSG(indirect_command_buffer, "missing real GPU indirect GCN command");
+            command.dispatchIndirect(indirect_command_buffer->Handle(), indirect_command_offset);
+            // The GDS first-pass path must not bypass the same universal
+            // Vulkan indirect read/write hazard as ordinary compute.
+            constexpr auto indirect_read = vk::AccessFlagBits2::eIndirectCommandRead;
+            runtime.AccessBuffer(indirect_command_buffer, indirect_command_offset,
+                                 sizeof(VkDispatchIndirectCommand),
+                                 BufferAccessStage(indirect_read, true), indirect_read);
+        } else {
+            command.dispatch(groups.x, groups.y, groups.z);
+        }
+        DebugState.IncDispatch();
+        ResetBindings(true);
+    }
+    // These synchronized copies are from real GPU-written device buffers.
+    // They do not derive guest ranks from Vulkan physical invocation order.
+    const auto captured = DownloadOrderedGdsPackets(owner.capture_packets, 0, owner.plan.waves);
+    RequireCaptureTokenAuthority(captured, owner.CaptureAuthority(), expected_epoch);
+    const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+        runtime, scheduler, owner.capture_registers, 0, owner.plan.register_layout);
+    if (IsPr117OneShotCaptureProbe()) {
+        const auto& layout = owner.plan.register_layout;
+        const u32 saved_waves = std::min(owner.plan.waves, 32u);
+        const std::array<u32, 12> header{0x32445347u,
+                                         2u,
+                                         expected_epoch,
+                                         owner.plan.waves,
+                                         saved_waves,
+                                         u32(layout.stride_bytes),
+                                         layout.scalar_words,
+                                         layout.vector_registers,
+                                         groups.x,
+                                         groups.y,
+                                         groups.z,
+                                         u32(sizeof(GpuCapturePacket))};
+        const auto path = Common::FS::GetUserPath(Common::FS::PathType::LogDir) /
+                          fmt::format("ordered-gds-{:016x}-{}.bin", stage.pgm_hash, expected_epoch);
+        std::ofstream evidence{path, std::ios::binary};
+        evidence.write(reinterpret_cast<const char*>(header.data()), sizeof(header));
+        evidence.write(reinterpret_cast<const char*>(captured.data()),
+                       captured.size() * sizeof(GpuCapturePacket));
+        evidence.write(reinterpret_cast<const char*>(state.data()),
+                       saved_waves * layout.stride_bytes);
+        evidence.close();
+        if (!evidence) {
+            throw std::runtime_error("failed to save ordered GDS GPU evidence");
+        }
+        LOG_WARNING(Render_Vulkan,
+                    "PR117_GPU_EVIDENCE file={} packets={} checkpoint_waves={}; "
+                    "validation follows; guest continuation has not executed",
+                    path.string(), captured.size(), saved_waves);
+    }
+    RequireCompleteGcnWaveCheckpoints(state, captured, owner.plan.register_layout, expected_epoch,
+                                      sites);
+    if (owner.plan.lds_layout && !owner.HasPersistentLdsBinding(expected_epoch)) {
+        throw std::invalid_argument("original GCN guest LDS capture did not bind persistent SSBO");
+    }
+    LOG_WARNING(Render_Vulkan,
+                "PR117 original guest GCN GPU first pass completed: epoch={}, "
+                "waves={}, sites={}; authentic guest creation order, dedicated "
+                "CIK packer seed and guest shader re-entry NOT yet supplied",
+                expected_epoch, captured.size(), sites.size());
+    return captured;
+}
+
+std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket> Rasterizer::DownloadOrderedGdsPackets(
+    const VideoCore::Buffer& device_capture, u64 source_offset, std::size_t packet_count) {
+    return OrderedGdsPacketTransfer::Download(runtime, scheduler, device_capture, source_offset,
+                                              packet_count);
+}
+
+void Rasterizer::UploadOrderedGdsPackets(
+    VideoCore::Buffer& device_resume, u64 destination_offset,
+    std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets) {
+    OrderedGdsPacketTransfer::Upload(runtime, scheduler, device_resume, destination_offset,
+                                     packets);
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32> Rasterizer::ResolveVerifiedOrderedGdsEpoch(
+    const VideoCore::Buffer& device_capture, u64 capture_offset, VideoCore::Buffer& device_resume,
+    u64 resume_offset, u32 epoch,
+    const Shader::Gcn::OrderedGds::VerifiedGuestCreationOrder& creation,
+    std::span<const u32> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // Validate the dedicated CIK counter provenance and site dimensions
+    // BEFORE reading any GPU packets or mutating the resume device buffer.
+    // Passing a raw ordinary-GDS RAM snapshot must always fail closed.
+    auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
+    SparseOrderedGdsEpoch host{creation.Size(), std::move(counters), verified_sites};
+
+    // A genuine shader checkpoint must already have written exactly one
+    // capture/bypass packet per guest-created wave. Neither the staging
+    // arrival order nor the packet logical slot establishes wave rank.
+    const auto packets = DownloadOrderedGdsPackets(device_capture, capture_offset, creation.Size());
+    StageGpuCaptures(host, epoch, packets, creation);
+    const auto resume = ResolveGpuCaptures(host, epoch, creation);
+    UploadOrderedGdsPackets(device_resume, resume_offset,
+                            std::span<const GpuResumePacket>{resume.data(), resume.size()});
+
+    // Return the updated dedicated packer state only after upload succeeds.
+    // The caller must retain this across epochs and dispatch boundaries.
+    return host.CounterSnapshot();
+}
+
+void Rasterizer::EstablishVerifiedCikPackerState(
+    u64 context_identity, std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> state,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin origin) {
+    cik_ordered_packer_ledger_.Establish(context_identity, state, origin);
+}
+
+void Rasterizer::ResetVerifiedCikPackerState() noexcept {
+    cik_ordered_packer_ledger_.Reset();
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveOwnedCikComputeOrderedGdsFromLedger(
+    OrderedGdsEpochDeviceBuffers& owned, u32 epoch, u64 context_identity,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites) {
+    using namespace Shader::Gcn::OrderedGds;
+    if (owned.AuthorizedEpoch() != epoch) {
+        throw std::invalid_argument("CIK ledger resolution has no authenticated GPU epoch");
+    }
+    // Every dispatch carries the UPDATED dedicated packer state from the
+    // preceding successful GPU handoff. Source is verified externally.
+    // GPU readback, packet validation and upload are performed by the real
+    // Rasterizer bridge. Failure leaves ledger values intact and burns epoch.
+    const auto seed = cik_ordered_packer_ledger_.BeginEpoch(context_identity, epoch);
+    try {
+        auto result = ResolveOwnedCikComputeOrderedGdsEpoch(
+            owned, epoch, verified_sites, seed, OrderedCounterSeedOrigin::DedicatedPackerState);
+        // Actual shaders have NOT re-entered and consumed these buffers.
+        // Staging is safe, but publishing counters here would let a later
+        // dispatch observe changes before the GCN continuation completes.
+        // This epoch stays pending until an authenticated resumed GPU pass
+        // invokes CommitEpoch. No such pass is currently enabled.
+        cik_ordered_packer_ledger_.StageResolvedEpoch(context_identity, epoch, result);
+        return result;
+    } catch (...) {
+        cik_ordered_packer_ledger_.CancelEpoch(context_identity, epoch);
+        throw;
+    }
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveOwnedCikComputeOrderedGdsEpoch(
+    OrderedGdsEpochDeviceBuffers& owned, u32 epoch,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
+    // One immutable bounded plan determines all lengths and resources.
+    // For a genuinely zero-LDS shader the legacy bridge signature still
+    // requires buffer references; its checked_lds==null branch neither
+    // touches nor compares them. Use existing packet resources here WITHOUT
+    // allocating any fake LDS storage. Live LDS uses independent buffers.
+    const auto& plan = owned.plan;
+    if (owned.AuthorizedEpoch() != epoch || owned.CaptureAuthority().size() != plan.waves) {
+        throw std::invalid_argument(
+            "CIK resolved epoch missing externally supplied wave continuation identities");
+    }
+    const auto& lds_source = owned.capture_lds ? *owned.capture_lds : owned.capture_packets;
+    auto& lds_destination = owned.resume_lds ? *owned.resume_lds : owned.resume_packets;
+    const auto lds_layout =
+        plan.lds_layout.value_or(Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout{});
+    return ResolveCompleteCikComputeOrderedGdsEpoch(
+        owned.capture_packets, 0, owned.capture_registers, 0, plan.register_layout, lds_source, 0,
+        lds_layout, plan.lds_layout ? plan.lds_layout->lds_bytes : 0, lds_destination, 0,
+        owned.resume_registers, 0, owned.resume_packets, 0, epoch, plan.waves, verified_sites, seed,
+        seed_origin, owned.CaptureAuthority(),
+        owned.HasPersistentLdsBinding(epoch) && owned.persistent_lds ? &*owned.persistent_lds
+                                                                     : nullptr);
+}
+
+std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+Rasterizer::ResolveCompleteCikComputeOrderedGdsEpoch(
+    const VideoCore::Buffer& device_capture, u64 capture_offset,
+    const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
+    const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+    const VideoCore::Buffer& device_lds, u64 lds_capture_offset,
+    const Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout& lds_layout,
+    u32 verified_shared_lds_bytes, VideoCore::Buffer& device_resume_lds, u64 resume_lds_offset,
+    VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
+    VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch, std::size_t guest_created_waves,
+    std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+    std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+    Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
+    std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority,
+    const VideoCore::Buffer* persistent_guest_lds) {
+    using namespace Shader::Gcn::OrderedGds;
+
+    // A real GPU checkpoint writer must have captured complete live guest
+    // M0/EXEC/site values. A test-fixture wave rank or Vulkan slot is NOT an
+    // acceptable substitute. No packer value may be synthesized from GDS RAM.
+    auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
+    // Guard before allocating, reading or creating an unbounded epoch.
+    constexpr std::size_t CikMaximumLogicalWaves = 1u << 13;
+    if (guest_created_waves == 0 || guest_created_waves > CikMaximumLogicalWaves ||
+        checkpoint_layout.waves != guest_created_waves ||
+        checkpoint_layout.scalar_words != LiveCheckpointCoverage::ScalarCount) {
+        // The real translator captures *all* GCN S0..S103 at the
+        // instruction site, not a guessed SGPR allocation subset.
+        throw std::invalid_argument("unsupported CIK checkpoint/wave/SGPR layout");
+    }
+    // Zero-LDS compute shaders must not require a fictitious shared-memory
+    // buffer or barrier. Nonzero-LDS shaders STILL require a complete,
+    // authenticated workgroup snapshot before the host resolves counters.
+    const auto checked_lds =
+        RequireOptionalGcnLdsCheckpoint(lds_layout, verified_shared_lds_bytes, guest_created_waves);
+    if (!checked_lds && (lds_capture_offset || resume_lds_offset)) {
+        throw std::invalid_argument("zero-LDS guest cannot provide LDS offsets");
+    }
+    if (persistent_guest_lds) {
+        // The first pass executes ALL original guest LDS loads/stores on a
+        // dedicated SSBO that outlives the workgroup and is reused by the
+        // post-DS shader. No quiescence snapshot or invented LDS header is
+        // needed: complete GPU dispatch completion is established by the
+        // subsequent packet + register readbacks.
+        if (!checked_lds || persistent_guest_lds->Handle() == VK_NULL_HANDLE ||
+            persistent_guest_lds->SizeBytes() !=
+                u64(checked_lds->workgroups) * checked_lds->lds_bytes) {
+            throw std::invalid_argument("GDS persistent LDS backing size invalid");
+        }
+    }
+
+    // All *active* device buffers must remain disjoint until the resumed
+    // dispatch consumes their contents. Zero-LDS paths don't consume the
+    // nominal LDS arguments and must not require dummy resource allocation.
+    // No shader capture producer is enabled yet; the backend stays gated.
+    const std::array handles{
+        device_capture.Handle(), device_checkpoints.Handle(),        device_lds.Handle(),
+        device_resume.Handle(),  device_resume_checkpoints.Handle(), device_resume_lds.Handle(),
+    };
+    for (std::size_t i = 0; i < handles.size(); ++i) {
+        if (!checked_lds && (i == 2 || i == 5)) {
+            continue;
+        }
+        for (std::size_t j = i + 1; j < handles.size(); ++j) {
+            if (!checked_lds && (j == 2 || j == 5)) {
+                continue;
+            }
+            if (handles[i] == handles[j]) {
+                throw std::invalid_argument("ordered GDS GPU checkpoint buffers alias");
+            }
+        }
+    }
+    if (persistent_guest_lds) {
+        for (const auto handle : handles) {
+            if (handle == persistent_guest_lds->Handle()) {
+                throw std::invalid_argument("persistent LDS aliases GDS checkpoint buffers");
+            }
+        }
+    }
+    if (checked_lds && !persistent_guest_lds &&
+        ((lds_capture_offset & 3u) || (resume_lds_offset & 3u) ||
+         lds_capture_offset > device_lds.SizeBytes() ||
+         checked_lds->total_bytes > device_lds.SizeBytes() - lds_capture_offset ||
+         resume_lds_offset > device_resume_lds.SizeBytes() ||
+         checked_lds->total_bytes > device_resume_lds.SizeBytes() - resume_lds_offset)) {
+        throw std::invalid_argument("ordered GDS LDS source/resume ranges invalid");
+    }
+    // Check every destination capacity BEFORE resolving or recording writes.
+    const u64 resume_bytes = OrderedGdsPacketTransfer::CheckedPacketBytes(guest_created_waves);
+    if (resume_offset > device_resume.SizeBytes() ||
+        resume_bytes > device_resume.SizeBytes() - resume_offset ||
+        resume_checkpoint_offset > device_resume_checkpoints.SizeBytes() ||
+        checkpoint_layout.total_bytes >
+            device_resume_checkpoints.SizeBytes() - resume_checkpoint_offset) {
+        throw std::invalid_argument("ordered GDS resume device buffer too small");
+    }
+    const auto captures =
+        DownloadOrderedGdsPackets(device_capture, capture_offset, guest_created_waves);
+    // Never accept a plausible packet until its token matches the actual
+    // per-wave scheduler assignment for this specific epoch.
+    RequireCaptureTokenAuthority(captures, authority, epoch);
+    const auto order = VerifiedGuestCreationOrder::FromCompleteCikComputeM0(captures, epoch);
+    if (!order) {
+        // Includes mixed bypasses and nonzero crawler increments: never
+        // pretend physical GPU arrival order is guest wave creation order.
+        throw std::invalid_argument("unverified CIK M0 logical wave order");
+    }
+    // The independent GPU state-buffer readback must agree with EVERY live
+    // capture's epoch, M0, EXEC, site, token and source logical slot. Reject
+    // a missing/stale SGPR/VGPR checkpoint BEFORE resolving any counter.
+    const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+        runtime, scheduler, device_checkpoints, checkpoint_offset, checkpoint_layout);
+    RequireCompleteGcnWaveCheckpoints(state, captures, checkpoint_layout, epoch, verified_sites);
+    // A workgroup with actual shared LDS requires a compiler-proven
+    // quiescent barrier. Zero-LDS workgroups have no state to transfer.
+    std::vector<std::byte> lds_state;
+    if (checked_lds && !persistent_guest_lds) {
+        lds_state = OrderedGdsLdsStateTransfer::Download(runtime, scheduler, device_lds,
+                                                         lds_capture_offset, *checked_lds, epoch);
+    }
+    std::vector<u32> site_pcs;
+    site_pcs.reserve(verified_sites.size());
+    for (const auto& site : verified_sites) {
+        site_pcs.push_back(site.site_pc);
+    }
+    SparseOrderedGdsEpoch host{guest_created_waves, std::move(counters), site_pcs};
+    StageGpuCaptures(host, epoch, captures, *order);
+    const auto resume = ResolveGpuCaptures(host, epoch, *order);
+    // The CPU-resolved result must still refer to the same GPU wave and
+    // independently decoded counter index; never feed a stale token/PC/rank
+    // into an eventual guest shader continuation.
+    RequireResolvedGcnResumeHandoff(resume, captures, *order, epoch);
+    // This is a true POST-DS guest register snapshot. The old ordered CIK
+    // counter value comes exclusively from the host-resolved result and
+    // is written to the DECODED destination VGPR of EXEC-active lanes.
+    // The original GPU snapshot remains immutable; other registers/PC/LDS
+    // and inactive lanes are preserved. A future guest continuation shader
+    // must restore this state without re-running earlier GCN instructions.
+    const auto post_ds_state = MaterializeGcnPostOrderedCountState(
+        state, captures, resume, checkpoint_layout, epoch, verified_sites, *order);
+    OrderedGdsPacketTransfer::UploadCheckpoint(
+        runtime, scheduler, device_resume_checkpoints, resume_checkpoint_offset,
+        std::span<const std::byte>{post_ds_state.data(), post_ds_state.size()}, checkpoint_layout);
+    if (checked_lds && !persistent_guest_lds) {
+        OrderedGdsLdsStateTransfer::Upload(
+            runtime, scheduler, device_resume_lds, resume_lds_offset,
+            std::span<const std::byte>{lds_state.data(), lds_state.size()}, *checked_lds, epoch);
+    }
+    // When guest LDS was lowered to persistent storage, its authoritative
+    // original GPU bytes remain in the very same device buffer; never
+    // overwrite them with an unverified CPU snapshot or reset on resume.
+    UploadOrderedGdsPackets(device_resume, resume_offset,
+                            std::span<const GpuResumePacket>{resume.data(), resume.size()});
+    return host.CounterSnapshot();
+}
+
+std::vector<u32> Rasterizer::SnapshotOrderedGdsDwords() {
+    return OrderedGdsStorageTransfer::Snapshot(runtime, scheduler, *buffer_cache.GetGdsBuffer());
+}
+
+void Rasterizer::CommitOrderedGdsDwords(std::span<const std::pair<u32, u32>> updates) {
+    OrderedGdsStorageTransfer::Apply(runtime, scheduler, *buffer_cache.GetGdsBuffer(), updates);
+}
+
 u64 Rasterizer::Flush() {
     const u64 current_tick = scheduler.CurrentTick();
     SubmitInfo info{};
@@ -418,13 +1118,16 @@ void Rasterizer::Finish() {
 
 void Rasterizer::OnSubmit() {
     buffer_cache.TickFrame();
-    texture_cache.ProcessDownloadImages();
     texture_cache.RunGarbageCollector();
     runtime.TickFrame();
 }
 
 void Rasterizer::OnFence() {
-    texture_cache.ProcessDownloadImages();
+    if (occlusion) {
+        // The caller signals a guest fence immediately after this method.
+        // Complete preceding counter writes before that fence becomes visible.
+        occlusion->Drain();
+    }
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {
@@ -433,12 +1136,54 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         return false;
     }
 
-    set_write_index = 0;
     set_writes.clear();
     buffer_infos.clear();
     image_infos.clear();
 
+    // Reserve across all shader stages before any VkWriteDescriptorSet points
+    // into image_infos. Later vector growth must not invalidate those pointers.
+    std::size_t required_infos = 0;
+    std::size_t required_buffer_infos = 0;
+    std::size_t required_writes = 0;
+    std::size_t max_stage_images = 0;
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) {
+            continue;
+        }
+        std::size_t stage_images = 0;
+        required_buffer_infos += stage->buffers.size();
+        required_writes += stage->buffers.size() + stage->samplers.size();
+        for (const auto& image : stage->images) {
+            stage_images += image.NumBindings(*stage) * image.NumImageArrays();
+            required_writes += image.NumImageArrays();
+            if (image.is_guest_indexed) {
+                ++required_buffer_infos;
+                ++required_writes;
+            }
+        }
+        max_stage_images = std::max(max_stage_images, stage_images);
+        required_infos += stage_images;
+        for (const auto& sampler : stage->samplers) {
+            required_infos += sampler.NumBindings(*stage);
+        }
+    }
+    image_infos.reserve(required_infos);
+    // Reserve capacity only. Resizing creates default-initialized descriptor
+    // writes which must never reach vkCmdPushDescriptorSetKHR if a producer
+    // supplies fewer records than its estimate.
+    set_writes.reserve(required_writes);
+    // VkWriteDescriptorSet::pBufferInfo pointers remain valid while adding
+    // numeric metadata alongside regular shader buffer bindings.
+    buffer_infos.reserve(required_buffer_infos);
+    image_bindings.resize(std::max(max_stage_images, std::size_t{Shader::NUM_IMAGES}));
+
     bool uses_dma = false;
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage && stage->uses_dma) {
+            buffer_cache.PrepareDmaSources(stage->flattened_ud_sources);
+            uses_dma = true;
+        }
+    }
 
     // Bind resource buffers and textures.
     Shader::Backend::Bindings binding{};
@@ -447,38 +1192,59 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
         if (!stage) {
             continue;
         }
-        set_writes.resize(set_writes.size() + stage->buffers.size() + stage->images.size() +
-                          stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
         uses_dma |= stage->uses_dma;
     }
 
     if (uses_dma) {
-        buffer_cache.SynchronizeDmaBuffers();
+        buffer_cache.SynchronizeDmaBuffers([this](const VideoCore::Buffer* buffer, u64 offset,
+                                                 u64 size) {
+            needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size);
+            bound_buffers.emplace_back(buffer, offset, size, vk::AccessFlagBits2::eShaderRead);
+        });
     }
 
+    // The dynamic write list must agree with the declared shader resources,
+    // and each Vulkan write must provide its type-appropriate descriptor
+    // data. Reject inconsistent producer metadata before it reaches RADV.
+    if (set_writes.size() != required_writes) {
+        LOG_ERROR(Render_Vulkan, "Descriptor write count mismatch: expected={} created={}",
+                  required_writes, set_writes.size());
+        return false;
+    }
+    for (std::size_t i = 0; i < set_writes.size(); ++i) {
+        const auto& write = set_writes[i];
+        const auto type = write.descriptorType;
+        const bool is_buffer = type == vk::DescriptorType::eStorageBuffer;
+        const bool is_image = type == vk::DescriptorType::eSampledImage ||
+                              type == vk::DescriptorType::eStorageImage ||
+                              type == vk::DescriptorType::eSampler;
+        if (write.descriptorCount == 0 || (is_buffer && write.pBufferInfo == nullptr) ||
+            (is_image && write.pImageInfo == nullptr) || (!is_buffer && !is_image)) {
+            LOG_ERROR(Render_Vulkan,
+                      "Invalid Vulkan descriptor write: ordinal={} binding={} type={} count={} "
+                      "buffer_info={} image_info={}",
+                      i, write.dstBinding, static_cast<u32>(type), write.descriptorCount,
+                      static_cast<const void*>(write.pBufferInfo),
+                      static_cast<const void*>(write.pImageInfo));
+            return false;
+        }
+    }
     return true;
 }
 
-void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
+Rasterizer::VertexBufferBindings Rasterizer::PrepareVertexBuffers(
+    const GraphicsPipeline* pipeline) {
     const auto& regs = liverpool->regs;
-    VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
-    VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;
+    VertexBufferBindings state;
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT> divisors;
     VertexInputs<AmdGpu::Buffer> guest_buffers;
-    pipeline->GetVertexInputs(attributes, bindings, divisors, guest_buffers,
+    pipeline->GetVertexInputs(state.attributes, state.bindings, divisors, guest_buffers,
                               regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1);
 
-    if (instance.IsVertexInputDynamicState()) {
-        // Update current vertex inputs.
-        const auto cmdbuf = scheduler.CommandBuffer();
-        cmdbuf.setVertexInputEXT(bindings, attributes);
-    }
-
-    if (bindings.empty()) {
-        // If there are no bindings, there is nothing further to do.
-        return;
+    if (state.bindings.empty()) {
+        return state;
     }
 
     struct BufferRange {
@@ -526,11 +1292,6 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
                                    vk::AccessFlagBits2::eVertexAttributeRead);
     }
 
-    // Bind vertex buffers
-    VertexInputs<vk::Buffer> host_buffers;
-    VertexInputs<vk::DeviceSize> host_offsets;
-    VertexInputs<vk::DeviceSize> host_sizes;
-    VertexInputs<vk::DeviceSize> host_strides;
     for (const auto& buffer : guest_buffers) {
         if (buffer.base_address != 0 && buffer.GetSize() > 0) {
             const auto host_buffer_info =
@@ -539,28 +1300,38 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
                            buffer.base_address < range.end_address;
                 });
             ASSERT(host_buffer_info != ranges_merged.cend());
-            host_buffers.emplace_back(host_buffer_info->buffer->Handle());
-            host_offsets.push_back(host_buffer_info->offset + buffer.base_address -
-                                   host_buffer_info->base_address);
+            state.buffers.emplace_back(host_buffer_info->buffer->Handle());
+            state.offsets.push_back(host_buffer_info->offset + buffer.base_address -
+                                    host_buffer_info->base_address);
         } else {
-            host_buffers.emplace_back(VK_NULL_HANDLE);
-            host_offsets.push_back(0);
+            state.buffers.emplace_back(VK_NULL_HANDLE);
+            state.offsets.push_back(0);
         }
-        host_sizes.push_back(buffer.GetSize());
-        host_strides.push_back(buffer.GetStride());
+        state.sizes.push_back(buffer.GetSize());
+        state.strides.push_back(buffer.GetStride());
     }
 
-    const auto cmdbuf = scheduler.CommandBuffer();
-    const auto num_buffers = guest_buffers.size();
+    return state;
+}
+
+void Rasterizer::BindVertexBuffers(vk::CommandBuffer cmdbuf,
+                                   const VertexBufferBindings& state) const {
     if (instance.IsVertexInputDynamicState()) {
-        cmdbuf.bindVertexBuffers(0, num_buffers, host_buffers.data(), host_offsets.data());
+        cmdbuf.setVertexInputEXT(state.bindings, state.attributes);
+    }
+    if (state.buffers.empty()) {
+        return;
+    }
+    const auto num_buffers = state.buffers.size();
+    if (instance.IsVertexInputDynamicState()) {
+        cmdbuf.bindVertexBuffers(0, num_buffers, state.buffers.data(), state.offsets.data());
     } else {
-        cmdbuf.bindVertexBuffers2(0, num_buffers, host_buffers.data(), host_offsets.data(),
-                                  host_sizes.data(), host_strides.data());
+        cmdbuf.bindVertexBuffers2(0, num_buffers, state.buffers.data(), state.offsets.data(),
+                                  state.sizes.data(), state.strides.data());
     }
 }
 
-void Rasterizer::BindIndexBuffer(u32 index_offset, bool is_indirect) {
+Rasterizer::IndexBufferBinding Rasterizer::PrepareIndexBuffer(u32 index_offset, bool is_indirect) {
     const auto& regs = liverpool->regs;
 
     // Figure out index type and size.
@@ -595,11 +1366,14 @@ void Rasterizer::BindIndexBuffer(u32 index_offset, bool is_indirect) {
         index_buffer = null_buffer->Handle();
     }
 
-    const auto cmdbuf = scheduler.CommandBuffer();
+    return {index_buffer, buffer_offset, index_buffer_size, index_type};
+}
+
+void Rasterizer::BindIndexBuffer(vk::CommandBuffer cmdbuf, const IndexBufferBinding& state) const {
     if (instance.IsMaintenance5Supported()) {
-        cmdbuf.bindIndexBuffer2KHR(index_buffer, buffer_offset, index_buffer_size, index_type);
+        cmdbuf.bindIndexBuffer2KHR(state.buffer, state.offset, state.size, state.type);
     } else {
-        cmdbuf.bindIndexBuffer(index_buffer, buffer_offset, index_type);
+        cmdbuf.bindIndexBuffer(state.buffer, state.offset, state.type);
     }
 }
 
@@ -608,8 +1382,7 @@ void Rasterizer::ResetBindings(bool is_compute) {
         texture_cache.GetImage(image_id).binding = {};
     }
     for (const auto [buffer, offset, size, src_access] : bound_buffers) {
-        const auto dst_stage = is_compute ? vk::PipelineStageFlagBits2::eComputeShader
-                                          : vk::PipelineStageFlagBits2::eAllGraphics;
+        const auto dst_stage = BufferAccessStage(src_access, is_compute);
         runtime.AccessBuffer(buffer, offset, size, dst_stage, src_access);
     }
     bound_images.clear();
@@ -708,6 +1481,7 @@ bool Rasterizer::IsComputeImageCopy(const Pipeline* pipeline) {
     VideoCore::Image& src_image = desc0.is_written ? image1 : image0;
     VideoCore::Image& dst_image = desc0.is_written ? image0 : image1;
     runtime.CopyColorAndDepth(&src_image, &dst_image);
+    texture_cache.TrackGpuImage(desc0.is_written ? image0_id : image1_id);
     return true;
 }
 
@@ -771,6 +1545,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
         .extent = image1.info.resources,
     };
     runtime.ClearImage(&image1, range, clear);
+    texture_cache.TrackGpuImage(image1_id);
     return true;
 }
 
@@ -782,7 +1557,62 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             vk::AccessFlagBits2::eShaderRead |
             (desc.is_written ? vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eNone);
         if (desc.IsSpecial()) {
-            if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
+            if (desc.buffer_type == Shader::BufferType::OrderedGdsEpochAuth) {
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute && stage.uses_ordered_gds &&
+                               !desc.is_written && active_ordered_gds_capture_ &&
+                               active_ordered_gds_capture_->AuthorizedEpoch() != 0,
+                           "ordered GDS epoch requires host-authorized capture scope");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& authority = epoch.capture_auth;
+                const u64 bytes = epoch.plan.epoch_auth_bytes;
+                ASSERT_MSG(authority.Handle() != VK_NULL_HANDLE &&
+                               authority.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                               authority.Handle() != epoch.capture_packets.Handle() &&
+                               authority.Handle() != epoch.capture_registers.Handle() &&
+                               bytes > 0 && bytes == authority.SizeBytes(),
+                           "GCN trusted dispatch token SSBO must be independent");
+                buffer_infos.emplace_back(authority.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&authority, 0, bytes, false);
+                bound_buffers.emplace_back(&authority, 0, bytes, src_access);
+            } else if (desc.buffer_type == Shader::BufferType::OrderedGdsCapture) {
+                // Only an explicit, owned guest capture phase may bind a
+                // dedicated GPU packet buffer. No guest GDS or wraparound
+                // stream alias, and no ordinary shader can opt into this.
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute && stage.uses_ordered_gds &&
+                               desc.is_written && active_ordered_gds_capture_,
+                           "ordered GDS capture packets require explicit live epoch");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& packets = epoch.capture_packets;
+                const u64 bytes = epoch.plan.packet_bytes;
+                ASSERT_MSG(packets.Handle() != VK_NULL_HANDLE &&
+                               packets.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                               packets.Handle() != epoch.capture_registers.Handle() &&
+                               packets.Handle() != epoch.resume_packets.Handle() && bytes > 0 &&
+                               bytes == packets.SizeBytes(),
+                           "GCN GPU packet SSBO must be independent bounded device storage");
+                buffer_infos.emplace_back(packets.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&packets, 0, bytes, true);
+                bound_buffers.emplace_back(&packets, 0, bytes, src_access);
+            } else if (desc.buffer_type == Shader::BufferType::OrderedGdsCheckpoint) {
+                // Only a caller-authenticated, explicitly scoped capture pass
+                // may bind the actual live register snapshot SSBO. No capture
+                // scope exists on the normal game path, so a compiler bug
+                // cannot accidentally alias GDS RAM or a wrapping stream.
+                ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute && stage.uses_ordered_gds &&
+                               desc.is_written && active_ordered_gds_capture_,
+                           "ordered GDS checkpoint requires explicit live capture epoch");
+                const auto& epoch = *active_ordered_gds_capture_;
+                const auto& checkpoint = epoch.capture_registers;
+                const u64 bytes = epoch.plan.register_layout.total_bytes;
+                ASSERT_MSG(checkpoint.Handle() != VK_NULL_HANDLE &&
+                               checkpoint.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                               checkpoint.Handle() != epoch.resume_registers.Handle() &&
+                               bytes > 0 && bytes == checkpoint.SizeBytes(),
+                           "GCN checkpoint SSBO must be independent bounded device storage");
+                buffer_infos.emplace_back(checkpoint.Handle(), 0, bytes);
+                needs_barrier |= runtime.IsBufferAccessed(&checkpoint, 0, bytes, true);
+                bound_buffers.emplace_back(&checkpoint, 0, bytes, src_access);
+            } else if (desc.buffer_type == Shader::BufferType::GdsBuffer) {
                 const auto* gds_buf = buffer_cache.GetGdsBuffer();
                 buffer_infos.emplace_back(gds_buf->Handle(), 0, gds_buf->SizeBytes());
                 needs_barrier |=
@@ -816,17 +1646,58 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             } else if (desc.buffer_type == Shader::BufferType::BdaPagetable) {
                 const auto* bda_buffer = buffer_cache.GetBdaPageTableBuffer();
                 buffer_infos.emplace_back(bda_buffer->Handle(), 0, bda_buffer->SizeBytes());
+                needs_barrier |= runtime.IsBufferAccessed(bda_buffer, 0, bda_buffer->SizeBytes());
+                bound_buffers.emplace_back(bda_buffer, 0, bda_buffer->SizeBytes(),
+                                           vk::AccessFlagBits2::eShaderRead);
             } else if (desc.buffer_type == Shader::BufferType::FaultBuffer) {
                 const auto* fault_buffer = buffer_cache.GetFaultBuffer();
                 buffer_infos.emplace_back(fault_buffer->Handle(), 0, fault_buffer->SizeBytes());
+                needs_barrier |=
+                    runtime.IsBufferAccessed(fault_buffer, 0, fault_buffer->SizeBytes(), true);
+                bound_buffers.emplace_back(fault_buffer, 0, fault_buffer->SizeBytes(), src_access);
             } else if (desc.buffer_type == Shader::BufferType::SharedMemory) {
-                auto& lds_buffer = buffer_cache.GetStreamBuffer();
-                const auto& cs_program = liverpool->GetCsRegs();
-                const auto lds_size = cs_program.SharedMemSize() * cs_program.NumWorkgroups();
-                const auto [data, offset] = lds_buffer.Map(lds_size, alignment);
-                std::memset(data, 0, lds_size);
-                lds_buffer.Commit();
-                buffer_infos.emplace_back(lds_buffer.Handle(), offset, lds_size);
+                if (stage.uses_ordered_gds) {
+                    // All guest LDS ops for ordered GDS are lowered to a
+                    // per-workgroup SSBO that persists across GPU passes.
+                    // Do not reinitialize a temporary streaming LDS buffer
+                    // when the capture or continuation binds this resource.
+                    ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute &&
+                                   stage.ordered_gds_persistent_lds && desc.is_written &&
+                                   active_ordered_gds_capture_ &&
+                                   active_ordered_gds_capture_->AuthorizedEpoch() != 0,
+                               "ordered GDS persistent LDS requires authenticated capture");
+                    const auto& owner = *active_ordered_gds_capture_;
+                    ASSERT_MSG(owner.persistent_lds && owner.PersistentLdsInitialized() &&
+                                   owner.plan.lds_layout &&
+                                   owner.plan.persistent_lds_bytes ==
+                                       u64(owner.plan.workgroups) *
+                                           owner.plan.lds_layout->lds_bytes,
+                               "ordered GDS persistent LDS extent invalid");
+                    const auto& lds_buffer = *owner.persistent_lds;
+                    const u64 bytes = owner.plan.persistent_lds_bytes;
+                    ASSERT_MSG(bytes && bytes == lds_buffer.SizeBytes() &&
+                                   lds_buffer.Handle() != VK_NULL_HANDLE &&
+                                   lds_buffer.Handle() != buffer_cache.GetGdsBuffer()->Handle() &&
+                                   lds_buffer.Handle() != owner.capture_packets.Handle() &&
+                                   lds_buffer.Handle() != owner.resume_packets.Handle() &&
+                                   lds_buffer.Handle() != owner.capture_registers.Handle() &&
+                                   lds_buffer.Handle() != owner.resume_registers.Handle() &&
+                                   lds_buffer.Handle() != owner.capture_lds->Handle() &&
+                                   lds_buffer.Handle() != owner.resume_lds->Handle(),
+                               "ordered GDS persistent LDS must not alias other GPU buffers");
+                    buffer_infos.emplace_back(lds_buffer.Handle(), 0, bytes);
+                    needs_barrier |= runtime.IsBufferAccessed(&lds_buffer, 0, bytes, true);
+                    bound_buffers.emplace_back(&lds_buffer, 0, bytes, src_access);
+                    owner.MarkPersistentLdsBound();
+                } else {
+                    auto& lds_buffer = buffer_cache.GetStreamBuffer();
+                    const auto& cs_program = liverpool->GetCsRegs();
+                    const auto lds_size = cs_program.SharedMemSize() * cs_program.NumWorkgroups();
+                    const auto [data, offset] = lds_buffer.Map(lds_size, alignment);
+                    std::memset(data, 0, lds_size);
+                    lds_buffer.Commit();
+                    buffer_infos.emplace_back(lds_buffer.Handle(), offset, lds_size);
+                }
             } else {
                 UNREACHABLE_MSG("Unexpected buffer type {}", u32(desc.buffer_type));
             }
@@ -858,15 +1729,11 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 push_data.AddOffset(binding.buffer, adjust);
                 buffer_infos.emplace_back(buffer->Handle(), offset_aligned, size + adjust);
                 bound_buffers.emplace_back(buffer, offset, size, src_access);
-                if (desc.is_written) {
-                    // Raw storage-buffer writes can also make an aliased cached image stale.
-                    texture_cache.InvalidateMemoryFromGPU(vsharp.base_address, size);
-                }
                 needs_barrier |= runtime.IsBufferAccessed(buffer, offset, size, desc.is_written);
             }
         }
 
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
@@ -881,15 +1748,219 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
+    boost::container::small_vector<bool, 8> image_descriptor_is_storage;
+    boost::container::small_vector<std::vector<u32>, 4> image_index_maps;
 
     u32 num_images{};
     for (const auto& image_desc : stage.images) {
+        if (image_desc.is_guest_indexed) {
+            const u32 count = image_desc.NumBindings(stage);
+            ASSERT(count >= 2 && count <= Shader::MaxGuestIndexedImageEntries + 1);
+            const u32 extra_images = (image_desc.NumImageArrays() - 1u) * count;
+            ASSERT(u64(num_images) + count + extra_images <= image_bindings.size());
+
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                image_desc.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u64 bytes = fetched ? (source.stride == 0
+                                             ? static_cast<u64>(source.num_records)
+                                             : static_cast<u64>(source.stride) * source.num_records)
+                                      : 0u;
+            const u32 record_stride = image_desc.indexed_record_stride_bytes;
+            const u32 descriptor_offset = image_desc.indexed_descriptor_offset_bytes;
+            const u32 represented_entries =
+                fetched && source.Valid()
+                    ? (record_stride ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records), record_stride,
+                                           descriptor_offset, Shader::MaxGuestIndexedImageEntries)
+                                     : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records),
+                                           Shader::MaxGuestIndexedImageEntries))
+                    : 0u;
+            ASSERT_MSG(represented_entries == count - 1u,
+                       "Indexed image table changed after shader specialization");
+            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
+            const bool table_layout_valid =
+                record_stride ? descriptor_offset <= record_stride &&
+                                    sizeof(AmdGpu::Image) <= record_stride - descriptor_offset
+                              : descriptor_offset == 0;
+            const bool table_available =
+                fetched && source.Valid() && source.base_address != 0 && table_layout_valid;
+            // A table may have been generated by earlier GPU buffer writes.
+            // Demand-reconcile only the *represented prefix* before host memcpy,
+            // preserving the historical 2D binding path and every valid T# ID.
+            const u32 image_entries = std::min(count - 1u, represented_entries);
+            const auto image_prefix = Shader::Optimization::GuestDescriptorPrefixBytes(
+                image_entries, record_bytes, descriptor_offset, sizeof(AmdGpu::Image));
+            if (table_available && image_prefix && *image_prefix != 0 && *image_prefix <= bytes &&
+                *image_prefix <= std::numeric_limits<u32>::max() &&
+                source.base_address <= std::numeric_limits<u64>::max() - *image_prefix &&
+                memory->IsValidMapping(source.base_address, *image_prefix) &&
+                buffer_cache.IsRegionGpuModified(source.base_address, *image_prefix)) {
+                buffer_cache.ReadMemory(source.base_address, *image_prefix, false, false, true);
+                static std::atomic<u32> coherence_reports{0};
+                if (coherence_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                    LOG_INFO(Render_Vulkan,
+                             "GpuDescriptorTableCpuCoherence: kind=image stage={:#x} "
+                             "addr={:#x} bytes={} entries={} stride={}",
+                             stage.pgm_hash, static_cast<u64>(source.base_address), *image_prefix,
+                             image_entries, record_stride);
+                }
+            }
+            const u32 image_base = num_images;
+            num_images += count + extra_images;
+            std::vector<u32> numeric_metadata(count, 0u);
+            for (u32 idx = image_base; idx < num_images; ++idx) {
+                image_bindings[idx].image_id = {};
+            }
+
+            const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+            u32 bound_2d = 0, bound_3d = 0, bound_cube = 0;
+            std::array<u32, 3> bound_numeric{};
+            for (u32 i = 0; i + 1u < count; ++i) {
+                // c925 uses independent runtime records: never discard an
+                // otherwise valid 2D guest image because a later table entry
+                // is missing or has a different image dimension.
+                if (!table_available || i >= represented_entries) {
+                    continue;
+                }
+                const u64 record_offset_bytes = u64(i) * record_bytes + descriptor_offset;
+                if (record_offset_bytes > bytes ||
+                    sizeof(AmdGpu::Image) > bytes - record_offset_bytes ||
+                    source.base_address > std::numeric_limits<u64>::max() - record_offset_bytes) {
+                    continue;
+                }
+                const u64 entry_addr = source.base_address + record_offset_bytes;
+                if (entry_addr > std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Image) - 1u) ||
+                    !memory->IsValidMapping(entry_addr, sizeof(AmdGpu::Image))) {
+                    continue;
+                }
+                AmdGpu::Image raw{};
+                std::memcpy(&raw, reinterpret_cast<const void*>(entry_addr), sizeof(raw));
+                if (!raw.Valid() || raw.Address() == 0 ||
+                    !memory->IsValidGpuMapping(raw.Address(), 0)) {
+                    continue;
+                }
+
+                const auto type = raw.GetViewType(image_desc.is_array);
+                u32 typed_slot = 0;
+                u32 max_dimension = limits.maxImageDimension2D;
+                u64 layers = 1;
+                switch (type) {
+                case AmdGpu::ImageType::Color1D:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed 1D image requires dimension-aware sample coordinates");
+                    raw.height = 0;
+                    break;
+                case AmdGpu::ImageType::Color2D:
+                    break;
+                case AmdGpu::ImageType::Color3D:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed image dimension requires a typed sample variant");
+                    if (bound_3d >= (count - 1u)) {
+                        UNREACHABLE_MSG("Indexed 3D descriptor count exceeds complete table");
+                    }
+                    typed_slot = 1;
+                    max_dimension = limits.maxImageDimension3D;
+                    layers = u64(raw.depth) + 1u;
+                    if (layers > max_dimension) {
+                        continue;
+                    }
+                    break;
+                case AmdGpu::ImageType::Cube:
+                    ASSERT_MSG(image_desc.is_guest_mixed_indexed,
+                               "Indexed image dimension requires a typed sample variant");
+                    if (bound_cube >= (count - 1u)) {
+                        UNREACHABLE_MSG("Indexed cube descriptor count exceeds complete table");
+                    }
+                    typed_slot = 2;
+                    max_dimension = limits.maxImageDimensionCube;
+                    layers = (u64(raw.depth) + 1u) * 6u;
+                    if (layers > limits.maxImageArrayLayers) {
+                        continue;
+                    }
+                    break;
+                default:
+                    UNREACHABLE_MSG("Unsupported indexed guest image dimension {}", u32(type));
+                }
+
+                const auto fmt = raw.GetDataFmt();
+                const auto nfmt = raw.GetNumberFmt();
+                if (!magic_enum::enum_contains(fmt) || !magic_enum::enum_contains(nfmt) ||
+                    fmt == AmdGpu::DataFormat::FormatInvalid || raw.width >= max_dimension ||
+                    raw.height >= max_dimension || raw.base_level > raw.last_level ||
+                    raw.pitch < raw.width) {
+                    continue;
+                }
+                const u32 numeric = u32(AmdGpu::GetNumberClass(nfmt));
+                const u32 dimensions = image_desc.is_guest_mixed_indexed ? 3u : 1u;
+                const u32 slot_index = image_base + (numeric * dimensions + typed_slot) * count + i;
+                auto& slot = image_bindings[slot_index];
+                auto& desc = slot.desc;
+                std::construct_at(&desc, raw, image_desc);
+                if (type == AmdGpu::ImageType::Cube) {
+                    const u32 layers = raw.NumLayers();
+                    const u32 base_layer = desc.view_info.range.base.layer;
+                    if (layers <= base_layer) {
+                        continue;
+                    }
+                    desc.view_info.range.extent.layers = layers - base_layer;
+                }
+                slot.image_id = texture_cache.FindImage(desc);
+                auto* image = &texture_cache.GetImage(slot.image_id);
+                if (type == AmdGpu::ImageType::Color2D &&
+                    desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                    if (auto depth_id = texture_cache.GetAssociatedDepth(*image)) {
+                        slot.image_id = depth_id;
+                        image = &texture_cache.GetImage(slot.image_id);
+                    }
+                }
+                image->binding.is_bound = 1u;
+                numeric_metadata[i] = Shader::IndexedImageMetadata::Encode(raw);
+                ++bound_numeric[numeric];
+                if (typed_slot == 0u) {
+                    ++bound_2d;
+                } else if (typed_slot == 1u) {
+                    ++bound_3d;
+                } else {
+                    ++bound_cube;
+                }
+            }
+            static std::atomic<u32> small_bind_reports{0};
+            static std::atomic<u32> large_bind_reports{0};
+            const bool large = count > 1024u;
+            const bool log =
+                large ? large_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 24u
+                      : small_bind_reports.fetch_add(1u, std::memory_order_relaxed) < 32u;
+            if (log) {
+                LOG_INFO(Render_Vulkan,
+                         "GuestIndexedImageDimensions: stage={:#x} entries={} "
+                         "bound_2d={} bound_3d={} bound_cube={} "
+                         "bound_float={} bound_sint={} bound_uint={} "
+                         "available={} mixed={} record_stride={}",
+                         stage.pgm_hash, count - 1u, bound_2d, bound_3d, bound_cube,
+                         bound_numeric[0], bound_numeric[1], bound_numeric[2], represented_entries,
+                         image_desc.is_guest_mixed_indexed, record_stride);
+            }
+            for (u32 i = 0; i < image_desc.NumImageArrays(); ++i) {
+                image_descriptor_array_sizes.push_back(count);
+                image_descriptor_is_storage.push_back(false);
+            }
+            image_descriptor_array_sizes.push_back(0u);
+            image_descriptor_is_storage.push_back(false);
+            image_index_maps.emplace_back(std::move(numeric_metadata));
+            continue;
+        }
+
         const auto tsharp = image_desc.GetSharp(stage);
         const auto data_fmt = tsharp.GetDataFmt();
         const auto num_fmt = tsharp.GetNumberFmt();
         if (tsharp.Address() == 0 || data_fmt == AmdGpu::DataFormat::FormatInvalid) {
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -902,6 +1973,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         static_cast<u32>(num_fmt));
             image_bindings[num_images++].image_id = {};
             image_descriptor_array_sizes.push_back(1);
+            image_descriptor_is_storage.push_back(image_desc.is_written);
             continue;
         }
 
@@ -923,11 +1995,16 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
 
             image_id = texture_cache.FindImage(desc);
             auto* image = &texture_cache.GetImage(image_id);
-            if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
-                // If this image has an associated depth image, it's a stencil attachment.
-                // Redirect the access to the actual depth-stencil buffer.
-                image_id = depth_image_id;
-                image = &texture_cache.GetImage(image_id);
+            // An associated depth/stencil image is suitable for sampled stencil
+            // access, but cannot provide a Vulkan storage-image view. Keep
+            // storage accesses on the format-compatible cache image selected
+            // by FindImage/ResolveDepthOverlap rather than redirecting them
+            // to a depth/stencil attachment without STORAGE usage/features.
+            if (desc.type == VideoCore::TextureCache::BindingType::Texture) {
+                if (auto depth_image_id = texture_cache.GetAssociatedDepth(*image)) {
+                    image_id = depth_image_id;
+                    image = &texture_cache.GetImage(image_id);
+                }
             }
             if (image->binding.is_bound) {
                 // The image is already bound. In case if it is about to be used as storage we
@@ -938,12 +2015,15 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         }
 
         image_descriptor_array_sizes.push_back(num_bindings);
+        image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
+    const u64 first_upload = runtime.ImageUploadCount();
+    u64 batch_upload = first_upload;
     // Second pass to re-bind images that were updated after binding
     for (u32 i = 0; i < num_images; ++i) {
         auto& [image_id, desc] = image_bindings[i];
-        bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
+        bool is_storage = image_id && desc.type == VideoCore::TextureCache::BindingType::Storage;
         if (!image_id) {
             image_infos.emplace_back(VK_NULL_HANDLE, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
         } else {
@@ -994,14 +2074,52 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             image_infos.emplace_back(VK_NULL_HANDLE, *image_view.image_view,
                                      image.backing->state.layout);
         }
+
+        constexpr u64 UploadsPerSession = 1024;
+        const u64 uploads = runtime.ImageUploadCount();
+        if (uploads - batch_upload >= UploadsPerSession) {
+            runtime.FlushBarriers();
+            scheduler.BeginSession();
+            scheduler.RecordWork(
+                "kind=texture-upload-session shader=%llx images=%u/%u uploads=%llu",
+                static_cast<unsigned long long>(stage.pgm_hash), i + 1, num_images,
+                static_cast<unsigned long long>(uploads - first_upload));
+            batch_upload = uploads;
+        }
     }
+    scheduler.RecordWork(
+        "kind=texture-bind-finish shader=%llx images=%u uploads=%llu",
+        static_cast<unsigned long long>(stage.pgm_hash), num_images,
+        static_cast<unsigned long long>(runtime.ImageUploadCount() - first_upload));
 
     u32 image_info_idx = first_image_idx;
     u32 image_binding_idx = 0;
-    for (u32 array_size : image_descriptor_array_sizes) {
-        const auto& [_, desc] = image_bindings[image_binding_idx];
-        const bool is_storage = desc.type == VideoCore::TextureCache::BindingType::Storage;
-        auto& set_write = set_writes[set_write_index++];
+    u32 remap_cursor = 0;
+    for (u32 image_index = 0; image_index < image_descriptor_array_sizes.size(); ++image_index) {
+        const u32 array_size = image_descriptor_array_sizes[image_index];
+        if (array_size == 0u) {
+            ASSERT(remap_cursor < image_index_maps.size());
+            const auto& remap = image_index_maps[remap_cursor++];
+            ASSERT(!remap.empty());
+            auto& stream = buffer_cache.GetStreamBuffer();
+            const u64 bytes = u64(remap.size()) * sizeof(u32);
+            const u64 offset = stream.Copy(remap.data(), bytes, instance.StorageMinAlignment());
+            buffer_infos.emplace_back(stream.Handle(), offset, bytes);
+            auto& write = set_writes.emplace_back();
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified++;
+            write.dstArrayElement = 0u;
+            write.descriptorCount = 1u;
+            write.descriptorType = vk::DescriptorType::eStorageBuffer;
+            write.pBufferInfo = &buffer_infos.back();
+            continue;
+        }
+        // The descriptor set layout is derived from Shader::ImageResource::is_written.
+        // TextureCache binding types can differ after depth/stencil association,
+        // fallback selection, or invalid texture handles. A descriptor write
+        // must use the exact type declared by its pipeline layout.
+        const bool is_storage = image_descriptor_is_storage[image_index];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified;
         set_write.dstArrayElement = 0;
@@ -1016,6 +2134,148 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 
     for (const auto& sampler : stage.samplers) {
+        if (sampler.is_guest_indexed) {
+            const u32 count = sampler.NumBindings(stage);
+            AmdGpu::Buffer source{};
+            const bool fetched =
+                sampler.indexed_table_fetch.Fetch(stage.flattened_ud_buf.data(), &source);
+            const u32 record_stride = sampler.indexed_record_stride_bytes;
+            const u32 image_offset = sampler.indexed_image_offset_bytes;
+            const u32 sampler_offset = sampler.indexed_sampler_offset_bytes;
+            const u64 bytes = fetched ? (source.stride == 0
+                                             ? static_cast<u64>(source.num_records)
+                                             : static_cast<u64>(source.stride) * source.num_records)
+                                      : 0u;
+            const u32 represented_entries =
+                fetched && source.Valid()
+                    ? (record_stride ? Shader::Optimization::CompleteGuestTsharpRecordEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records), record_stride,
+                                           image_offset, Shader::MaxGuestIndexedImageEntries)
+                                     : Shader::Optimization::CompleteGuestTsharpTableEntries(
+                                           static_cast<u32>(source.stride),
+                                           static_cast<u32>(source.num_records),
+                                           Shader::MaxGuestIndexedImageEntries))
+                    : 0u;
+            const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
+            const bool table_layout_valid =
+                record_stride ? image_offset <= record_stride &&
+                                    sizeof(AmdGpu::Image) <= record_stride - image_offset &&
+                                    sampler_offset <= record_stride &&
+                                    sizeof(AmdGpu::Sampler) <= record_stride - sampler_offset
+                              : image_offset == 0;
+            const bool table_available =
+                fetched && source.Valid() && source.base_address != 0 && table_layout_valid;
+            // A packed strided material record may contain BOTH T# and S#.
+            // Make GPU-written records visible to host before reading either.
+            // Uniform S# without a per-record sampler stays unchanged.
+            const u32 sampler_entries = std::min(count - 1u, represented_entries);
+            const auto image_span = Shader::Optimization::GuestDescriptorPrefixBytes(
+                sampler_entries, record_bytes, image_offset, sizeof(AmdGpu::Image));
+            const auto sampler_span =
+                record_stride
+                    ? Shader::Optimization::GuestDescriptorPrefixBytes(
+                          sampler_entries, record_bytes, sampler_offset, sizeof(AmdGpu::Sampler))
+                    : std::optional<u64>{0};
+            if (table_available && sampler_entries != 0 && image_span && sampler_span) {
+                const u64 prefix = std::max(*image_span, *sampler_span);
+                if (prefix <= bytes && prefix <= std::numeric_limits<u32>::max() &&
+                    source.base_address <= std::numeric_limits<u64>::max() - prefix &&
+                    memory->IsValidMapping(source.base_address, prefix) &&
+                    buffer_cache.IsRegionGpuModified(source.base_address, prefix)) {
+                    buffer_cache.ReadMemory(source.base_address, prefix, false, false, true);
+                    static std::atomic<u32> coherence_reports{0};
+                    if (coherence_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                        LOG_INFO(Render_Vulkan,
+                                 "GpuDescriptorTableCpuCoherence: kind=sampler stage={:#x} "
+                                 "addr={:#x} bytes={} entries={} stride={}",
+                                 stage.pgm_hash, static_cast<u64>(source.base_address), prefix,
+                                 sampler_entries, record_stride);
+                    }
+                }
+            }
+
+            AmdGpu::Sampler uniform_sampler{};
+            bool uniform_sampler_valid = false;
+            if (record_stride == 0u) {
+                uniform_sampler = sampler.GetSharp(stage);
+                uniform_sampler_valid =
+                    uniform_sampler.Valid() &&
+                    (uniform_sampler.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                     liverpool->regs.ta_bc_base.Address() != 0);
+            }
+
+            const u32 first_sampler = static_cast<u32>(image_infos.size());
+            u32 valid_indexed_samplers = 0;
+            for (u32 i = 0; i < count; ++i) {
+                AmdGpu::Sampler ssharp = uniform_sampler;
+                bool sampler_valid = record_stride == 0u ? uniform_sampler_valid : false;
+                if (table_available && i + 1u < count && i < represented_entries &&
+                    u64(i) * record_bytes <= bytes) {
+                    const u64 record_offset_bytes = u64(i) * record_bytes;
+                    const u64 record_address = source.base_address + record_offset_bytes;
+                    if (record_stride != 0u) {
+                        const u64 sampler_address = record_address + sampler_offset;
+                        ssharp = AmdGpu::Sampler{};
+                        sampler_valid = false;
+                        if (sampler_offset <= bytes - record_offset_bytes &&
+                            sizeof(AmdGpu::Sampler) <=
+                                bytes - record_offset_bytes - sampler_offset &&
+                            sampler_address >= record_address &&
+                            sampler_address <=
+                                std::numeric_limits<u64>::max() - (sizeof(AmdGpu::Sampler) - 1) &&
+                            memory->IsValidMapping(sampler_address, sizeof(AmdGpu::Sampler))) {
+                            std::memcpy(&ssharp, reinterpret_cast<const void*>(sampler_address),
+                                        sizeof(AmdGpu::Sampler));
+                            sampler_valid =
+                                ssharp.Valid() &&
+                                (ssharp.border_color_type.Value() != AmdGpu::BorderColor::Custom ||
+                                 liverpool->regs.ta_bc_base.Address() != 0);
+                        }
+                    }
+                } else {
+                    // Missing and out-of-range guest entries remain null slots.
+                    sampler_valid = false;
+                }
+                if (sampler_valid) {
+                    ASSERT_MSG(record_stride == 0u ||
+                                   (!ssharp.force_unnormalized && !ssharp.force_degamma),
+                               "Indexed sampler requires per-entry coordinate or gamma conversion");
+                    ++valid_indexed_samplers;
+                }
+                // VK_DESCRIPTOR_TYPE_SAMPLER cannot bind VK_NULL_HANDLE.
+                // Use actual valid guest sampler data when present. Missing
+                // guest table slots use the renderer's real cached default
+                // sampler, as in the earlier generic native implementation.
+                const AmdGpu::Sampler resolved_guest_sampler =
+                    sampler_valid ? ssharp : AmdGpu::Sampler{};
+                const vk::Sampler vk_sampler =
+                    texture_cache.GetSampler(resolved_guest_sampler, liverpool->regs.ta_bc_base,
+                                             sampler.is_depth, sampler.is_integer);
+                ASSERT_MSG(static_cast<VkSampler>(vk_sampler) != VK_NULL_HANDLE,
+                           "Vulkan sampler descriptor requires a valid VkSampler");
+                image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
+            }
+            if (valid_indexed_samplers != count - 1 || represented_entries != count - 1) {
+                static std::atomic<u32> reports{0};
+                if (reports.fetch_add(1, std::memory_order_relaxed) < 24) {
+                    LOG_WARNING(Render_Vulkan,
+                                "Indexed sampler table: shader={:#x} slots={} available={} "
+                                "valid={} bytes={} record_stride={}",
+                                stage.pgm_hash, count - 1, represented_entries,
+                                valid_indexed_samplers, bytes, record_stride);
+                }
+            }
+            auto& write = set_writes.emplace_back();
+            write.dstSet = VK_NULL_HANDLE;
+            write.dstBinding = binding.unified;
+            write.dstArrayElement = 0;
+            write.descriptorCount = count;
+            write.descriptorType = vk::DescriptorType::eSampler;
+            write.pImageInfo = &image_infos[first_sampler];
+            binding.unified += count;
+            continue;
+        }
         auto ssharp = sampler.GetSharp(stage);
         if (!ssharp.Valid() || (ssharp.border_color_type.Value() == AmdGpu::BorderColor::Custom &&
                                 liverpool->regs.ta_bc_base.Address() == 0)) {
@@ -1029,10 +2289,10 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                         liverpool->regs.ta_bc_base.Address());
             ssharp = AmdGpu::Sampler{};
         }
-        const auto vk_sampler =
-            texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base, sampler.is_depth);
+        const auto vk_sampler = texture_cache.GetSampler(ssharp, liverpool->regs.ta_bc_base,
+                                                         sampler.is_depth, sampler.is_integer);
         image_infos.emplace_back(vk_sampler, VK_NULL_HANDLE, vk::ImageLayout::eGeneral);
-        auto& set_write = set_writes[set_write_index++];
+        auto& set_write = set_writes.emplace_back();
         set_write.dstSet = VK_NULL_HANDLE;
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
@@ -1193,13 +2453,15 @@ void Rasterizer::Resolve() {
     VideoCore::TextureCache::ImageDesc mrt0_desc{liverpool->regs.color_buffers[0], mrt0_hint};
     VideoCore::TextureCache::ImageDesc mrt1_desc{liverpool->regs.color_buffers[1], mrt1_hint};
     auto& mrt0_image = texture_cache.GetImage(texture_cache.FindImage(mrt0_desc, true));
-    auto& mrt1_image = texture_cache.GetImage(texture_cache.FindImage(mrt1_desc, true));
+    const auto mrt1_id = texture_cache.FindImage(mrt1_desc, true);
+    auto& mrt1_image = texture_cache.GetImage(mrt1_id);
 
     ScopeMarkerBegin(fmt::format("Resolve:MRT0={:#x}:MRT1={:#x}",
                                  liverpool->regs.color_buffers[0].Address(),
                                  liverpool->regs.color_buffers[1].Address()));
     runtime.ResolveImage(&mrt0_image, &mrt1_image, mrt0_desc.view_info.range,
                          mrt1_desc.view_info.range);
+    texture_cache.TrackGpuImage(mrt1_id);
     ScopeMarkerEnd();
 }
 
@@ -1229,6 +2491,7 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
         regs.depth_buffer.StencilWriteAddress()));
 
     runtime.CopyDepthStencil(&read_image, &write_image, sub_range);
+    texture_cache.TrackGpuImage(write_id);
 
     ScopeMarkerEnd();
 }
@@ -1263,7 +2526,6 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
             return;
         }
     }
-    texture_cache.InvalidateMemoryFromGPU(dst, num_bytes);
     const auto* gds_buffer = buffer_cache.GetGdsBuffer();
     const auto [src_buffer, src_offset] = [&] -> std::pair<const VideoCore::Buffer*, u64> {
         if (src_gds) {
@@ -1300,8 +2562,16 @@ bool Rasterizer::InvalidateMemory(VAddr addr, u64 size, bool assume_locks) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
-    buffer_cache.InvalidateMemory(addr, size, assume_locks);
-    texture_cache.InvalidateMemory(addr, size);
+    const auto invalidate = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        buffer_cache.InvalidateMemory(addr, size, true);
+        texture_cache.InvalidateMemory(addr, size);
+    };
+    if (assume_locks) {
+        invalidate();
+    } else {
+        liverpool->SendCommand<true>(invalidate);
+    }
     return true;
 }
 
@@ -1310,7 +2580,17 @@ bool Rasterizer::ReadMemory(VAddr addr, u64 size, bool assume_locks) {
         // Not GPU mapped memory, can skip invalidation logic entirely.
         return false;
     }
-    buffer_cache.ReadMemory(addr, size, false, false, assume_locks);
+    const auto read = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        if (buffer_cache.IsRegionGpuModified(addr, size)) {
+            buffer_cache.ReadMemory(addr, size, false, false, true);
+        }
+    };
+    if (assume_locks) {
+        read();
+    } else {
+        liverpool->SendCommand<true>(read);
+    }
     return true;
 }
 
@@ -1341,8 +2621,16 @@ void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
-    buffer_cache.InvalidateMemory(addr, size);
-    texture_cache.UnmapMemory(addr, size);
+    const auto unmap = [this, addr, size] {
+        texture_cache.ReadMemory(addr, size);
+        buffer_cache.InvalidateMemory(addr, size, true);
+        texture_cache.UnmapMemory(addr, size);
+    };
+    if (std::this_thread::get_id() == GetGpuCommandProcessorThread()) {
+        unmap();
+    } else {
+        liverpool->SendCommand<true>(unmap);
+    }
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges -= decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
@@ -1533,18 +2821,57 @@ void Rasterizer::UpdateDepthStencilState() const {
             regs.depth_control.backface_enable
                 ? uses_op_val(sc.stencil_fail_back, sc.stencil_zpass_back, sc.stencil_zfail_back)
                 : front_op;
-        const auto ref_conflict = [](AmdGpu::CompareFunc func, const AmdGpu::StencilRefMask& ref) {
-            return func != AmdGpu::CompareFunc::Always && func != AmdGpu::CompareFunc::Never &&
-                   ref.stencil_test_val != ref.stencil_op_val;
+        // PS4 stencil compares use test_val and REPLACE writes use op_val.
+        // Vulkan has only one reference per face. These are simultaneously
+        // representable when the compare and write masks have no conflicting
+        // overlapping bits; preserve both guest operations in that case.
+        const auto stencil_reference = [&](const AmdGpu::StencilRefMask& ref,
+                                           AmdGpu::CompareFunc compare,
+                                           bool uses_replace) -> u32 {
+            const u32 test_val = ref.stencil_test_val;
+            const u32 op_val = ref.stencil_op_val;
+            if (!uses_replace || stencil_clear) {
+                return test_val;
+            }
+            if (compare == AmdGpu::CompareFunc::Always ||
+                compare == AmdGpu::CompareFunc::Never) {
+                return op_val;
+            }
+            const u32 compare_mask = ref.stencil_mask;
+            const u32 write_mask = ref.stencil_write_mask;
+            const u32 overlap_conflict = (test_val ^ op_val) & compare_mask & write_mask;
+            if (overlap_conflict == 0) {
+                const u32 reference =
+                    (test_val & compare_mask) | (op_val & write_mask & ~compare_mask);
+                static std::atomic<u32> exact_reference_reports{0};
+                if (test_val != op_val &&
+                    exact_reference_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                    LOG_INFO(Render_Vulkan,
+                             "StencilReferenceExactMerged: test={:#x} op={:#x} "
+                             "compare_mask={:#x} write_mask={:#x} reference={:#x}",
+                             test_val, op_val, compare_mask, write_mask, reference);
+                }
+                return reference;
+            }
+            static std::atomic<u32> unrepresentable_reference_reports{0};
+            if (unrepresentable_reference_reports.fetch_add(1, std::memory_order_relaxed) < 24u) {
+                LOG_WARNING(Render_Vulkan,
+                            "StencilReferenceUnrepresentable: test={:#x} op={:#x} "
+                            "compare_mask={:#x} write_mask={:#x} conflicting_bits={:#x}",
+                            test_val, op_val, compare_mask, write_mask, overlap_conflict);
+            }
+            // Genuinely contradictory guest compare and replace bits cannot
+            // be expressed by a single Vulkan reference. Preserve the prior
+            // REPLACE reference rather than falsifying guest stencil tests.
+            return op_val;
         };
-        if ((front_op && ref_conflict(regs.depth_control.stencil_ref_func, front)) ||
-            (back_op && regs.depth_control.backface_enable &&
-             ref_conflict(regs.depth_control.stencil_bf_func, back))) {
-            LOG_WARNING(Render_Vulkan, "Stencil test requires test_val while ReplaceOp requires "
-                                       "op_val; the stencil test will use op_val");
-        }
-        dynamic_state.SetStencilReferences(front_op ? front.stencil_op_val : front.stencil_test_val,
-                                           back_op ? back.stencil_op_val : back.stencil_test_val);
+        dynamic_state.SetStencilReferences(
+            stencil_reference(front, regs.depth_control.stencil_ref_func, front_op),
+            stencil_reference(back,
+                              regs.depth_control.backface_enable
+                                  ? regs.depth_control.stencil_bf_func
+                                  : regs.depth_control.stencil_ref_func,
+                              back_op));
         dynamic_state.SetStencilWriteMasks(!stencil_clear ? front.stencil_write_mask : 0U,
                                            !stencil_clear ? back.stencil_write_mask : 0U);
         dynamic_state.SetStencilCompareMasks(front.stencil_mask, back.stencil_mask);

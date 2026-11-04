@@ -84,8 +84,6 @@ void SettingsWindow::LoadSettings(std::string profile) {
 
     /////////// Experimental Tab
     if (isSpecific) {
-        readbacksModeSetting = EmulatorSettings.GetReadbacksMode();
-        readbackLinearImagesSetting = EmulatorSettings.IsReadbackLinearImagesEnabled();
         directMemoryAccessSetting = EmulatorSettings.IsDirectMemoryAccessEnabled();
         windowsGuestRedZoneProtectionModeSetting = EmulatorSettings.IsRedZonePatchingEnabled();
         devkitConsoleSetting = EmulatorSettings.IsDevKit();
@@ -140,8 +138,6 @@ void SettingsWindow::SaveSettings(std::string profile) {
 
     /////////// Experimental Tab
     if (isSpecific) {
-        EmulatorSettings.SetReadbacksMode(readbacksModeSetting, true);
-        EmulatorSettings.SetReadbackLinearImagesEnabled(readbackLinearImagesSetting, true);
         EmulatorSettings.SetDirectMemoryAccessEnabled(directMemoryAccessSetting, true);
         // Windows static guest red-zone protection
         EmulatorSettings.SetRedZonePatchingEnabled(windowsGuestRedZoneProtectionModeSetting, true);
@@ -784,8 +780,6 @@ void SettingsWindow::DrawSettingsTable(SettingsCategory category) {
 
             AddSettingSliderInt("Additional DMem Allocation", extraDmemSetting, 0, 20000);
             AddSettingSliderInt("Vblank Frequency", vblankFrequencySetting, 30, 360);
-            AddSettingCombo("Readbacks Mode", readbacksModeSetting, readbacksModeOptions);
-            AddSettingCheckbox("Enable Readback Linear Images", readbackLinearImagesSetting);
             AddSettingCheckbox("Enable Direct Memory Access", directMemoryAccessSetting);
 #ifdef _WIN32
             // Windows static guest red-zone protection

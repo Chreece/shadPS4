@@ -163,7 +163,7 @@ void Scheduler::BeginSession() {
     if (profiler_ctx) {
         static const auto scope_loc =
             GPU_SCOPE_LOCATION("Guest Frame", MarkersPalette::GpuMarkerColor);
-        new (profiler_scope) tracy::VkCtxScope{profiler_ctx, &scope_loc, current_cmdbuf, true};
+        new (profiler_scope) tracy::VkCtxScope{profiler_ctx, &scope_loc, session.primary, true};
     }
 #endif
 }
@@ -183,20 +183,19 @@ void Scheduler::EndSession() {
     }
 
     EndRendering();
+#if TRACY_GPU_ENABLED
+    auto* profiler_ctx = instance.GetProfilerContext();
+    if (profiler_ctx) {
+        profiler_scope->~VkCtxScope();
+        TracyVkCollect(profiler_ctx, session.primary);
+    }
+#endif
     Check(session.primary.end());
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
     std::scoped_lock lk{submit_mutex};
     const u64 signal_value = work_semaphore.NextTick();
-
-#if TRACY_GPU_ENABLED
-    auto* profiler_ctx = instance.GetProfilerContext();
-    if (profiler_ctx) {
-        profiler_scope->~VkCtxScope();
-        TracyVkCollect(profiler_ctx, current_cmdbuf);
-    }
-#endif
 
     if (on_submit) {
         on_submit(info);
@@ -215,6 +214,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
     sessions.clear();
 
+    VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, signal_value,
+                                          "kind=submit command-buffers=%zu waits=%u",
+                                          cmd_buffers.size(), info.num_wait_semas);
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 

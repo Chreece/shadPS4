@@ -171,12 +171,18 @@ public:
 
     [[nodiscard]] U32 DataAppend(const U32& gds_dw_offset);
     [[nodiscard]] U32 DataConsume(const U32& gds_dw_offset);
+    // Preserve the actual pre-DS guest register value through SSA and
+    // optimization; the backend must emit a real packet store or fail closed.
+    void OrderedGdsCheckpointRegister(const U32& site_pc, const U32& bank, const U32& index,
+                                      const U32& value, const U32& logical_slot, const U32& lane);
+    [[nodiscard]] U32 OrderedGdsCount(const U32& m0, const U32& address, const U64& guest_exec_mask,
+                                      const U32& encoded_control, const U32& site_pc);
     [[nodiscard]] U32 LaneId();
     [[nodiscard]] U32 WarpId();
     [[nodiscard]] U32 QuadBroadcast(const U32& value, const U32& index);
     [[nodiscard]] U32 Shuffle(const U32& value, const U32& index);
     [[nodiscard]] U32 ShuffleXor(const U32& value, const U32& mask);
-    [[nodiscard]] U32 ReadFirstLane(const U32& value);
+    [[nodiscard]] U32 ReadFirstLane(const U32& value, const U1& exec);
     [[nodiscard]] U32 ReadLane(const U32& value, const U32& lane);
     [[nodiscard]] U32 WriteLane(const U32& value, const U32& write_value, const U32& lane);
     [[nodiscard]] U64 Ballot(const U1& bit);
@@ -379,6 +385,10 @@ public:
     [[nodiscard]] Value ImageSampleImplicitLod(const Value& handle, const Value& body,
                                                const F32& bias, const Value& offset,
                                                TextureInstInfo info);
+    [[nodiscard]] Value ImageSampleImplicitLodIndexed(const Value& handle, const Value& body,
+                                                      const F32& bias, const Value& offset,
+                                                      const U32& gpu_texture_id,
+                                                      TextureInstInfo info);
 
     [[nodiscard]] Value ImageSampleExplicitLod(const Value& handle, const Value& body,
                                                const F32& lod, const Value& offset,
@@ -405,6 +415,10 @@ public:
                                       const Value& derivatives_dx, const Value& derivatives_dy,
                                       const Value& offset, const F32& lod_clamp,
                                       TextureInstInfo info);
+    [[nodiscard]] Value ImageGradientIndexed(const Value& handle, const Value& coords,
+                                             const Value& derivatives_dx,
+                                             const Value& derivatives_dy, const Value& offset,
+                                             const U32& gpu_texture_id, TextureInstInfo info);
     [[nodiscard]] Value ImageRead(const Value& handle, const Value& coords, const U32& lod,
                                   const U32& multisampling, TextureInstInfo info);
     void ImageWrite(const Value& handle, const Value& coords, const U32& lod,

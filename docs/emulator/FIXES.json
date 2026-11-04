@@ -1,0 +1,674 @@
+{
+  "schema_version": 1,
+  "recorded_on": "2026-11-04",
+  "notice": "Derived status index only; canonical historical facts are append-only docs/emulator/TRIALS.jsonl. Main merge SHA does not imply hardware verification.",
+  "engine_policy": "Generic emulator changes for all games; tested games are evidence, never source/runtime switches.",
+  "fixes": [
+    {
+      "id": "native-cpu-id",
+      "subsystem": "cpu",
+      "status": "BUILD_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        16,
+        63
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "CUSA34384: native combined build PASS, gameplay pending; CUSA11456: independent current combined test pending",
+      "negative_result_or_prohibition": "DynamoRIO relaunch caused regressions; rejected",
+      "next_test": "Native GoW and GoT 118+2s regression, same compiled executable"
+    },
+    {
+      "id": "dynamorio-translation",
+      "subsystem": "cpu",
+      "status": "REJECT",
+      "related_prs": [
+        63
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: rejected performance; GoW: translator was active during fatal startup",
+      "negative_result_or_prohibition": "Never re-enable external runtime or --cpu-id-mode workarounds",
+      "next_test": "Keep native CPUID/RDTSCP/RDPID only"
+    },
+    {
+      "id": "kernel-sanitizer-atexit",
+      "subsystem": "kernel",
+      "status": "NATIVE_REGRESSIONS_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        60
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: sanitizer/atexit focused tests PASS, translated runtime still crashed",
+      "negative_result_or_prohibition": "Duplicate Linker::FindByAddress fixed after failed link",
+      "next_test": "Test current native source and forward-port clean kernel patches to main"
+    },
+    {
+      "id": "shader-srt-rollback",
+      "subsystem": "shader-recompiler",
+      "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
+      "related_prs": [
+        66
+      ],
+      "main_merge_sha": "8869651a2b3b1943fc7ab077074bdfbe5875a141",
+      "observed_game_effects": "GoT local codegen already rolled back partial machine code; main port source verified",
+      "negative_result_or_prohibition": "Do not leave partial host x86 SRT code on unsupported offsets",
+      "next_test": "Native main compile and unsupported-offset regression"
+    },
+    {
+      "id": "gpu-linear-readback",
+      "subsystem": "gpu-coherence",
+      "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
+      "related_prs": [
+        57,
+        68,
+        130
+      ],
+      "main_merge_sha": "b8db275e6605b4183aa27c445bb39661d991cdd1",
+      "observed_game_effects": "GoT 118s PR57: 32 bounded real queues/copies and stable silhouettes; other titles pending",
+      "negative_result_or_prohibition": "Avoid eager tiled readbacks or forced per-title settings",
+      "next_test": "PR130 enables existing eligible-image publication automatically; verify actual publication and native GoT/GoW progression without configuration changes."
+    },
+    {
+      "id": "gpu-indexed-strided-material",
+      "subsystem": "shader-resources",
+      "status": "C925_BIND_REJECTION_108_UNSUPPORTED_7_EMPTY_NO_FORCED_TEXTURES_PERF_ELIGIBILITY_CACHE09_NATIVE_PENDING",
+      "related_prs": [
+        52
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT PR52: 39 native strided recognitions, world incomplete 18:43 exact c925 missing strided matcher precedence and external-prefix form: 400 bounded SHARP_RESOURCE_PROVENANCE events in 118s native GoT across 95 shader IDs, 483 unflattened SHARP warning events, 12 GPU_SELECTED_BUFFER warnings across four compute shader families. Current c925 source `indexed_image_selector.h` SHA3979141... accepted only inner IAdd32 byte prefixes, and `resource_discover_pass.cpp` SHAb1db2... tests loose eight-word contiguous before stronger strided matcher. Reviewed older PR52 fix (two actual IR index layouts) is absent from this latest typed 2D/3D/Cube source. Corrected exact current source in new three-file patch f9ca55e980377ad1baf82f0174eb714ce0147e48 with shader binary version 0x43520007->08 and bounded shader/source logs, preserving original GPU SSA selector. Native c925 graphics not yet tested. 19:06 native PR52 current c925 384-byte material matcher: indexed strided decision events 13->129, unique shaders 11->69, with all 58 additional accepted shader hashes Compute CS, no additional FS hashes. 105/129 candidates stride384. Typed image table runtime events unchanged 26 with full 27612 2D 35 3D 4 Cube; 475 Sharp unflattened vs 483 prior, 394 source events vs 400. Menu 40s screenshot FPS 24->10; game screenshot 112s 4 vs 4; new candidate ec0cb0306bd954aff8440c3250f00f76731f1817d7139d3cad8c1fc30d580bd6 preserved. No Vulkan device loss in logs, exit -9 ambiguous after timeout. New compiler source may restore some menu particles but host pixel causality not proven. 19:33 c925 native typed material actual rejection split: native ELF 2681b63b89bf808fa7307d633e9264eb80b7f102c640cbdad8b883dd88dcc7cc compiled/linked and GoT ran to timeout124 with no device loss; menu 15 FPS at40sec (previous broad matcher10 FPS and pre-PR52 24 FPS), in-world 3-4 FPS and heavy missing terrain. 125 strided indexed source events; 115 true host indexed image binding rejections parsed from source: 108 sample_mode_ok=false (101 stride384, 4 stride340, 2 stride376, 1 stride236; 110 stage6 and five stage0 overall), plus 7 eligible stride536 guest V# table fetches of valid-type, nonzero base0x1500000000 but stride8 num_records0, yielding 0 complete table entries. No GPU texture/image binding can be justified for any of those 115. 474 unflattened Sharp warnings, 0 SRT host stalls, full 27651 image table host capacity 27612 2D+35 3D+4 Cube still present. Hot three-site log throttle reduced clamp/stencil/wave warnings to 12/12/15, yet 22k extra AJM/VMM/EnsureResident INFO lines remained. 19:33 115 source bind rejections: 108 unsupported host indexed sampled-image modes (101 stride384), plus 7 apparently valid fetched guest buffer headers at 0x1500000000 with stride8 but num_records0; no safe source extent, therefore still not eligible to bind; no GPU driver loss, typed full table 27612 2D 35 3D 4 cube, first log gate restored menu about 10->15fps at 40sec while remaining 22k AJM/VMM/EnsureResident INFO calls cause CPU load. 19:33 candidate exact ELF 2681b63b89bf808fa7307d633e9264eb80b7f102c640cbdad8b883dd88dcc7cc protected.",
+      "negative_result_or_prohibition": "Don't invent texture indexes or assume public patcher branch equals tested detached C++ Do not attribute all 400 invalid SHARP reports or absent geometry to matcher precedence alone; it is a demonstrable generic source matcher error with unproven actual affected live draw coverage. No host-picked GPU texture ID, sampler fabrication, stencil forcing or shader-hash special cases. Keep old working be3e8c and 355613 executables separately. \"accepted=true\" means recompiler discovery of candidate strided source, not proven Vulkan material bound or GPU sampled. Most new CS `SHARP_RESOURCE_PROVENANCE indexed=false` and still have ReadConstBuffer@0. Do not promote the latest source as graphics fix on counts alone; its correlation with 10fps menu requires A/B before attributing cause. Keep previous 355613... faster menu ELF and current ec0cb... candidate separately. No CS title/hash hacks or fixed count fabrications. Never force 108 unsupported operation modes to sampled-image descriptors or manufacture records for the seven length-zero GCN buffer headers; neither is valid rendering. Avoid claiming 129 recognitions equal rendered material fills. A sample-mode eligibility predicate at discovery is semantically restricted to the already supported binding subset, but its impact on shader translation and FPS is experimental and must be native tested; remain unmerged until GoT and GoW cross-game.",
+      "next_test": "EXPERIMENTAL NOT MAIN: precise eight-source patch 7c709d2a90222aa0a32ca9237eae420c669e597e Git blob 46b259e4f51b28e2bfefaf42bf8399aee7d9f817, runner wrapper fac9bf276a0745ad31c9fec6e2f5346e75a5e9e7 blob 6172cbf80118b9901d30fe2815c63c02753a1c26. Wrapper reuses exact old runner f194b..., protects exact 19:33 2681.. ELF and older 355613.. / c8a.. / be3e.. binaries, scratch Git forward/reverse and 8 full pre/post source SHA, production mode helper 256 GCC/Clang cases, log-gate 500k+160k C++ Release tests. Directly prevent indexed material discovery for sample modes already rejected in binder; reduce AJM instance, VMM memory map, BufferCache residency logs first4/powers; increment ShaderBinaryVersion 08->09 to reject stale translated shader cache. Native full build/link/118s game pending. Compare 40sec menu FPS, actual typed table bindings, 115 rejection counts and visuals; reject if regression; follow up remaining genuinely unresolved fragment GPU image SHARP source. No synthetic texture or shader-hash exceptions."
+    },
+    {
+      "id": "gpu-indexed-uniform-sampler",
+      "subsystem": "shader-resources",
+      "status": "KEEP_GENUINE_SAMPLER_CAPABILITY_PR77_NATIVE_RUNTIME_GPU_LOSS",
+      "related_prs": [
+        64,
+        77
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Earlier PR64 native proved 13 valid uniform S# binds and visible menu. New controlled PR77 native A/B 2026-10-26 17:01:43 built and linked but emitted only two scalar S# binds and two 2D-only image table binds, reached black loading at 40s, then GPU context lost/ErrorDeviceLost and exit 139; PR78 experienced exactly same ordered 103 compute shader compilation hashes and device loss. PR77 itself is NOT visually accepted.",
+      "negative_result_or_prohibition": "Do not mistake native build/sampler binding for menu/game success, do not attribute the GPU loss uniquely to compact PR78. Never fabricate GPU material ID/sampler/descriptor.",
+      "next_test": "Restore and verify the last menu-positive GPU precise-linear-readback baseline (previous SHA256 260ed43a...) without replacing installed GoW/GoT; compare shared compute/buffer descriptor handling and GPU fault evidence. Fix generic source only with proved fault, then repeat GoT/GoW controlled regression."
+    },
+    {
+      "id": "tiled-eager-readbacks",
+      "subsystem": "gpu-coherence",
+      "status": "REJECT",
+      "related_prs": [
+        58
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: many real tiled copies but severe menu FPS loss; no world recovery",
+      "negative_result_or_prohibition": "Per-bind bulk tiled CPU downloads are costly",
+      "next_test": "Only retry demand-based coherence with consumer evidence"
+    },
+    {
+      "id": "duplicate-page-dirty",
+      "subsystem": "gpu-coherence",
+      "status": "REJECT",
+      "related_prs": [
+        56
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: buffer pages already dirty, no improvement",
+      "negative_result_or_prohibition": "Redundant dirty marking",
+      "next_test": "Investigate missing producer->consumer chain instead"
+    },
+    {
+      "id": "ssa-gvn-index-alias",
+      "subsystem": "shader-resources",
+      "status": "REJECT",
+      "related_prs": [
+        61
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: zero new accepted alias cases, visuals unchanged",
+      "negative_result_or_prohibition": "Counts across different shader workloads do not prove improvement",
+      "next_test": "Revisit only with concrete unmatched source evidence"
+    },
+    {
+      "id": "srt-pending-parent-trace",
+      "subsystem": "shader-recompiler",
+      "status": "C925_DYNAMIC_VSHARP_NATIVE_PASS_4_SRT_WARNINGS_ELIMINATED_VISUAL_RECOVERY_NOT_PROVEN",
+      "related_prs": [
+        62,
+        67
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "2026-10-26 PR67 menu-only 120s archive: zero SRT stalls / parent events; three previous compute shader stalls remain unresolved when encountered. No gameplay or SRT conclusion from current menu capture. 2026-10-27 user archive c925-integrated-gpu-20261027-161146 had 11 native SRT stall compilations: 0xb5500bd4 x5, 0xbdfc491f x3, 0x735cf693 x2, 0x8d22a728 x1. EVERY affected shader reports exactly one SRT root, four pending, 170 new flatbuffer words after 2 rounds. The prior SRT_UNRESOLVED_PROVENANCE 176 events were unrelated immediate-index reads, not the true four. The shader diagnostics-only ELF 9bdd7be... encountered device lost and SIGSEGV; previous be3e8c12... menu/gameplay positive ELF remains protected. Past canonical-pointer PR46, multi-use planner, cross-root retry and inline ReadConst evaluation yielded no recovery; root reorder PR85 cannot affect one-root shader. 2026-10-27 16:41 actual GoT GPU-dynamic Phi evidence: all four compute shaders (b5500bd4 x5 bdfc491f x3 735cf693 x3 8d22a728 x1) stalled 4 reads but share exactly the same host-nonuniform ShiftRightLogical32(IAdd32(ShiftLeftLogical32(Phi(0,IAdd32),3),24),2) pointer offset. Current SRT child recursion checks an unassigned host alias before testing IsHostUniformSrtOffset=false. The GPU-selected raw 4-word V# is currently lost when ResourcePatchingPass maps invalid ReadConstBuffer descriptor sources to a null host resource; new source patch c2cc662576ee516dd24ed3835a42c8f45bd2ac43 preserves the GPU-selected V# in scalar buffer read and emits existing BDA page-translated load; SRT fix 63bc0794791a2f3103953ed7e0dc84010a37a9f3 rejects host traversal of divergent children early. C++ raw V# arithmetic fixture 100k cases each GCC/Clang local PASS; native shader/gfx not yet run. 17:35 source attempted dynamic V# patch syntax rejected by git apply --check at line41; no compiler/game ran. Replaced hand-counted diff with exact source-verified Git blob 3d54af02957061b4079dc0ed0a842f623be7cd70. Actual recovered c925 source `git apply --check`, forward apply, `git diff --check`, reverse check and reverse apply PASS. Header/source renderer GPU side dynamic V# dispatch compatibility inspected; standalone emitted function C++ GCC/Clang syntax smoke PASS. Native shadPS4 link/GPU game STILL PENDING. 17:54 27-Oct host uploaded c925-integrated-gpu-20261027-175426.tar.gz: clean scratch patch apply succeeded for five exact original source files, but runner stopped before reverse/prebuild on stale SHA for resource_patching_pass.cpp (plus stale expected SHA for shader_info_collection_pass.cpp and emit_spirv_context_get_set.cpp). No compiler or game was run. The actual host postimage SHA256 values are 5cc480c8746d4ba824ea3d3ed8002a65ccd96f4ed2f51983edf284c01c3d5fd6 / 102fb8b512d8c01f0c812f118d05f4482433877f22da9ddb0fe18b7f4ddf7441 / e0a37e85a33ea53b70401002cf52d8cc413bb10e04b882214c84128694a15f47. Protected be3e8c... executable unchanged. GoT 2026-10-27 18:05:10 c925 dynamic V#: C++ native shader build/link PASS 21/22 jobs, GoT reached Continue menu and 112s in-game water/fire/fog with major missing world materials. GPU_DYNAMIC_BUFFER_SHARP logged 32 times for b5500bd4 only due global 32-message cap; SRT dependency stalls 0 versus 12; 174 visible unflattened Sharp warnings versus 149 previous, still affecting compute and fragment shaders. 27651 guest indexed T# records bind 27612 2D + 35 3D + 4 Cube with zero invalid descriptor writes. No textual device loss but exit -9 (SIGKILL) rather than clean timeout; source of kill unknown. The scene framing differs from prior captures, so improvement/regression cannot be assigned.",
+      "negative_result_or_prohibition": "No source-pointer equivalence guesses Never reinterpret unflattened immediate reads as the four stalled parent reads. Do not repeat the previously failed codegen/multi-root/ReadConst tricks or CPU-evaluate lane-divergent GPU offsets; only actual ScheduleSrtReads Deferred or VisitPointer parent/cycle failures count as blockers. A GPU-varying Phi cannot become a universal host flattening slot; using lane zero, selecting one Phi input, assuming uniform or replacing absent descriptors is forbidden. Removing SRT false-pending counters is NOT in itself a graphics fix. The dynamic scalar ReadConstBuffer source path is experimental and must show real GPU usage and improved pixels before promotion; distinct unflattened image sharps remain unresolved. Do not rerun earlier malformed patch c2cc662576ee516dd24ed3835a42c8f45bd2ac43 or pinned old runner e814895280c73df575b54263ec453816ee7d3ae2. 100k mock-layout tests and emitter signature syntax fixture are not a native shadPS4 compilation. The e3c3ae... runner SHA values are invalid and must not be rerun. Do not treat the preflight hash mismatch as a GPU compiler bug or driver result. Do not claim old four shaders fully translated or visual improvement from removal of 12 host-side SRT warnings: the global log cap hid three shader families and unresolved image/sampler SHARP sources remain. Keep the original positive binary be3e8c12... and present c8a745c6... experimental ELF separate, no main merge.",
+      "next_test": "Use exact standalone c925 SHARP image/sampler provenance patch 283a7c9d7657282adfb153b090acb0e1f381b562 with source preimage 5cc480c8746d4ba824ea3d3ed8002a65ccd96f4ed2f51983edf284c01c3d5fd6 and postimage 1ad7b1e8e19035f61ac6935a02b13b9511e065c202094ac6a823f5d85633490e to log source opcodes, flatbuf indices, indexed binding flags; limit GPU_DYNAMIC_BUFFER_SHARP per shader, native compile/link and capped 118-sec test. Runner commit 0b38cbc01eb740167f91f9e8b56e55761627cce4 blob fa95417c4aea31b2928633628c343149fa068da0. Preserve existing positive candidate and universal diary."
+    },
+    {
+      "id": "vulkan-profile-sampler-binding",
+      "subsystem": "vulkan-shader",
+      "status": "BUILD_PASS_RUNTIME_PENDING",
+      "related_prs": [
+        36,
+        42
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW combined build PASS after profile, Vulkan designator and sampler include fixes",
+      "negative_result_or_prohibition": "Earlier failed compilers, preserve them in diary",
+      "next_test": "Cross-game Vulkan resource checks with real shader input"
+    },
+    {
+      "id": "startup-splash-guide-quit",
+      "subsystem": "frontend",
+      "status": "SOURCE_PRESENT_RUNTIME_PENDING",
+      "related_prs": [
+        6
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT: GUIDE restored from main; GoW: source path present, controller acceptance pending",
+      "negative_result_or_prohibition": "Don't simulate automatic game input",
+      "next_test": "Verify real splash, GUIDE/A/B quit in both titles"
+    },
+    {
+      "id": "hard-120-second-tests",
+      "subsystem": "testing",
+      "status": "MERGED_MAIN",
+      "related_prs": [
+        59
+      ],
+      "main_merge_sha": "3b49eed54c9dee97b649b8d7ac8b9a1f5dbc33c4",
+      "observed_game_effects": "GoT hard 118s TERM +2 KILL; universal GoW runner source, host validation pending",
+      "negative_result_or_prohibition": "Unbounded game tests previously required manual cleanup",
+      "next_test": "Verify each new runner terminates only owned game process"
+    },
+    {
+      "id": "ollama-gpu-vram-lifecycle",
+      "subsystem": "host-resources",
+      "status": "HOST_VERIFIED_CUSA34384",
+      "related_prs": [],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: 7.811->19.529 GiB free; original Qwen/context restored",
+      "negative_result_or_prohibition": "Never stop Ollama service or reload before game exit",
+      "next_test": "Repeat on any game with same 8GiB threshold and post-exit state restoration",
+      "latest_observation": "GoT unloaded qwen3.8-greek:latest only after free VRAM was below8GiB. GoW launched with25.63GB free and unloaded none. Existing runner has no reload path; model restoration is not established and must not be claimed. After GPU context loss, automatic GPU reload should remain deferred until device health is established. This PR does not change the lifecycle."
+    },
+    {
+      "id": "pes-wait-zpass",
+      "subsystem": "pm4-video",
+      "status": "OPEN_PR_NATIVE_UNVERIFIED",
+      "related_prs": [
+        1,
+        3,
+        4
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PES 2025 missing face/stadium details, PR hypotheses; no latest native acceptance",
+      "negative_result_or_prohibition": "No title-specific predication switch",
+      "next_test": "Verify real ZPASS/WAIT counter sequencing in native engine"
+    },
+    {
+      "id": "base-instance-step-rate",
+      "subsystem": "shader-recompiler",
+      "status": "OPEN_PR_NATIVE_UNVERIFIED",
+      "related_prs": [
+        5
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "TLG CUSA03745 cited in PR, current tests not imported",
+      "negative_result_or_prohibition": "Per-title GPU Precise override in historical PR4 violates contract",
+      "next_test": "Test instance step-rate semantics generally"
+    },
+    {
+      "id": "linux-uffd-gpu-deferred",
+      "subsystem": "memory",
+      "status": "PR_NATIVE_EVIDENCE_MAIN_PORT_PENDING",
+      "related_prs": [
+        10,
+        14
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW: prior GDB traces and stopped CPU ticks indicate UFFD/GPU circular wait",
+      "negative_result_or_prohibition": "Never discard proven deferred invalidation as a side effect of merge",
+      "next_test": "Port original fix with native Linux fault lifecycle tests"
+    },
+    {
+      "id": "audio-output-backend-health",
+      "subsystem": "audio",
+      "status": "OPEN_PR_RUNTIME_PENDING",
+      "related_prs": [
+        17
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW prior audio backend PR; no current cross-game audio acceptance",
+      "negative_result_or_prohibition": "Don't infer audible sound from HLE initialization",
+      "next_test": "Test real PCM, output failures, Audio3D, scene pacing"
+    },
+    {
+      "id": "stencil-reference-mask-coherence",
+      "subsystem": "vulkan-stencil",
+      "status": "MERGED_MAIN_NATIVE_MAIN_PENDING",
+      "related_prs": [
+        69,
+        70
+      ],
+      "main_merge_sha": "86ebcf6249fae2a709b98790760de639e6978bef",
+      "observed_game_effects": "GoT 25 Oct native stencil correct masked-reference fixture compiled with 12 exact merges. 26 Oct PR70 native test also produced 12 exact merges and 0 old warnings, but menu sword remained black and particles largely absent. No device loss; stencil correctness retained even without visible restoration.",
+      "negative_result_or_prohibition": "Do not falsely override genuinely conflicting comparison/REPLACE masked bits or skip draws. Rejected GPU-eager tiled downloads remain excluded. New combined game build still unverified.",
+      "next_test": "Main native multigame build still pending. Do not retry stencil-only menu A/B; audit omitted real GPU image descriptors (PR72)."
+    },
+    {
+      "id": "native-startup-null-fault",
+      "subsystem": "core/host-formatting",
+      "status": "GOW_NATIVE_STARTUP_ADVANCED_CROSS_GAME_PENDING",
+      "related_prs": [
+        60,
+        63,
+        71,
+        73
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW native latest-upstream integration 803bb428/ELF 7604bae with recovered generic HLE stack alignment passed previous 4.8-second fmt crash, loaded Audio3D and emitted first_game_frame at 18.005s before a distinct RADV soft GPU reset at 28.841s. This is strong runtime progress consistent with the HLE alignment fix, but three upstream commits and other shared fixes also changed, so exclusive causality and GoT cross-game compatibility remain unproven.",
+      "negative_result_or_prohibition": "Do not assert SI_ADDR 0 proves NULL versus x86 alignment #GP without original signal-time RAX/si_code. Do not suppress logger errors, alter fmt library or use title/shader exceptions. Native gameplay cross-title must verify candidate, negative results preserved.",
+      "next_test": "Keep generic stack-align correction in reviewed draft PR #71/#73; verify with identical source vs one-file alignment A/B or focused invariant plus GoT native runtime. Continue separately with GPU-device-lost-after-first-frame VRAM headroom/kernel fault A/B; no formatter hacks or false claim of confirmed gameplay graphics."
+    },
+    {
+      "id": "gpu-indexed-table-invalid-slots",
+      "subsystem": "gpu-resource-binding",
+      "status": "DIAGNOSTIC_NATIVE_PASS_TYPE_GAP_PROVEN",
+      "related_prs": [
+        72
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT native 2026-10-26 09:12 menu: particles/thunder observed but filled scene materials missing. In each 27651-entry guest T# table, 27612 Color2D descriptors bound and 39 omitted solely by strict 2D type gate: 35 Color3D and 4 Cube. Shader 0xb5c898c7 and 0x7eaf40ad share the same 39 source indices; all earlier GPU readback/stencil/real sampler features retained, no device loss. Direct allocation/mapping validity of rejected types remains unchecked due early type gate.",
+      "negative_result_or_prohibition": "Do not treat 3D/Cube descriptors as invalid or hardcode title/shader indices. Do not force those images into statically typed SPIR-V OpTypeImage 2D array or coerce 3D->2D views: Vulkan descriptor types and sample coordinate semantics differ. Actual GPU sampling of these entries is not yet proved; historical early feedback saw zero samples for some captured draws.",
+      "next_test": "Use existing generic indexed-sample GPU feedback and Vulkan pipeline invocations against current menu to prove which indices execute; then correctly route 2D, 3D and cube images through type-aware shader bindings. Separately inspect true dirty GPU-produced guest descriptor tables (host memcpy vs buffer cache), avoiding eager readbacks and false write-tracker clearing."
+    },
+    {
+      "id": "gpu-device-lost-after-first-frame",
+      "subsystem": "vulkan-gpu-memory-and-srt",
+      "status": "GOW_PR90_PR91_PR94_RADV_DEVICE_LOST_AT_22S; V1_QUEUE_TRACE_MIXED_TIMELINES_UNRESOLVED",
+      "related_prs": [
+        52,
+        57,
+        62,
+        64,
+        66,
+        68,
+        71,
+        73,
+        76,
+        88,
+        90,
+        91,
+        92,
+        93,
+        94
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Exact same native ELF 7604bae under loaded Qwen (~8.595GiB free) previously faulted with RADV device loss at 28.841s. Subsequent 10:01 A/B unloaded Qwen (7.837->19.558GiB free) and remained alive 120.314s until mandatory 118s TERM/2s KILL; no in-game VK_ERROR_DEVICE_LOST and readable kernel journal 0 reset events. Final 'context lost' STDERR appeared following forced kill. At 26s loading UI, frames 58s+104s entirely black, no playable content. Repeated missing SRT Phi offsets and huge 0xffffffff guest descriptor clamps persist. One run per condition, no proof VRAM is sole root cause. 2026-10-28 scoped queue investigation: native PR94 source bbe1a728/ELF 65fafc43 loses RADV at 22.236s despite improved buffer ranges; v1 two-file diagnostic ELF d3e44ab2 links natively but loses RADV at 22.285s, after unloading Qwen to 19.172GiB free. 1923 global trace events, first 64 queue submissions tick1..64, most recent 128 events tick13, final report tick13 with cached completion1. Original protected gameplay, PR91, and PR94 binaries verified and PR94 source restored. No rendered game frame proven.",
+      "negative_result_or_prohibition": "Do not equate SIGKILL(-9) at the test limit with spontaneous emulator failure, treat teardown-associated RADV context cancellation as separate. Do not claim FPS overlay=game FPS or first_game_frame=rendered world. Keep all game source/GPU flags identical. Unbounded descriptor clamp may traverse address gaps; do not invent a shorter buffer size, shader handle or force an alternate readbacks mode. V1 global submission trace cannot be used to identify first unfinished guest GPU work: scheduler timelines were mixed and cached completion=1 was not a live GPU wait. RADV 'innocent' cancelled CS cannot identify guilty shader. Do not rerun unchanged v1 or work around shader hashes, block GPU dispatches, change driver flags or reset X11/Sunshine.",
+      "next_test": "Isolated source 0fcd2676e34001be59f450ec3570786d28165f1b records per-scheduler first64 real compute, first32 draws, first32 submissions and last128; standalone C++23 pthread -Werror ring-fixture PASS. Host runner c57a3009 pin compiles exact source and CPU fixture, runs one native GoW with normal flags/118s cap if native build succeeds, archives attributed GPU fault and restores exact PR94 ELF; multi-title release only after actual causality/graphics proof."
+    },
+    {
+      "id": "gpu-descriptor-table-demand-coherence",
+      "subsystem": "gpu-resource-coherence",
+      "status": "CXX_PATCH_PREPARED_NATIVE_RUNTIME_PENDING",
+      "related_prs": [
+        74
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native GoT run of new coherency patch yet. Prior menu captures with completed Precise linear-image readbacks still have missing solid graphics. New code prevents CPU reading stale guest image/sampler descriptor table buffer bytes after tracked GPU buffer writes, only when actual range GPU-dirty.",
+      "negative_result_or_prohibition": "Does not fix heterogeneous Vulkan Dim2D/Dim3D/Cube type mismatch by coercion, does not synchronize untiled images eagerly, does not make up CPU texture indexes, does not change saved GPU settings or assume the 39 non-2D entries are executed.",
+      "next_test": "Run exact SHA-verified PR74 native A/B GoT menu for 118s+2s cap, count GpuDescriptorTableCpuCoherence events and compare same-scene materials/FPS; if zero events, mark this specific explanation disproven for menu, retain general correctness mechanism subject to regressions. Only promote after GoW cross-title native regression."
+    },
+    {
+      "id": "gpu-buffer-cross-vma-gaps",
+      "subsystem": "guest-memory-vma-and-vulkan-buffer-bindings",
+      "status": "C925_EXACT_SOURCE_PORT_PR76_ADJACENT_VMA_FIX_STRICT_GCC_CLANG_10_OF_10_NATIVE_GPU_PENDING",
+      "related_prs": [
+        76
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "In GoW latest upstream 803bb426 source, guest shader resources frequently declare u32-max 0xffffffff buffer lengths and get clamped to mapped extents ~774-783MB. The existing Core::MemoryManager::ClampRangeSize aggregates neighboring vma_map iterators without checking VMA address continuity; its constructor seeds map from disjoint guest usable regions. Concrete generic range-logic flaw, but no specific observed bind yet proven to cross an actual gap. Source patch commit da528b540fdbe09e3642570f8d953077adaba691 in PR76; 10 standalone native C++ fixture cases pass locally. Gameplay effect unknown. 2026-10-27 real c925 MemoryManager::ClampRangeSize source SHA959d72... still walked successive mapped VMA map entries without testing adjacency. Source port patch blob 2f117c1c274046e78aa77ab8da324bc07776b6bf produces memory.cpp SHA0747c7... and reuses genuine PR76 mapped_guest_range.h Git blob 3e64ef7f3d7dd79e0040bbaf5483393ebb4581a6. Compiled production helper fixture under GCC14 and Clang17 in Release Werror with all 10 cases PASS. Full native build/game not yet run.",
+      "negative_result_or_prohibition": "Never arbitrary clamp 4GiB to a guessed small descriptor size, zero a guest shader index, skip rendering or use game-ID exceptions. Preserve real mapped spans and CPU/GPU configuration; source logic verified, full shadPS4 link & hardware still required. This is a proven common source bug but NOT proof it explains GoT missing-world geometry or SRT stalls; no arbitrary 0xFFFFFFEC cap, no interpolated/guessed mapping, no automatic graphics switch.",
+      "next_test": "Native isolated c925 A/B using pinned runner e0d3ee942fe8ee60b9caa242e7cad5cfad64c37c, same source/game/VRAM policy; verify no unmapped span and compare positive ELF be3e8c12..., 35 3D and 4 Cube, 118s frames, timing and shader stalls. Keep universal diary and never replace positive ELF before visual confirmation."
+    },
+    {
+      "id": "gpu-indexed-heterogeneous-compact-images",
+      "subsystem": "shader-vulkan-texture-binding",
+      "status": "C925_GOT_MENU_AND_INGAME_NO_GPU_LOSS_FULL_2D_3D_CUBE_BINDINGS_VISUAL_MATERIALS_STILL_MISSING",
+      "related_prs": [
+        64,
+        75,
+        77,
+        78,
+        82
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR78 17:03:36 source bfe756fa native full build PASS, compact NDEBUG mapping fixture PASS, two 24-entry 2D-only mixed bindings (0 3D, 0 Cube); RADV context lost and SIGSEGV 139. PR77 control without compact map also context lost at identical 103rd compute shader 0x17c90240 and same extreme stage 0x5e89a8b4 buffer range signatures. No menu screenshot for PR78 and no actual typed texture bindings. PR remains unmerged experimental. Combined PR78+PR79 27 Oct native build PASS but game lost GPU context, only 24 all-2D records in two tables; 3D=0, Cube=0 and no valid menu. The user-host 2026-10-27 source inventory found 10 worktrees containing historically menu-capable local commit c925523b49ef39434024b16b2b014d120471ee1a, including one detached HEAD at exact c925 but DIRTY, and a separate clean worktree holding exact committed Git object. Protected menu-rendering ELF SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d verified. Exact source tree capture script committed 3b58e142.., not yet executed. The DIRTY c925 working files may differ from the ELF's build snapshot, so cannot yet assert exact source-to-binary reproducibility. 2026-10-27 actual full c925 source archive SHA256 94574ee1... contains 1104 tracked source files 68.7MB, confirmed clean tracked C++/shader files even though detached HEAD worktree has only zarchive/zlib-ng Git submodule changes. Original c925 BindTextures explicitly requires Color2D, with SPIR-V index sample single 2D view; known actual 27651 fragment indexed T# table has 27612 2D+35 Color3D+4 Cube omitted. New draft PR82 stages source-only real generic C++ changes PR74/75/77/78 as pinned indexed Git source patchsets and isolated native test runner, no hardware merged render yet. 2026-10-27 08:16 exact c925 detached clean experiment source created on host, but patch fetch failed exit7 before any C++ changes or game. Runner source omitted PR number from URL; corrected at experimental commit 79780a4d3ec5a27fa34cc8f479e85dbe1b23e5be and verified exact blob 4d6d4bfee287d7cc1d29682505a5afeeaadd083c plus bash -n. All four pinned patch Git blobs independently verified and adapted PR74 local c925 apply + strict descriptor prefix fixture PASS. No PR75/77/78 integration or GPU binding attempted; historical last good ELF preserved. 27-Oct 08:35 c925 exact detached source worktree created clean and four PR74/75/77/78 patch files fully downloaded with correct Git blob hashes; runner nonetheless exits unexpectedly code1 immediately before applying any source, status incorrectly PREFLIGHT. Local independent actual c925 source shows adapted PR74 applies and guest descriptor coherence strict GCC fixture passes; PR75 direct patch rejects nine divergent files, requiring verified ancestor three-way and manual semantic merge if necessary. No source build or GPU test. 2026-10-27 08:59 source-only preflight reverified all 4 exact patch Git blobs, still exited 1 due Bash runner stage handling before any merge. Local exact recovered c925 source control without Bash errexit progressed to PR74 applied/compiled real fixture PASS and PR75 3way ancestor stage; model container GitHub DNS unavailable, so genuine 3way conflict outcome needs host. Corrected pinned script commit 3cae4a33ddc54ba79946fb729b45cfad406af417, no game yet. Host 09:20 c925 source merge script again reverified 4 patches but exited status1 immediately after ENTER_PR74_SOURCE_MERGE_LOOP, untouched source; exact Bash cause unproven. Replaced repeated fragile shell runner with Python source-only checked subprocess runner a9719e03..., Git file blob 534c5873..., local actual c925 source control PASS: PR74 real GCC C++20 Release Werror coherence fixture, patch apply and local commit, then PR75 direct mismatch explicitly proceeds to missing base blob fetch. Local sandbox DNS blocks GitHub curl; second run correctly resumes from committed PR74 and tries only PR75. Actual user-host 2026-10-27 10:00 source-only Python runner applies PR74, compiles real C++20 strict descriptor-coherence fixture PASS, commits source-only PR74 0430104c to c925 isolated worktree; PR75 true 3-way Git check exit0 yet prints conflicts, mutating apply returns exit1, leaves eight UU source paths and six cleanly staged PR75 changes. Exact 14 ancestor Git blobs were already present. No native GPU test; preserve user unmerged experiment and old menu positive ELF. Read-only Git stage1/2/3 source snapshot tool 30b977bc6e7e8eca2958a2e532ee22bd87122f8b tested on real toy conflict, needs host capture before semantic merge. 27-Oct recovered c925 source integration now has a single verified 70390B patch (Git blob f4a2677222256fbc6e0ca10361729e73ea2abe88) preserving old graphics-positive 2D indexed binder, coherence and real uniform samplers while adding PR78 compact GPU 3D/Cube typed array mapping. Clean PR74+unified patch source apply and GCC/Clang Release -Werror production helper tests PASS locally; all eight prior PR75 source conflicts were reconciled in disposable local code. Host full CMake/Ninja and native GoT screen/GPU binding tests still PENDING. Pinned Python runner commit b243a36d3f76229bfe4d602843b3024b5dec0e8c with verified portable BUILD/user profile and copied save isolation. No same 27,651 record sample verified since historical old visual-positive trial. 27-Oct 14:33 GDB native GoT c925 recovered graphics patch: exact ELF ed9cda903dd3094a7ac0c0edb845fa86e7eeb56480c7b4a0444540ecbeeb4022 ran 27.76 seconds, GDB frame #4 host RADV libvulkan_radeon.so offset 0x10762f SIGSEGV null address; #8 Vulkan::Pipeline::BindResources, #9 Rasterizer::DispatchDirect, #10 Liverpool::ProcessCompute. Screens at 10s Sony text, 17s PlayStation Studios logo, 26s black except FPS. Observed only 24 all-2D descriptors stage 0x8e743c8e with no 3D/cube; 27,651 material table not seen. Protected menu-capable ELF remained verified unchanged. Driver vs incorrect Vulkan descriptor input not yet determined; no menu/gameplay proof. 14:52 c925 GDB single-run reproduced GPU null read but debugger generated invalid multi-line printf at gdb source line48; original driver frame register capture aborted; 17s PlayStation logo, 26s black, 24 small all-2D descriptors, no big table. Native candidate and previous menu-positive binary unmodified. 15:02 GoT captured original compute Vulkan push descriptor null pointer at RADV 0x7f16c070762f MOV (%rcx) with rcx=0, from r14+0x30 matching VkWriteDescriptorSet::pBufferInfo; calling GPU compute Pipeline::BindResources through vkCmdPushDescriptorSetKHR. No menu/world. The exact offending resource binding remains unknown. New source patch 073bfd9ccd8c2dd6cd9d382f6c5d5dadc9d9a9f1 changes Vulkan descriptor-write creation to append only real writes, validates type-specific information/count against shader metadata, and fixes missing image-is-storage metadata on early rejected T# paths. 50003-case NDEBUG C++ policy fixture PASS; full host native build/game not yet tested. 27-Oct 15:40 user-host c925 generic descriptor fix tested binary be3e8c12cf91117917d355d41a03e227a45cd338981d672de4f0ca2c57b68f28, 118s runtime exit124, user-operated Continue menu and in-game smoke/fire/water/lighting visible but extensive world geometry absent. Screens 40s menu with Continue, 55s+85s identical partial world, 112s clipped black geometry. 0 invalid VkDescriptorSet writes, no RADV device-loss text. Fragment shaders 0xb5c898c7 and 0x7eaf40ad bound COMPLETE 27651 indexed T# entries: 27612 2D, 35 3D and 4 Cube, no typed capacity overflow. These are actual host Vulkan descriptor bindings, NOT proof of GPU shader sample consumption. Current true next blocker likely shader resource address provenance, not simply typed image availability. The 2026-10-27 16:11 SRT-instrumented run was separate from the 15:40 positive texture-binding pass; GPU context lost and exit -11 after rendering partial scenery. No evidence that the preserved typed descriptor fix regressed. Positive be3e8c12... binary remains protected. 16:41 A/B after PR76 source port: full 118s GoT without ErrorDeviceLost, 27612 2D + 35 3D +4 Cube bindings preserved. Native candidate ELF 8ad5cdba...; heavy geometry gaps and 149 SHARP unflattened warnings remain. Experimental dynamic scalar buffer binding patch is separate from already proved mixed typed image descriptor capacity. GoT 18:43 replay after confirmed Ollama model unload succeeded VRAM rose 8439853056 -> 20554379264 bytes; game lasted 118s with no RADV device-loss marker and retained full host 27612 2D / 35 3D / 4 Cube bindings, but screenshot 85/112 remains largely missing terrain/character polygons. 400 SHARP_RESOURCE_PROVENANCE events across compute/fragment and 483 unflattened warnings highlight material-source binding work, not typed descriptor capacity. 19:06 shader matcher widened valid strided discovery to 69 shader hashes but no new observed 2D/3D/Cube host table counts or substantial world polygons, preserving older proven typed Vulkan mixed image path. User sees menu FPS regression 24->10. Do not alter protected mixed typed binding while profiling SRT material binding. 2026-10-27 19:59 exact native 24 FPS menu: 19:59 GoT new ELF 395682a478f04e4f4a5a2da89488e90fe54ccf502dc23cbecf716a7adeac4e8b native full 118s+timeout124 with zero ErrorDeviceLost, 24 FPS menu at40s (prior15, prior broad matcher10), 13108 lines vs35604, 7 computed zero-record sampler/image table host rejections instead of115, zero SRT stalls, 26 typed guest T# binds full 27612 2D 35 3D 4 Cube; but 484 unflattened image/sampler SHARP warnings, 124 fragment-stage bounded source records and heavy missing terrain remain. Both 85s and112s screenshots are byte-identical despite moving smoke/fire scene, possible guest render stall, not established. GoT 20:27 CB_SHADER_MASK source with user pressing Continue earlier: CB candidate ELF 63fe630faed40faf2a7dddde87d1084e5dade151add8f4c0b206f86d9caa69b9 compiled and ran full 118s no RADV GPU loss, mask remap shader 0xed27ca6c logical0->physical2 mask0xf00 once, all 27612 2D /35 3D /4 Cube guest image descriptors intact. User pressed Continue earlier than 19:59 baseline; 40sec black post-Continue vs 19:59 Continue menu are DIFFERENT scenes. Previous conclusion of menu-text rendering regression was invalid and retracted. GoT 20:53 menu-only unchanged resource/shader counts for both 19:59 and 20:27 exact binaries: 118sec each no Continue, all same 26 typed image logs and 27612/35/4 2D/3D/Cube host images, 19 IndexedBindingDecision, 234 SHARP_RESOURCE_PROVENANCE events, 0 CB_SHADER_MASK_EXPORT_REMAP menu events and no SRT stalls. Animated background means pixelwise A/B invalid; stop chasing color export as a menu-specific lead without active shader remaps. Image source actually has separate upstream PR5441 generic correctness defect: `InvalidateMemoryFromGPU` ignored overlapping GPU raw buffer writes into subresource/mip unless write started at image base; final overlap image view indices sometimes stale and `MarkAsMaybeGpuDirty` can hash invalid GPU image baseline. Exact old source method fails raw partial write regression, new method passes 100006 cases under GCC and Clang. User demands MENU ONLY until menu graphics restored.",
+      "negative_result_or_prohibition": "No evidence of 27,651 image table exercised or actual 3D/Cube binding. Do not blame compact mapping uniquely or promote; 0xFFFFFFEC SRD range is not automatically invalid. Avoid title/shader filters or arbitrary size caps. No c925 source-port native merge/run yet; not correct to mark Color3D/Cube GPU bound/executed or to bypass the legitimate Dim2D/3D/Cube type distinctions. Old PR78 GPU lost before full table cannot be considered a baseline or an acceptance test. Protect previous exact ELF. Do not treat two unexpected pre-merge shell exits as emulator shader/Vulkan failure or claim PR75 3D/Cube source is successfully integrated. Nine direct patch reject files are cross-lineage divergence; exact Git 3way result unobserved. Three consecutive host pre-merge shell exits are TOOL failures only, not actual GPU/typed image source results. Do not claim that changing Bash errexit alone cured the issue; no direct user-host PR75 3-way/3D or cube shader execution has occurred. Do not trust git apply --3way --check return code zero alone; actual output 'mit Konflikten' indicates unresolved result. Do not call git checkout --ours/--theirs, git reset, or rerun PR75 applying patch over current UU worktree. PR75 conflict is SOURCE, not a shader GPU failure. Do not claim renderer recovered or 3D/Cube GPU bind validated from clean patch and C++ fixture alone; native full compile and screenshot evaluation are mandatory. Keep user's last known menu-positive c925 executable SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d unchanged. Exact RADV faulting registers in frame #4 NOT saved by the 14:33 capture; earlier printed registers were frame #0 in shadPS4 unreachable_impl. Avoid assuming shader 0x5e89a8b4 huge buffer size or mixed typed image arrays caused the fault or forcing GPU workarounds. Do not merge source to main on build PASS or logo screens. Previous 2d4dd4... debugger source is rejected for malformed GDB printf. Do not call this an emulator fix or driver validation. New source emits quote-free echo and checks exact GDB commands against a real harmless 10-frame native fixture BEFORE running game. A null pBufferInfo dereference identifies a Vulkan write-input defect class but not the exact producing code path. Reserving/creating exact writes is a generic corrective candidate, NOT yet shown to restore game or bind typed 3D/Cube. Do not mark driver bug, shader material fix, or gameplay PASS until native evidence. New 15:40 runtime has 10 SRT dependency stalls x4 unresolved, 139 visible Sharp source unflattened plus message aggregator skips, 1530 extreme 0xffffffec buffer range clamps, 1530 stencil reference warnings, and four compute indexed S# 24 slots only10 valid. No source or IR evidence that forcing 24 sampler records, changing stencil references, hard-clamping SRD, or changing 3D/Cube descriptors would fix missing world. Prior native tests proved stencil alone not enough. Preserve be3e8c12... positive menu and gameplay ELF. Do not call full texture table availability proof of sampled fragment material, and do not attribute FPS alone to shader eligibility versus log throttling without isolated A/B. Later PR5441 described compacted CB_SHADER_MASK color outputs fixing wrong normal/material attachments in a different title; recovered c925 had logical-to-physical color exporter omission but GoT-specific nonidentity masks NOT yet proven. New CB_SHADER_MASK patch is experimental, not a verified world graphics fix. NEVER compare GoT snapshots at equal elapsed time if user pressed Continue at different times. Do not call CB mask a menu graphics regression or improvement until both binaries are tested at same untouched menu with no input, and prior menu-only request governs all future gameplay decisions. Do not attribute all logged invalid SHARP locations to missing menu textures: 23 fragment source reports refer to GPU-indexed=true actual host descriptor table binds. Do not compare animated menu backgrounds using image hashes; do not ask user to press Continue or play gameplay. New generic subresource alias invalidation is only source proven, not yet a GoT visual fix.",
+      "next_test": "Use preserved current c925 menu-only 20:27 candidate SHA63fe630fa... and 19:59 positive SHA395682..., pin 1-source upstream texture cache patch a06d8a4f6b14d94d28fc7ae53ac4a5dd38fee152 blob bd772e5d67a1eea45f48f18a18574111d84171ab and protected menu-only runner 719ab3eeb059c0338b28d918c1818759de7bb146 blob9b3350ddb964246bdbf4f7b125e37f4626d8f7c0. SHA verify actual source before678aed.../after237950..., Git scratch forward/reverse and GCC/Clang tests of extracted actual production TextureCache methods, then Ninja compilation/link. At most 118sec untouched menu only; capture genuine GPU_SUBRESOURCE_IMAGE_INVALIDATED events, full 27612/35/4 bindings and menu features, no A/B and no presses. If no actual partial alias invalidation or no scene improvements, continue investigating GPU-produced texture/compute shader sources without fake output."
+    },
+    {
+      "id": "gpu-huge-guest-raw-buffer-residency",
+      "subsystem": "gpu-buffer-cache-and-vulkan",
+      "status": "PR80_REAL_U64_MAPPED_BINDING_NATIVE_PASS_GPU_DEVICE_LOST;PR81_VMA_GAP_SOURCE_FIX_PASS_ONLY",
+      "related_prs": [
+        52,
+        57,
+        72,
+        77,
+        78,
+        79,
+        80,
+        81
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "17:43 RADV_DEBUG=hang exact prior ELF SHA 260ed43a... showed 975 legal 0xFFFFFFEC zero-stride V# range clamps to ~1.4GB tied to compute resource 0x5e89a8b4, 4630 new GPU resident gap records summing 159032 sparse blocks (>=2.427GiB backing) before fatal RADV hang. In the actual reported GFX pipeline b3faae8b49d2270e associated with last completed 726-index draw, all bound buffer ranges were <=117024B, so the wide compute V# was NOT present as a direct descriptor in that last graphics pipeline. Indirect residency/VRAM/synchronization effect remains possible, not proven. Draft PR79 partitions large VkDeviceMemory allocations into 128MiB sparse-block segments and logs exact 64-bit GCN V# decoded size and raw stride/num_records without changing guest ranges. GCC/Clang C++20 Release fixture PASS. This reduces the maximum individual allocation request but does NOT reduce cumulative residency or establish a graphics fix; native full build and GoT/GoW A/B still pending. Review of PR79 first prototype rejected per-gap physical allocations as possibly exhausting Vulkan maxMemoryAllocationCount; current PR79 head 6273c4e1255e3b8e3643f4a523ffe81c556ccb11 instead packs all resident gaps into shared \u2264128MiB VkDeviceMemory allocations with correct per-gap memoryOffset. GCC/Clang C++20 Release -Werror fixture PASS including 5514 tiny gaps sharing one allocation. No game test. 18:45 local archive SHA256 2ac5a355... confirms exact PR79 packed BufferCache code compiled as native Ninja object 9d882c10bd6b5a..., no warnings, NDEBUG fixture PASS, original PR78 worktree clean after restoration. No game was launched, no Vulkan queue execution tested. 2026-10-27 PR79-on-PR78 full native link passed with zero warnings, but GPU still context lost at black menu spinner and exit 139; exact 32 diagnostic events prove stride=20, num_records=0xFFFFFFFF for shader 0x5e89a8b4 at two base addresses 0x150341af60/0x150261af60. Correct unsigned product 85,899,345,900 bytes, legacy u32 GetSize returns 4,294,967,276 (0xFFFFFFEC) due overflow. 626 sparse gaps, minimum 1.367GiB cumulative resident backing. Original experiment ELF/object/source RESTORE PASS. Separate draft PR80 now fixes the proven GCN 20*0xffffffff overflow before guest memory mapping clamp in the common Vulkan BindBuffers path, adding Buffer::GetSize64 to shared resource and pure 64bit arithmetic; strict GCC/Clang C++20 -O2 NDEBUG PASS. A pinned PR78 compatibility test runner overlays the same math production helper without editing a widely-included header so cached native builds remain safe. No PR80 GPU result yet. 27 Oct PR80 native compatibility full link PASS, real 85,899,345,900B declared V# size clamp to 1,402,884,256B and 1,417,564,320B mapped at two guest addresses; gameplay exits 139 with RADV GPU lost before 40s. No screenshots. Draft PR81 independently fixes MemoryManager::ClampRangeSize accidentally adding next mapped VMA across an unmapped hole; GCC and Clang test PASS but no evidence actual GoT mappings have a hole.",
+      "negative_result_or_prohibition": "Do not cap 0xFFFFFFEC, which is a legal GCN V# stride=0 NUM_RECORDS byte count; do not substitute title/shader IDs, drop draws, null descriptors or assume 2.43GiB cumulative backing equals peak VRAM. BDA FaultManager already implements page-fault-triggered buffer residency for some address paths, but standard raw SSBO BindBuffers/ObtainBuffer eagerly EnsuresResident for full mapped range; safe unification needs access/address semantics proof. Do not call PR79 on-demand sparse paging; it only partitions physical allocations. Do not reuse the rejected per-gap allocator commit or claim PR79 reduces total GPU residency. Prior zero-stride GCN interpretation was demonstrably wrong for this case. Do not label the NUM_RECORDS=UINT32_MAX sentinel corrupted or equate multiplication overflow with GPU hang causality; both byte lengths exceed actual ~1.4GB mapped range. PR80 does NOT yet fix every legacy Buffer::GetSize() caller (vertex, NumDwords etc) and 85.9GiB declared is not proof of 85.9GiB GPU allocation: actual mapping was ~1.4GB. Do not treat this arithmetic fix as a direct GPU hang cure until hardware evidence. PR81 is a valid general mapped-memory adjacency correction but not proven to fix GoT. Do not replay unchanged PR78 ancestry or claim success from a synthetic test. PR80 hardware proved byte-count correctness only; no on-demand residency.",
+      "next_test": "Native isolated compile-only PR81 memory.cpp test via scripts/pr81-native-memory-preflight-20261027.sh; inspect exact VMA boundaries on real giant raw descriptors only after compile. Native PR80 already fails identically, so next actual GPU test must be anchored to historically menu-visible binary/source and direct GFX failure evidence; source PR78 mixed 3D/Cube remains 0/0."
+    },
+    {
+      "id": "gpu-graphics-hang-indexed-draw-sync",
+      "subsystem": "gpu-graphics-queue-and-vulkan-synchronization",
+      "status": "RADV_HANG_LOCATED_GFX_CP_BOUNDARY_NO_CAUSAL_SOURCE_FIX_YET",
+      "related_prs": [
+        52,
+        57,
+        72,
+        77,
+        78
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "2026-10-26 17:43 exact prior GoT graphics-positive ELF with RADV_DEBUG=hang renders white loading logo at 55s, dark cinematic at 85s then crashes under RADV trap exit133. RADV GFX command trace marks 1..864 reached and 865..1243 unreached after indexed draw with 726 indices; PS_PARTIAL_FLUSH and PFP_SYNC_ME follow draw. Reported GFX pipeline b3faae8b49d2270e has vertex+fragment SPIR-V modules and ordinary 192..117024-byte buffers; index GPU VA mapped to 128MB VkBuffer. GRBM GFX/PA/SPI/SX/CP busy. No VM fault address or wave PC (UMR unavailable). c925 2026-10-27 source inventory definitively recovers Git object in 10 local worktrees, but one exact HEAD is dirty and candidate ELF provenance must be checked. RADV final graphics CP 864->865 after 726-index draw remains unfixed.",
+      "negative_result_or_prohibition": "Do not equate last compiled compute shader or 0xFFFFFFEC V# descriptor with directly executed faulting GPU instruction. Driver syncshaders changes timing; do not claim any of PR77/78 fixes executed Color3D or Cube; don't hide a crashing draw.",
+      "next_test": "First capture c925 committed source and dirty delta with read-only script, then compare recovered source to real RADV VS/FS disassembly at 726-index draw. Fix only proven generic resource lifetime/barrier/shader bugs. Test on an isolated c925 menu-capable source before revisiting PR78. Avoid further unchanged PR78+PR79+PR80 crash repeat."
+    },
+    {
+      "id": "gpu-contiguous-guest-vma-clamp",
+      "subsystem": "gpu-virtual-memory-manager",
+      "status": "PR81_NATIVE_CORE_MEMORY_CPP_OBJECT_AND_FIXTURE_PASS_GPU_NOT_RUN",
+      "related_prs": [
+        81,
+        80,
+        79
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Source audit proves existing MemoryManager::ClampRangeSize on huge guest resources adds the size of a later mapped VMA even if its base is NOT adjacent to the prior VMA. Independent main-derived PR81 corrects the adjacency/mapped check without changing legacy <1GiB fast path, artificial caps or guest V# address semantics. Strict real-header standalone GCC and Clang C++20 Release tests PASS with gap/free/adjacent/actual GoT 85.9GB and 1.402GB mapping scenarios. Native GPU not tested. 2026-10-27 06:54 uploaded native PR81 compiler archive SHA256 60630d92982f28590f04ad6d8784085d42e531c268adf91a590647bac5741b4b verifies C++ Ninja memory.cpp.o compiled with zero warnings and exact contiguous VMA fixture PASS; object SHA256 b2021a756738bd9367cb19684417ea6ec2c3154428464826c9de267589ad3e8e. Source/object/ELF restored, no game/GPU test.",
+      "negative_result_or_prohibition": "No user archive proves an actual VMA gap at the offending guest address; do not assert this bug caused the GPU hang. Test fixture initially returned exit2 due wrong 0x3800 expected contiguous length; corrected to 0x3000 and both executables pass. Both trial outcomes preserved in universal ledger. Do not claim PR81 fixes GoT: no observed actual mapped VMA boundary exists in uploaded archive, and synthetic gap fixture alone does not demonstrate driver fault causality.",
+      "next_test": "Stop repeating PR78+PR79+PR80 runtime device loss without new evidence. Locate exact local source/build matching protected old GoT menu-positive executable SHA256 260ed43abbe538127ab82b3580a48c5f67be19ac4bbdd32ebefd78c73cdaf50d; only then investigate real VMA adjacency, the last RADV GFX draw 726 indices, and GPU-selected 3D/Cube 27651-entry table. Run a controlled native GoT/GoW cross-title regression on a stable source when an evidence-supported patch is ready."
+    },
+    {
+      "id": "gcn-test-userdata-flatbuffer-binding",
+      "subsystem": "gcn-native-regression-harness-vulkan-descriptors",
+      "status": "PR89_NATIVE_GCN_BUILD_AND_CPU_LLVMPIPE_RADV_SINGLE_TEST_PASS_DRAFT_UNMERGED",
+      "related_prs": [
+        89,
+        88
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No games executed. Native Linux shadps4_gcn_test compiled and linked; 7/7 CPU-only tests passed including SPIR-V dual-buffer descriptor test and 6/6 PR88 indirect-command synchronization checks; old GcnTest.add_f32 returned 0 instead of 7.5 on RADV/LLVMpipe, corrected exact test binary 1d55c516340c9be0bfae871a6e4a9e7d67a57ab9f85ccdd1dbca9dd3811f6cc0 returned 7.5 on LLVMpipe (22ms) and RX 7900 XTX RADV (20ms). Exact code source 8d5a17a17caf6c18272812d6a706ce2a61fc099b. Native RADV archive gcn-radv-single-20261027-190517-581449.tar.gz SHA256 828b65060b725da959b168fbf19d893fdc31b727ce55f86fea0d23fb7b639b98.",
+      "negative_result_or_prohibition": "Previous GCN test harness erroneously placed SGPR inputs in Vulkan PushData at offset 16 and bound only output descriptor set binding0 while SPIR-V reads srt_flatbuf at binding1. Avoid interpreting previous wrong GCN arithmetic output or GPUVM fault as proven emulator production graphics problem. Corrected single RADV smoke PASS does not prove old GPUVM loss root cause or Ragnarok gameplay fix. Kernel journal not readable from user account; no recorded kernel events is not proof none occurred. No separate production emulator fix in PR89; don't replace AMD with LLVMpipe.",
+      "next_test": "Preserve separately reviewable native-verified PR89 harness. Stop repeating add_f32 and return to actual upstream-main-based PR5479+PR88 indirect dispatch GPU path under guarded GoW capture. Validate real host dispatch metadata, resource barriers and game state before any promotion."
+    },
+    {
+      "id": "generic-descriptor-scalar-contract-recovery",
+      "subsystem": "shader-scalar-flags-srt-indexed-textures",
+      "status": "PR121_NATIVE_BOTH_GAMES_CRASHED_FOLLOWUP_PR122_DRAFT",
+      "related_prs": [
+        121,
+        120,
+        119,
+        118
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native f6c7b43e: GoW SIGSEGV after17.483s at same-storage 1D/2D overlap; GoT SIGSEGV after29.960s at BC5/UbnormNz mapping. No menu/world/video recovery.",
+      "negative_result_or_prohibition": "Do not equate capture/build success with game recovery or guess DS counter seed. Preserve historical menu/world binaries.",
+      "next_test": "PR122 restores missing same-storage growth and biased format mapping; retain PR121 work and await new native evidence.",
+      "review": "reviews/20261102-generic-contract-recovery.json"
+    },
+    {
+      "id": "generic-texture-contract-restoration",
+      "subsystem": "texture-cache-layer-growth-biased-number-format",
+      "status": "PR122_NATIVE_OVERLAP_PASSED_GOW_NEXT_CRASH_GOT_BLACK_PR123_DRAFT",
+      "related_prs": [
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "df253cdc: GoW same-storage expansion logged, then integer indexed-image guard abort at17.876s. GoT completed119.517s but80/110s frames black. No observed BC5/11 binding; no menu/world/video recovery.",
+      "negative_result_or_prohibition": "Do not claim menu/gameplay recovered from build/CPU results. Retain historical binaries and all earlier evidence; no per-title branches or guessed DS data.",
+      "next_test": "PR123 adds typed numeric table sampling and restores separately reproduced SH register routing. Verify both games natively before promotion.",
+      "review": "reviews/20261102-texture-contract-restoration.json"
+    },
+    {
+      "id": "indexed-numeric-images-register-restoration",
+      "subsystem": "shader-indexed-numeric-types-pm4-register-routing",
+      "status": "PR123_NATIVE_INTEGER_BIND_PASSED_GPU_CONTEXT_LOST_GOT_NOT_RUN_DRAFT",
+      "related_prs": [
+        125,
+        124,
+        123,
+        122,
+        121,
+        120,
+        118,
+        117
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoW mixed tables bind 826 float + 1 uint, then 2309 float + 1 uint; GPU context lost after 29.354s, loading screen only. GoT skipped. Integer sample correctness and register-router impact on GoT remain unproven.",
+      "negative_result_or_prohibition": "No numeric type punning, title/shader exceptions, zero-record bound bypass, guessed DS seed, or promotion from CPU/build-only evidence.",
+      "next_test": "PR124 native validation attempt blocked before either game launched because upstream advanced. PR125 preserves this source on upstream87290181: isolated build, GoT first then GoW with core/synchronization validation; capture first error and named shaders. Stop on GPU loss or unconfirmed child stop. Graphics remain unproven.",
+      "review": "reviews/20261102-pr123-gpu-loss-validation-capture.json"
+    },
+    {
+      "id": "upstream-mount-prefix-integration-20261103",
+      "subsystem": "vfs-upstream-integration",
+      "status": "NATIVE_BUILD_PASS_GAME_REGRESSIONS_REMAIN",
+      "related_prs": [
+        125,
+        124
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR125 native build PASS. GoT shader validation failure; GoW GPU context loss. See PR126 diagnosis and limits.",
+      "negative_result_or_prohibition": "Do not label upstream refresh, mount correctness, or build success as graphics recovery. Preserve earlier menu/world evidence and binaries; no guessed DS seed.",
+      "next_test": "Build pinned PR125 source, then <=120s each GoT-first/GoW native validation with screenshots, first validation error and named shader captures. Keep main unchanged until recovery is demonstrated.",
+      "review": "reviews/20261103-upstream-refresh.json"
+    },
+    {
+      "id": "image-float-atomic-fallback",
+      "subsystem": "shader-recompiler",
+      "status": "PR126_PRIOR_NATIVE_VALIDATION_GATE_CLEARED_NEXT_FAILURE",
+      "related_prs": [
+        126
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "GoT compiled prior 79ab8f30 shader without sampled-type failure, then reached integer-sampler validation. Atomic hardware semantics and visual recovery remain pending. GoW skipped.",
+      "negative_result_or_prohibition": "Do not infer game recovery from shader validation or numeric interpreter. No game/hash/vendor conditions. PS4 special-value rules unproven; no guessed NaN handling.",
+      "next_test": "Retain PR126 in the PR127 candidate; repeat GoT then GoW with validation and shader/DS capture after the sampler correction. No atomic hardware or native visual recovery claim."
+    },
+    {
+      "id": "integer-texture-sampler-pairing",
+      "subsystem": "renderer-and-shader-recompiler",
+      "status": "NATIVE_VUID_GATE_CLEARED_GRAPHICS_UNRESOLVED",
+      "related_prs": [
+        127,
+        128,
+        129,
+        130
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR129: validation active in both games, prior integer-sampler VUID absent. GoT remains black; GoW GPU context loss27.726s. Both owned child exits confirmed. No native graphics recovery.",
+      "negative_result_or_prohibition": "No title/hash/vendor cases. Do not equate legal integer filtering with solved interpolation of scaled/converted float formats. Do not claim an OS-uninterruptible process was killed.",
+      "next_test": "Build PR130 automatic-coherence candidate; GoT then GoW, <=120s each, diagnostics and DS capture, no readback-setting changes. Stop remaining tests after GPU failure/unconfirmed exit."
+    },
+    {
+      "id": "upstream-943df2e3-user-color-contract",
+      "subsystem": "userservice-integration",
+      "status": "UPSTREAM_PARITY_BUILD_AND_CPU_PASS_NATIVE_PENDING",
+      "related_prs": [
+        128
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native game run; this resolves the upstream-rebase conflict without reintroducing a null-user dereference.",
+      "negative_result_or_prohibition": "Do not restore the old 1-based color result or claim this fixes graphics. Keep upstream JPEG behavior and all retained rendering patches.",
+      "next_test": "Build exact published revision; GoT then GoW with Vulkan diagnostics and DS capture, <=120s each, no automatic input. Require upstream ancestry, display, no pre-existing game process and >=8GiB free VRAM. Stop remaining tests after GPU failure or unconfirmed owned-process exit."
+    },
+    {
+      "id": "automatic-gpu-cpu-coherence",
+      "subsystem": "gpu-coherence",
+      "status": "NATIVE_GOT_GPU_LOSS_GOW_SKIPPED",
+      "related_prs": [
+        130
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR130 build/CPU/startup PASS; automatic buffer/image publication confirmed with unchanged legacy settings. GoT loading then black; GPU context loss41.032s, child exit confirmed. GoW skipped.",
+      "negative_result_or_prohibition": "No per-game readback mode, shader/title/vendor exceptions, or recovery inference from build/host tests. Legacy readback settings cannot gate core correctness.",
+      "next_test": "PR131 replaces eager eligible-image publication with access-driven copies; run its exact checkpoint with the unchanged bounded runner. PR130 native failure remains recorded."
+    },
+    {
+      "id": "automatic-image-demand-publication",
+      "subsystem": "gpu-coherence",
+      "status": "NATIVE_GOT_LOGO_THEN_GPU_LOSS_GOW_SKIPPED",
+      "related_prs": [
+        131
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR131 native GoT shows Sucker Punch logo at25s/30 FPS, GPU loss42.681s; GoW skipped. No menu/gameplay pass.",
+      "negative_result_or_prohibition": "No game/shader/vendor exceptions or readback options. Host orchestration tests are not real Vulkan execution, and current eligibility does not cover arbitrary tiled/MSAA/stencil images.",
+      "next_test": "Build the final checkpoint with the unchanged two-game runner. GoW FIRST, then GoT if safe: the last two GoT GPU failures prevented GoW from running. <=120s each; no automatic input or readback options. Keep >=8GiB VRAM/display/process preflights; stop after GPU failure or unconfirmed child exit."
+    },
+    {
+      "id": "gpu-buffer-image-partial-write-coherence",
+      "subsystem": "gpu-coherence",
+      "status": "HOST_PASS_NATIVE_GOW_LOADING_STOP_UNCONFIRMED",
+      "related_prs": [
+        132
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR132 native2812bc6f: GoW remains at emulator loading screen at80/110s; termination unconfirmed at120s, zombie leader plus D worker in dma_fence_default_wait. GoT not run. No native recovery acceptance.",
+      "negative_result_or_prohibition": "Host reproduction establishes byte-preservation/invalidation defects, not the native GPU-loss cause. No title/shader/vendor exceptions or readback options. Unsupported layouts and native performance remain unproven.",
+      "next_test": "PR133 host error/pool/preflight fixes; pinned GoW then GoT if safe; no readback setting changes."
+    },
+    {
+      "id": "vulkan-wait-pool-progress-and-live-worker-preflight",
+      "subsystem": "renderer-vulkan-and-native-observer",
+      "status": "HOST_PASS_NATIVE_GOT_BLACK_GOW_GPU_CONTEXT_LOST",
+      "related_prs": [
+        133
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "af408e93: GoT black without captured gpu-wait; GoW waits for tick4 known2 then GPU loss18.257s. Both child exits confirmed. No gameplay recovery.",
+      "negative_result_or_prohibition": "No forced GPU completion, total-wait watchdog, per-title/vendor switch, service reset or claimed game recovery.",
+      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
+      "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+    },
+    {
+      "id": "required-native-graphics-diagnostics",
+      "subsystem": "native-observer",
+      "status": "NATIVE_CAPTURE_VERIFIED_GAME_RECOVERY_FAILED",
+      "related_prs": [
+        134
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "af408e93: both games have required graphics and validation diagnostics; no VUID captured. GoT black, GoW GPU loss. Collector success only.",
+      "negative_result_or_prohibition": "Do not claim graphics recovery or infer successful waits from missing diagnostic output.",
+      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
+      "review_file": "docs/emulator/reviews/20261103-pr133-native-required-diagnostics.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+    },
+    {
+      "id": "draw-bindings-after-resource-readbacks",
+      "subsystem": "Vulkan draw command state",
+      "status": "HOST_PASS_NATIVE_PREPARATION_FLUSH_OBSERVED_GOT_GPU_LOSS",
+      "related_prs": [
+        135
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR136 native GoT records4 draw-preparation-flush events,then GPU loss61.484s. No recovered menu/gameplay; no causal attribution to this host repair.",
+      "negative_result_or_prohibition": "No per-title/shader exceptions or readback options; no claim of recovering menu/gameplay from mock/CPU checks.",
+      "next_test": "Inspect first-wait retained shaders and command/resource provenance before another renderer change.",
+      "review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "bounded-gpu-work-submission-history",
+      "subsystem": "Vulkan diagnostics and native observer",
+      "status": "NATIVE_TRACE_WORKS_FIRST_WAIT_SHADER_COLLECTION_FIXED_IN_PR137",
+      "related_prs": [
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR136 native GoT GPU loss61.484s;108 work records/16144 bytes,three wait windows,no output truncation,global overwritten150926. GoW skipped; trace success is not recovery.",
+      "negative_result_or_prohibition": "Recorded commands and submit calls do not prove execution; no new GPU waits/barriers or title/hash exceptions.",
+      "next_test": "PR137 read-only recovery of existing first-wait shader dumps; no new GPU run.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "conditional-ollama-unload-restoration",
+      "subsystem": "native test runner",
+      "status": "NATIVE_SNAPSHOT_UNLOAD_AND_GPU_FAILURE_DEFERRAL_PASS_SAFE_RESTORE_PENDING",
+      "related_prs": [
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR136 captures digest,16384 context,absolute expiry through local container API; unload succeeds and GPU-failure restoration is deferred. Successful restoration remains host-mock-only.",
+      "negative_result_or_prohibition": "No reload after GPU failure or live/unconfirmed emulator; no overwriting concurrent model changes or blind CLI unload.",
+      "next_test": "Retain leases; do not restore while GPU failure persists. Current next step is read-only shader recovery.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "first-stalled-shader-evidence-recovery",
+      "subsystem": "native diagnostic collector",
+      "status": "HOST_PASS_USER_HOST_RECOVERY_PENDING",
+      "related_prs": [
+        137,
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR136 drops both first-stalled compute hashes from latest16 list; fetch-only files falsely count as complete evidence. PR137 fixes both and adds read-only recovery. No new game executed.",
+      "negative_result_or_prohibition": "No shader/title/vendor execution exceptions; shader hashes only identify evidence. Collected permutation is not proof of execution or a graphics fix.",
+      "next_test": "One pinned Bash command recovers original record universal-graphics-20261103T202034Z-1291590; upload resulting archive.",
+      "review_file": "docs/emulator/reviews/20261103-pr136-native-first-stalled-shaders.json"
+    },
+    {
+      "id": "shader-full-wave-reduction",
+      "subsystem": "shader-recompiler",
+      "status": "DRAFT_NATIVE_BUILD_PASS_INTRO_VISIBLE_GPU_LOSS",
+      "related_prs": [
+        138
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native1d2db851: GoT intro footage at25s, GPU context lost63.272s, GoW skipped. Corrected shader present; neither progress nor crash causally attributed. No menu/gameplay/audio acceptance.",
+      "negative_result_or_prohibition": "Automatic exact-pattern compute subgroup64 only; subgroup32 and general EXEC resurrection unresolved. No per-game/hash overrides. 64-shuffle performance untested.",
+      "next_test": "Same pinned source/binary: native GoT first, then GoW only after confirmed safe exit; 118s TERM + 2s KILL, 8GiB free VRAM, reversible recorded model leases. Compare progress, pending submissions, shader evidence and GPU status. Stop on GPU loss/live or unconfirmed child; no main promotion before native/cross-title acceptance."
+    },
+    {
+      "id": "font-runtime-layout-accessors",
+      "subsystem": "portable-build",
+      "status": "NATIVE_BUILD_PASS_DRAFT",
+      "related_prs": [
+        139
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Native1d2db851 builds and passes retained CPU/startup checks. Compile-only repair; no pointer/layout behavior change.",
+      "negative_result_or_prohibition": "Do not retain warning suppression as the final fix.",
+      "next_test": "Build the exact combined native candidate and perform shared GoT/GoW acceptance."
+    },
+    {
+      "id": "compute-swizzle-inactive-source",
+      "subsystem": "shader-recompiler",
+      "status": "DRAFT_BUILD_COMPILER_SEMANTICS_PASS_NATIVE_PENDING",
+      "related_prs": [
+        140
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native run of the new correction. Parent GoT intro progresses then GPU loss; GoW skipped.",
+      "negative_result_or_prohibition": "Compute-only inactive-source zero; graphics helper lanes/general EXEC resurrection unresolved. No title/hash/vendor/config selector. Host checks are not GPU proof.",
+      "next_test": "Build immutable source on checked latest upstream; GoT first, then GoW only after confirmed safe exit. Same binary/global behavior, 118s TERM+2s KILL,8GiB VRAM and exact model leases. Stop later games/restoration on GPU loss or unconfirmed exit. Compare screenshots,pending work and current shader output; do not promote main without native/cross-title acceptance."
+    }
+  ]
+}

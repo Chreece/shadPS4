@@ -47,6 +47,10 @@ public:
 
     void UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
                      std::span<const vk::BufferImageCopy> upload_copies);
+    u64 ImageUploadCount() const {
+        return image_upload_count;
+    }
+
     void DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
                        std::span<const vk::BufferImageCopy> download_copies);
 
@@ -79,6 +83,9 @@ public:
 private:
     void MakeCurrent(const VideoCore::Buffer* handle);
 
+    void CopyImageRegions(VideoCore::Image* src, VideoCore::Image* dst,
+                          std::span<const vk::ImageCopy> regions);
+
 private:
     const Instance& instance;
     Scheduler& scheduler;
@@ -94,6 +101,7 @@ private:
     std::vector<BufferBarriers> resources;
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};
+    u64 image_upload_count{};
 };
 
 } // namespace Vulkan
