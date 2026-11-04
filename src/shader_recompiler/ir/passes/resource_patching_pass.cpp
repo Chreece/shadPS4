@@ -126,6 +126,7 @@ public:
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
                    desc.is_depth == existing.is_depth && desc.is_r128 == existing.is_r128 &&
+                   desc.is_atomic_float_emulated == existing.is_atomic_float_emulated &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
                    desc.post_op == existing.post_op &&
@@ -345,6 +346,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
+        .is_atomic_float_emulated = (inst.GetOpcode() == IR::Opcode::ImageAtomicFMin32 ||
+                                     inst.GetOpcode() == IR::Opcode::ImageAtomicFMax32) &&
+                                    !profile.supports_image_fp32_atomic_min_max,
         .is_array = bool(inst_info.is_array),
         .is_written = is_written,
         .is_r128 = bool(inst_info.is_r128),
@@ -460,6 +464,9 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     }
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
+    ASSERT_MSG(!image_res.is_atomic_float_emulated ||
+                   image.GetDataFmt() == AmdGpu::DataFormat::Format32,
+               "Float image atomic fallback requires a 32-bit texel");
 
     if (needs_mip_storage_fallback) {
         // If the mip level to IMAGE_(LOAD/STORE)_MIP is a constant, set up ImageResource
