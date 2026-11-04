@@ -442,8 +442,9 @@
     {
       "id": "indexed-numeric-images-register-restoration",
       "subsystem": "shader-indexed-numeric-types-pm4-register-routing",
-      "status": "PR123_BUILD_CPU_SPIRV_VERIFIED_NATIVE_RETEST_REQUIRED_DRAFT",
+      "status": "PR123_NATIVE_INTEGER_BIND_PASSED_GPU_CONTEXT_LOST_GOT_NOT_RUN_DRAFT",
       "related_prs": [
+        124,
         123,
         122,
         121,
@@ -452,10 +453,10 @@
         117
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No post-change game run. Addresses actual GoW integer-table guard and an independently reproduced restored register-write defect; GoT causality not established.",
+      "observed_game_effects": "GoW mixed tables bind 826 float + 1 uint, then 2309 float + 1 uint; GPU context lost after 29.354s, loading screen only. GoT skipped. Integer sample correctness and register-router impact on GoT remain unproven.",
       "negative_result_or_prohibition": "No numeric type punning, title/shader exceptions, zero-record bound bypass, guessed DS seed, or promotion from CPU/build-only evidence.",
-      "next_test": "GoW passes integer table binding and records genuine next failure/ordered capture. GoT must display its previous menu/world before recovery is claimed; completing the bounded run on black remains a failure.",
-      "review": "reviews/20261102-indexed-numeric-register-restoration.json"
+      "next_test": "PR124 existing-binary diagnostic: GoT first, then GoW, core/synchronization validation enabled; capture first validation error and named shaders. Stop remaining games on GPU loss or unconfirmed child stop.",
+      "review": "reviews/20261102-pr123-gpu-loss-validation-capture.json"
     }
   ]
 }
