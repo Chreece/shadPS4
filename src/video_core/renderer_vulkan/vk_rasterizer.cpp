@@ -303,11 +303,22 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
             static_cast<unsigned long long>(scheduler.CurrentTick()),
             static_cast<unsigned>(is_indexed));
     }
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage) {
+            scheduler.RecordWork("kind=shader stage=%u shader=%llx flatbuf-words=%zu",
+                                 static_cast<unsigned>(stage->hw_stage),
+                                 static_cast<unsigned long long>(stage->pgm_hash),
+                                 stage->flattened_ud_buf.size());
+        }
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
     if (occlusion) {
         occlusion->BeginDraw(cmdbuf, query);
     }
 
+    scheduler.RecordWork("kind=draw indexed=%u vertices=%u instances=%u",
+                         static_cast<unsigned>(is_indexed), regs.num_indices,
+                         regs.num_instances.NumInstances());
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
                            s32(vertex_offset), instance_offset);
@@ -395,11 +406,24 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
             static_cast<unsigned long long>(scheduler.CurrentTick()),
             static_cast<unsigned>(is_indexed));
     }
+    for (const auto* stage : pipeline->GetStages()) {
+        if (stage) {
+            scheduler.RecordWork("kind=shader stage=%u shader=%llx flatbuf-words=%zu",
+                                 static_cast<unsigned>(stage->hw_stage),
+                                 static_cast<unsigned long long>(stage->pgm_hash),
+                                 stage->flattened_ud_buf.size());
+        }
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
     if (occlusion) {
         occlusion->BeginDraw(cmdbuf, query);
     }
 
+    scheduler.RecordWork("kind=draw-indirect indexed=%u address=%llx count-address=%llx "
+                         "max-count=%u stride=%u",
+                         static_cast<unsigned>(is_indexed),
+                         static_cast<unsigned long long>(arg_address + offset),
+                         static_cast<unsigned long long>(count_address), max_count, stride);
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
 
@@ -495,6 +519,10 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.RecordWork("kind=dispatch shader=%llx groups=%u,%u,%u threads=%u,%u,%u",
+                         static_cast<unsigned long long>(cs.pgm_hash), cs_program.dim_x,
+                         cs_program.dim_y, cs_program.dim_z, cs_program.num_thread_x.full,
+                         cs_program.num_thread_y.full, cs_program.num_thread_z.full);
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
@@ -558,6 +586,9 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.RecordWork("kind=dispatch-indirect shader=%llx address=%llx bytes=%u",
+                         static_cast<unsigned long long>(cs.pgm_hash),
+                         static_cast<unsigned long long>(address + offset), size);
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
 

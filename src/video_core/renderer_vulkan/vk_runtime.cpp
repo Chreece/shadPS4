@@ -141,6 +141,14 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
     }
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    for (const auto& copy : copies) {
+        scheduler.RecordWork(
+            "kind=buffer-copy src=%p dst=%p src-offset=%llu dst-offset=%llu bytes=%llu",
+            static_cast<const void*>(src), static_cast<const void*>(dst),
+            static_cast<unsigned long long>(copy.srcOffset),
+            static_cast<unsigned long long>(copy.dstOffset),
+            static_cast<unsigned long long>(copy.size));
+    }
     cmdbuf.copyBuffer(src->Handle(), dst->Handle(), copies);
 
     for (const auto& copy : copies) {
@@ -159,6 +167,9 @@ void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32
     }
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.RecordWork("kind=buffer-fill dst=%p offset=%llu bytes=%llu",
+                         static_cast<const void*>(dst), static_cast<unsigned long long>(offset),
+                         static_cast<unsigned long long>(size));
     cmdbuf.fillBuffer(dst->Handle(), offset, size, value);
 
     AccessBuffer(dst, offset, size, vk::PipelineStageFlagBits2::eClear,
@@ -210,6 +221,10 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
     }
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.RecordWork("kind=image-upload address=%llx bytes=%u format=%u layers=%u mips=%u",
+                         static_cast<unsigned long long>(dst->info.guest_address),
+                         dst->info.guest_size, static_cast<unsigned>(dst->info.pixel_format),
+                         dst->info.resources.layers, dst->info.resources.levels);
     cmdbuf.copyBufferToImage(src->Handle(), dst->GetImage(), vk::ImageLayout::eTransferDstOptimal,
                              upload_copies);
 
@@ -239,6 +254,10 @@ void Runtime::DownloadImage(VideoCore::Image* src, const VideoCore::Buffer* dst,
     }
 
     auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.RecordWork("kind=image-download address=%llx bytes=%u format=%u layers=%u mips=%u",
+                         static_cast<unsigned long long>(src->info.guest_address),
+                         src->info.guest_size, static_cast<unsigned>(src->info.pixel_format),
+                         src->info.resources.layers, src->info.resources.levels);
     cmdbuf.copyImageToBuffer(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, dst->Handle(),
                              download_copies);
 
