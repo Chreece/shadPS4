@@ -230,6 +230,9 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         ObtainBufferFlags flags) {
+    if (False(flags & ObtainBufferFlags::SkipImageReadback)) {
+        texture_cache.ReadMemory(device_addr, size);
+    }
     const bool is_written = True(flags & ObtainBufferFlags::IsWritten);
     const bool is_texel_buffer = True(flags & ObtainBufferFlags::IsTexelBuffer);
     const bool skip_stream_buffer = True(flags & ObtainBufferFlags::IgnoreStreamBuffer);
@@ -291,7 +294,8 @@ void BufferCache::ReadEdgeImagePages(const Image& image) {
     const VAddr page_end = PageManager::GetNextPageAddr(image_end - 1);
     boost::container::small_vector<vk::BufferCopy, 2> copies;
     u64 total_size_bytes = 0;
-    const auto [buffer, offset] = ObtainBuffer(page_start, page_end - page_start);
+    const auto [buffer, offset] =
+        ObtainBuffer(page_start, page_end - page_start, ObtainBufferFlags::SkipImageReadback);
     const auto add_download = [&](VAddr start, VAddr end) {
         const u64 new_offset = start - buffer->CpuAddr();
         const u64 new_size = end - start;
