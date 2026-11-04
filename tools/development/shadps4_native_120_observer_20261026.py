@@ -31,6 +31,51 @@ ERROR_TERMS = (
 GIB = 1024 ** 3
 GPU_FAILURE_TERMS = ("VK_ERROR_DEVICE_LOST", "ErrorDeviceLost", "context is lost",
                      "guilty of a soft recovery", "GPU fault detected")
+ANSI_ESCAPE = re.compile(r'\x1b\[[0-?]*[ -/]*[@-~]')
+VALIDATION_ID = re.compile(r'\b(?:VUID-|SYNC-HAZARD-|UNASSIGNED-)[A-Za-z0-9_-]+')
+
+
+def validation_failure(text):
+    text = ANSI_ESCAPE.sub('', text)
+    if 'Enabled instance layers:' in text and 'VK_LAYER_KHRONOS_validation' not in text:
+        return 'REQUESTED_VALIDATION_LAYER_NOT_ACTIVE: ' + text
+    if VALIDATION_ID.search(text) and ('<Error>' in text or 'Validation Error' in text):
+        return text[:4096]
+    return None
+
+
+def summarize_validation(console, out, requested=False):
+    enabled = False
+    counts = {}
+    first_error = None
+    saved_bytes = 0
+    truncated = False
+    in_message = False
+    with console.open(errors='replace') as stream, (out / 'vulkan-validation.log').open('w') as target:
+        for raw in stream:
+            line = ANSI_ESCAPE.sub('', raw)
+            if 'Enabled instance layers:' in line:
+                enabled |= 'VK_LAYER_KHRONOS_validation' in line
+            ids = set(VALIDATION_ID.findall(line))
+            for message_id in ids:
+                if message_id in counts or len(counts) < 1024:
+                    counts[message_id] = counts.get(message_id, 0) + 1
+                else:
+                    truncated = True
+            if requested or ids:
+                first_error = first_error or validation_failure(line)
+            if re.match(r'^\[.+?\] <\w+>', line):
+                in_message = 'DebugUtilsCallback:' in line
+            if in_message or ids or 'Enabled instance layers:' in line:
+                size = len(line.encode('utf-8'))
+                if saved_bytes + size <= 8 * 1024**2:
+                    target.write(line)
+                    saved_bytes += size
+                else:
+                    truncated = True
+    return {'validation_layer_active': enabled, 'validation_message_ids': counts,
+            'first_validation_failure': first_error, 'validation_log_bytes': saved_bytes,
+            'validation_evidence_truncated': truncated}
 
 
 def digest(path):
@@ -250,7 +295,8 @@ def main():
         'command':argv,'sha256':args.sha256,'cpu':'emulator-native/no-DynamoRIO',
         'memory':'global emulator config','automated_game_inputs':False,
         'runtime_limit_seconds':120,'signal_at_seconds':118,
-        'ordered_gds_capture_requested':env.get('SHADPS4_PR117_CAPTURE_ONCE')=='1'
+        'ordered_gds_capture_requested':env.get('SHADPS4_PR117_CAPTURE_ONCE')=='1',
+        'vulkan_diagnostics_requested':env.get('SHADPS4_VULKAN_DIAGNOSTICS')=='1'
     }
     result={'binary_sha256':args.sha256,'game':args.game,
             'duration_limit':120,'time_to_sigterm':118,
@@ -274,17 +320,29 @@ def main():
             due=(8,25,80,110)
             taken=set()
             gpu_failure=None
+            validation_error=None
+            console_offset=0
+            pending_line=''
             while child.poll() is None and time.monotonic()-began<118:
                 elapsed=time.monotonic()-began
                 with console.open('rb') as monitor:
-                    monitor.seek(max(0, console.stat().st_size - 256 * 1024))
-                    recent = monitor.read().decode('utf-8', 'replace')
-                gpu_failure = next((line for line in recent.splitlines()
+                    monitor.seek(console_offset)
+                    recent = monitor.read(4 * 1024**2).decode('utf-8', 'replace')
+                    console_offset = monitor.tell()
+                complete, _, pending_line = (pending_line + recent).rpartition('\n')
+                gpu_failure = next((line for line in complete.splitlines()
                                     if any(term in line for term in GPU_FAILURE_TERMS)), None)
                 if gpu_failure:
                     result['gpu_failure'] = gpu_failure
                     result['exit_reason'] = 'GPU_CONTEXT_LOST'
                     break
+                if launch['vulkan_diagnostics_requested']:
+                    validation_error = next((message for line in complete.splitlines()
+                                             if (message := validation_failure(line))), None)
+                    if validation_error:
+                        result['first_validation_failure'] = validation_error
+                        result['exit_reason'] = 'VULKAN_VALIDATION_FAILED'
+                        break
                 if elapsed-previous_map_capture>=1.0:
                     capture_native_mappings(child.pid,report)
                     previous_map_capture=elapsed
@@ -296,6 +354,8 @@ def main():
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
             if gpu_failure:
                 result['exit_reason']='GPU_CONTEXT_LOST'
+            elif validation_error:
+                result['exit_reason']='VULKAN_VALIDATION_FAILED'
             elif child.poll() is None:
                 result['exit_reason']='TEST_118S_DURATION_LIMIT'
             else:
@@ -319,8 +379,14 @@ def main():
         if console.is_file():
             try:
                 result.update(summarize(console,report))
+                result.update(summarize_validation(console,report,launch['vulkan_diagnostics_requested']))
                 if result.get('gpu_failure'):
                     result['exit_reason']='GPU_CONTEXT_LOST'
+                elif launch['vulkan_diagnostics_requested']:
+                    if result.get('first_validation_failure'):
+                        result['exit_reason']='VULKAN_VALIDATION_FAILED'
+                    elif not result.get('validation_layer_active'):
+                        result['exit_reason']='VULKAN_VALIDATION_NOT_OBSERVED'
                 result["native_fault"]=classify_native_fault(console,report,binary)
                 if result["native_fault"].get("fault_rip"):
                     save(report/'native-fault-mapping.json',result["native_fault"])
@@ -334,7 +400,10 @@ def main():
     print('TEST_RUNTIME_SECONDS='+str(result['elapsed_seconds']),flush=True)
     print('GAME_PROCESS_LEFT_RUNNING='+('NO' if result['owned_child_terminated'] else 'UNKNOWN'),flush=True)
     print('NO_AUTOMATIC_INPUT=YES; FULLSCREEN_AND_FPS=YES; NO_CPU_ID_OVERRIDES=YES',flush=True)
-    return 0 if not failure and not result.get('gpu_failure') and result['owned_child_terminated'] and (
+    return 0 if not failure and not result.get('gpu_failure') and not (
+        launch['vulkan_diagnostics_requested'] and (
+            result.get('first_validation_failure') or not result.get('validation_layer_active'))
+        ) and result['owned_child_terminated'] and (
         result['exit_reason']=='TEST_118S_DURATION_LIMIT' or result['exit_code']==0) else 1
 
 
