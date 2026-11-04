@@ -1,0 +1,725 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T06:35:24.714546+00:00",
+  "prs": [
+    138,
+    139
+  ],
+  "source_commit": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+  "shader_commit": "bc32d6747cc93e8d900659a809b432978f4aef9e",
+  "source_tree": "18ac295ec618d412bf0381161fbee6f0ddd1670a",
+  "base_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+  "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "decision": "KEEP_DRAFT_NATIVE_GAME_ACCEPTANCE_PENDING",
+  "main_changed": false,
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "recovery": {
+    "record_id": "universal-gpu-work-recovery-20261104T055234Z-1088199",
+    "result": "FIRST_WAIT_SHADER_RECOVERY_COMPLETE_GPU_NOT_RUN",
+    "archive": {
+      "bytes": 1283917,
+      "sha256": "4533f995997c8e33ba0f64223425ba9219523f53b5998f1364b395b8c42e3edc"
+    },
+    "original_source": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+    "collector_source": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "original_binary_sha256": "feb99d2319fa9fa108e5de474579efe0aed74f1df65c096facc66973451b23fd",
+    "first_wait": "GRAPHICS_WORK_BEGIN reason=wait-timeout semaphore=0x55dbd5eeb758 completed=3648 requested=3650 recorded=150495 overwritten=148447",
+    "first_wait_hashes": [
+      "00000000745c455a",
+      "00000000e1fb67ac",
+      "00000000361a48f5",
+      "000000009911cadd",
+      "0000000096aa3f2e",
+      "000000000a894bb5"
+    ],
+    "missing_first_wait_compiled_pairs": [],
+    "priority_hash_count": 25,
+    "ir_files": 48,
+    "binary_files": 102,
+    "spirv_modules": 50,
+    "game_launched": false,
+    "gpu_used": false,
+    "model_state_changed": false,
+    "original_game_result": "GoT loading screens at 8/25 s remain identical; GPU context lost at 61.484 s; GoW skipped. No menu/gameplay/audio acceptance.",
+    "restore_lease_status": "Original model lease remains deferred after GPU failure; recovery did not restore it."
+  },
+  "finding": {
+    "kind": "GENERIC_EXEC_WIDENING_REDUCTION_SEMANTIC_MISMATCH",
+    "evidence_shader_sha256": "9e99e8f767f3f43a18e921b01d7222b3b1d2f30c94c6c4b735f3709b9fe63e0b",
+    "observation": "S_ORN2_SAVEEXEC_B64 vcc,exec at guest PCs 0x1180 and 0x1208 widens EXEC to all 64 lanes. Identity-masked min/OR trees use DS_SWIZZLE XOR16,8,4,2,1 and V_READLANE 31/63. Generated SPIR-V retains these operations within prior divergent control flow; fixed source lanes can be inactive.",
+    "causal_gpu_crash_proven": false,
+    "executed_permutation_proven": false,
+    "official_references": [
+      "https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html",
+      "https://gpuopen.com/learn/amd-gcn-assembly-cross-lane-operations/"
+    ]
+  },
+  "changes": [
+    "Mark only a V_CNDMASK using the saved VCC immediately after S_ORN2_SAVEEXEC vcc,exec, allowing intervening NOP/WAITCNT.",
+    "Recognize only same-block exact neutral-element min/OR XOR-tree plus paired lane31/63 reads, preserving commuted operands.",
+    "Automatically lower matching compute reductions on subgroup64 through ballot-guarded active-source reads; no title/hash/address/vendor/config selectors.",
+    "Invalidate old compiled shader cache with ShaderBinaryVersion 23 -> 24.",
+    "Separate PR139 removes invalid constexpr declarations from the two LayoutWord byte accessors. No layout or runtime pointer behavior change."
+  ],
+  "validation": {
+    "native_spirv_validation": {
+      "target": "vulkan1.3",
+      "passed": 50,
+      "failed": 0,
+      "modules": [
+        {
+          "file": "cs_0x00000000030ec076_0.spv",
+          "sha256": "68e59900873aa6d8c1e3da6a5ea4029559cf87940c1e765f76566aac320f932c",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x0000000015d7e72a_0.spv",
+          "sha256": "f3ae080d8ea95e892eab4c761f971e7ab8ac0b7ec6b211e1520bae68559465f9",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x0000000015d7e72a_1.spv",
+          "sha256": "f74f4ae25b4380869194842928403c18292ee28207371e01da4ac314ecee5c63",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x0000000017c90240_0.spv",
+          "sha256": "8d18dcba49601a5d0e7225d00f5ee7573a1e9bd7875162cd192164f3c907a29d",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x000000001bf86811_0.spv",
+          "sha256": "c0fd5fe8e928df15b45a2169a80b2cf4a044d5b9ffd9c0f4e494a166b59c7dd8",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000273a7c18_0.spv",
+          "sha256": "0a01a5f3e82826bdebd7f248e8a143ad1fa9692c54830059a19e220267927046",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000273a7c18_1.spv",
+          "sha256": "64a56dc4ca41e2b8d3393df0171faed490bc10a30a22a1c6b93916f789732a2f",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x0000000059302a6e_0.spv",
+          "sha256": "bcbdad079aa59b0203a023853c50e892f0090dbfbddc7e28339e3fba61061fa3",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x000000005e89a8b4_0.spv",
+          "sha256": "a5511e3a4b49c2a18eaca5ef9e200bbc64aedbf7628de34614d1476428cc3285",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000628dd8fd_0.spv",
+          "sha256": "b967f922bd4715fa00d65ea3533a16277b79be5cf8b083207a21caf0c03a74f5",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000628dd8fd_1.spv",
+          "sha256": "03b0594bb37b833bea17b60e96c7da2f383505e4a4779116953ccd1bb8df4c07",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x0000000062ffd078_0.spv",
+          "sha256": "9c1bdfb649066a15ee8d0e5efd7ab042d6282774567155efcc89f5a5b4609dc0",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000684aca30_0.spv",
+          "sha256": "e13a6c5a2343d0a8ceb7e0f909b8d3b3971ff2299599bf67c88c828921468b9c",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000745c455a_0.spv",
+          "sha256": "e437c660074d01f50c158fcbda9b4db7a5b0e6013ea4a58e30f6353b9f91ebc8",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x000000008a690ff9_0.spv",
+          "sha256": "cd0713cf9ce3514ae4903c0eb388a40a08b2d22413cd7323d54228266ca443d7",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x000000008a690ff9_1.spv",
+          "sha256": "b345fc95c1f9453316d4395a8d4990ae0720774df3921f80abcbee943d53ccfa",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000bd2dcc80_0.spv",
+          "sha256": "78ea9580438bb13bd7bfafa83dc676e76809f9a9ccd1b498fcfe7f6bf0b8787d",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000e1fb67ac_0.spv",
+          "sha256": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "cs_0x00000000e64d44b6_0.spv",
+          "sha256": "52bb40e7c063386af82c59914a0f838f503b4388bb564fa1df6509c3d36438e5",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000361a48f5_0.spv",
+          "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000551d6087_0.spv",
+          "sha256": "55e9381c24bc5eb7e0840f6fb043e55c5c2eb9ce99d5c537b79b40b129c3cfef",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x000000006d1490f4_0.spv",
+          "sha256": "4b2168c68636768356efd1d8098ce4f10f5f83f42fd1de2775895f1dbe9fe09d",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x000000008d32401e_0.spv",
+          "sha256": "81ec20dc31a0cde40b1d956dd82bb630e73e1483f05caab3ca5be6bd90d0444e",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x0000000096aa3f2e_0.spv",
+          "sha256": "1d31756ac623602bdcd07533486222e022057c181203440bcd4e150aad02679c",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000b80f7eb2_0.spv",
+          "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000b80f7eb2_1.spv",
+          "sha256": "a5996690f9ecdb0e63c12c39af74920b826aebdfbfae210b29914a0d3fabb084",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000b80f7eb2_2.spv",
+          "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000b80f7eb2_3.spv",
+          "sha256": "13174e3a9d02643f8ca5afea64fb1894e57ae684ad3d60e389d2c3229a04e605",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "fs_0x00000000b80f7eb2_4.spv",
+          "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_0.spv",
+          "sha256": "8ae73aaf4c153c8700d67ce96cc213af29d960988bafe482fbfb7386ac12e1bd",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_1.spv",
+          "sha256": "0e9ec8ca96fca82b613ed321349c07df88139e72a910e38f7d01f99e5f68724e",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_10.spv",
+          "sha256": "e820c6400740dc5c19b8b4422b4993ae9403630c36b89c0bd5ec5c8b85314374",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_2.spv",
+          "sha256": "764f47037543ffe5cf54b3ee7a34e7512d2969edb043e1bf73164ab28d1f42b3",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_3.spv",
+          "sha256": "7f5aa187d3620927a6947885cfcc5b3d087490baede2a91bb6ea12b0a2f6d145",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_4.spv",
+          "sha256": "7656a1c1abe5a400eb31db5d7c5604a6c3c5325a4993b556b3127f9c782684bc",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_5.spv",
+          "sha256": "500b83fb16a3c4c6a10e0a3f9b77de3dcdcdf1d4fad9d10b056989c15bb14faf",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_6.spv",
+          "sha256": "7a4d9e52115adee29418eeee7aa11754b077705bc657ffe4eb9188540674c3c4",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_7.spv",
+          "sha256": "f8f3367dcbbbc2e6a73153e542a9d058ea025c159f32cc83108a0336bd6e2acc",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_8.spv",
+          "sha256": "0dc1f67b0b1c49a251ea936a31cd5727ed9220fe5e8d6b3fb51bee91e7f2314a",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000000a894bb5_9.spv",
+          "sha256": "f1d3c5cc666d943f6a1cceb3d489aecbff95bf2d9aeadce29a48031f86ba6edf",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000003bb29d09_0.spv",
+          "sha256": "20fdffdac3db5939165e0dcb79eba4345c0372373c18b91220c8ccf20a74a166",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000003bb29d09_1.spv",
+          "sha256": "88a424f82dac4e5d1d9fb20cd5312d50ba14d0749fdc5d8ed220b613e7c0bdb9",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000003bb29d09_2.spv",
+          "sha256": "3b099ac7b16cd5d0d2887abcb9196db01e95c77e03a48640b0402346f3b4cef5",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000003bb29d09_3.spv",
+          "sha256": "d3ac11f891aaa73ddbc8edbb374018a6322a49eeb5f26e40df252f10fabd960c",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x0000000061cf8491_0.spv",
+          "sha256": "937fd52f67ec196147c745934bc97f89f1b89e98923f04a6174b59a5379e1c75",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x0000000061cf8491_1.spv",
+          "sha256": "210fb40dff37fa266f94f7baf45b337572ef495111bd624df137679151e48197",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x0000000061cf8491_2.spv",
+          "sha256": "a6fbee7aec6e28cbf9a4ced4240ad3d82101d83264ef4420f7eb5889637ca411",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x0000000061cf8491_3.spv",
+          "sha256": "b59b2562987fafc9bde8b68908441fcb663ad6c00009aef6426b8207983e2b3d",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x0000000061cf8491_4.spv",
+          "sha256": "b77c2adde21de55cc17d7f70f68a444bf17ab9b340acacec6c239bcf73f3cb0b",
+          "exit": 0,
+          "output": ""
+        },
+        {
+          "file": "vs_0x000000009911cadd_0.spv",
+          "sha256": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6",
+          "exit": 0,
+          "output": ""
+        }
+      ]
+    },
+    "ir_matcher": {
+      "checks": 1408,
+      "result": "PASS",
+      "sanitizers": "ASan/UBSan; detect_leaks=0",
+      "coverage": "Both reductions, 64 operand permutations, neutral/marker/XOR/lane/input/block/stage/subgroup near misses; no repository tests added."
+    },
+    "production_frontend_replay": {
+      "instructions": 2380,
+      "blocks": 115,
+      "marked_selects": 2,
+      "subgroup64": {
+        "min": 1,
+        "or": 1
+      },
+      "subgroup32": {
+        "min": 0,
+        "or": 0
+      },
+      "result": "PASS",
+      "boundary": "Full original decode/CFG/translation/SSA/constant propagation/read-lane/pass; stops before resource discovery; not a GPU or full native pipeline replay."
+    },
+    "emitted_spirv": {
+      "validation": "PASS vulkan1.3",
+      "model": "CPU interpreter over actual production-emitted SPIR-V against independent seeded guest XOR-tree oracle",
+      "masks": 2181,
+      "reductions": 4362,
+      "active_shuffle_sources_checked": 279168,
+      "result": "PASS",
+      "gpu_used": false
+    },
+    "full_build": {
+      "result": "PASS",
+      "compiler": "Clang18 with GCC14 C++23 library",
+      "build": "Isolated Linux Release, all pinned submodules, SDL_UNIX_CONSOLE_BUILD=ON, CMAKE_CXX_SCAN_FOR_MODULES=OFF, --parallel 8 -- -k 0",
+      "final_font_warning_suppression": false,
+      "binary_sha256": "95e5d19a4b41505943c7a28c1f59e9938816afa0c9e94f0b6d92a8b390d5b5ce",
+      "startup": "--help PASS; no game/GPU launch",
+      "native_user_host_build": "PENDING"
+    },
+    "onepaste": {
+      "source_pin": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+      "runner_pin": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+      "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+      "script_sha256": "01aae5bbf0decde97cdf2cbe081ce87bb1841e5485d32747c08d1c394a6a23ff",
+      "cases": [
+        "valid checksum/immutable handoff",
+        "corrupt checksum blocks handoff",
+        "download failure blocks handoff"
+      ],
+      "result": "PASS",
+      "boundary": "Network download and nested native wrapper invocation mocked. Exact real wrapper bytes checked; not a native game run."
+    },
+    "submodules": "54 pinned recursive submodules; no submodule edits",
+    "syntax_diff": "bash -n and git diff --check PASS",
+    "previous_retained_suites": "Not rerun this turn; previous 104 collector and retained runner checks remain historical evidence, not newly reported passes."
+  },
+  "failed_and_intermediate_attempts": [
+    {
+      "stage": "environment",
+      "result": "FAILED",
+      "detail": "Initial apt install cache permissions; used task-local downloaded/extracted packages instead."
+    },
+    {
+      "stage": "configure",
+      "result": "FAILED_THEN_PASS",
+      "detail": "Missing desktop SDL dependencies; local console build configured. Native user runner unchanged."
+    },
+    {
+      "stage": "initial full build",
+      "result": "FAILED",
+      "detail": "Missing clang-scan-deps and libudev.h. Disabled local module scanning and installed task-local headers. Source was edited while dependencies were compiling; this is not a clean baseline build."
+    },
+    {
+      "stage": "complete candidate build",
+      "result": "FAILED",
+      "detail": "Reviewed entire -k0 log: uuid/uuid.h and X11/Xlib.h missing; four font units reject two invalid constexpr accessors. Installed task-local headers; no new reduction-source compile errors."
+    },
+    {
+      "stage": "font compatibility build",
+      "result": "PASS_WITH_LOCAL_FLAG",
+      "detail": "Initial local -Wno-invalid-constexpr on four font units allowed linking. Reconfigure discarded generated-Ninja flags and reproduced failure; a temporary CMake hook retained them. These are superseded by PR139 and the final unsuppressed build."
+    },
+    {
+      "stage": "GCN disassembly/decoder fixture",
+      "result": "FAILED_THEN_PASS",
+      "detail": "LLVM gfx700 disassembly unsupported, aborted -6. Production decoder used instead; initial generated duplicate enum cases corrected."
+    },
+    {
+      "stage": "IR matcher fixture",
+      "result": "FAILED_THEN_PASS",
+      "detail": "Temporary fixture lacked DEBUG_ASSERT; then an ambiguous U32 typed-value conditional. Corrected fixture only; final 1408 ASan/UBSan checks pass."
+    },
+    {
+      "stage": "backend fixture",
+      "result": "FAILED_THEN_PASS",
+      "detail": "Temporary fixture used an unqualified Bindings type; an early launch saw missing executable. Initial fixture module omitted Int8/Int16/Int64 capabilities declared by its context. Corrected fixture; final emitted module validates. This was not an emulator shader emission failure."
+    },
+    {
+      "stage": "homebrew assembly/header",
+      "result": "FAILED_THEN_PASS",
+      "detail": "gfx700 MUL cannot take that literal directly: moved constant to SGPR. Zero header immediate encoded inline: forced literal encoding before metadata packaging. Assembly, header packaging, C syntax and production frontend replay now pass."
+    }
+  ],
+  "homebrew": {
+    "file": "full-wave-openorbis-20261104.zip",
+    "sha256": "47c7274c2de117a54f35fa78c172cee199b50a6f96b5bef81222f6ef5565ea7c",
+    "library_file_id": "libfile_b40ccc2cbdd4819198ad847a11a79858",
+    "cases": 72,
+    "lane_pairs": 4608,
+    "result": "ASSEMBLY_C_SYNTAX_FRONTEND_PASS_LINK_AND_HARDWARE_UNVERIFIED",
+    "original_guest_code": true,
+    "contains_game_code": false
+  },
+  "host_evidence": {
+    "file": "full-wave-host-validation-20261104.zip",
+    "library_file_id": "libfile_4118ccd352308191bf2a9b39889b4b81",
+    "logs": {
+      "nov4-backend-probe-compile.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-backend-probe-link.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-backend-probe-run-final.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-backend-probe-run.log": {
+        "bytes": 88,
+        "sha256": "c539b5e132839e5db86fbcec6d5a1ed81a68eaf6403720f52ca1e37848d9c9a3"
+      },
+      "nov4-build-baseline.log": {
+        "bytes": 403016,
+        "sha256": "dd1f4d4ec451d1d26083c72930bb668d88a4bf2752e5e6fd641303d72585e855"
+      },
+      "nov4-build-candidate.log": {
+        "bytes": 308431,
+        "sha256": "3ec0811a20d5c48a327fdb0aa86bad9d008b8fcae97fb506ffff2ae62c6a6e5d"
+      },
+      "nov4-build-committed-final.log": {
+        "bytes": 510,
+        "sha256": "3ff7256ae841752ab7d7ee61fee1a9897f4bdb16bc39fbcd1442dfc0905d090b"
+      },
+      "nov4-build-committed.log": {
+        "bytes": 70993,
+        "sha256": "6fe17a5cdafa709ebfa888a35dae21a2a309b33e684902a1268e3a256c38aa78"
+      },
+      "nov4-build-final.log": {
+        "bytes": 190,
+        "sha256": "da3187b1723563bd95c86920df9472e0ea3c89d86c49827add2e5e01f9d6e6af"
+      },
+      "nov4-build-font-committed.log": {
+        "bytes": 15441,
+        "sha256": "9a6829e5f9aaa947da88a1e46bd232f525a4430484f657e0dfc8a96b2f850990"
+      },
+      "nov4-build-formatted.log": {
+        "bytes": 190,
+        "sha256": "e81fd83b276eb2bcc01639fa5ccfeffc96c76e6e5ef9d370f02b39b77fb0b7bc"
+      },
+      "nov4-build-retry.log": {
+        "bytes": 622,
+        "sha256": "5458640569e9730fecd72e803935bb06a9812de19a4e8251f0998454deda5133"
+      },
+      "nov4-build-unsuppressed.log": {
+        "bytes": 510,
+        "sha256": "3ff7256ae841752ab7d7ee61fee1a9897f4bdb16bc39fbcd1442dfc0905d090b"
+      },
+      "nov4-buildtools-download.log": {
+        "bytes": 2146,
+        "sha256": "8186d72e1f5e54341e15fc050dfb75a4dcb8aed35997c942dd45c7e906512b1b"
+      },
+      "nov4-configure-candidate.log": {
+        "bytes": 15296,
+        "sha256": "ccfa408bd2d07e5a2e959563d4fbcad82df0e73a3e05439fd7fe911b64767ee0"
+      },
+      "nov4-configure-committed.log": {
+        "bytes": 15259,
+        "sha256": "cfc078a361f1eed4b1324f4362186129ffa441df8997dd983c012c739227f38c"
+      },
+      "nov4-configure-final.log": {
+        "bytes": 27712,
+        "sha256": "8f8deeae5ac6d13c306c5644f16fac8eaa472182b55ef863928b406c6d48008d"
+      },
+      "nov4-configure-unsuppressed.log": {
+        "bytes": 15259,
+        "sha256": "8280c2b51a979365944e940b04b4f447e59f76311896d66de8a085159f5d6878"
+      },
+      "nov4-configure.log": {
+        "bytes": 26361,
+        "sha256": "01eddf330d28f84a0dff3c6c3a0f70a6040a496f33fef1a2b8e895c254a3344d"
+      },
+      "nov4-decoder-build-final.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-decoder-build.log": {
+        "bytes": 6851,
+        "sha256": "5bd3fbccd365b3e5cfe059425d1131d3f7fa1fec512879f8e983073c3ea07e3c"
+      },
+      "nov4-download.log": {
+        "bytes": 681,
+        "sha256": "5fb50d8f847b26547350805555fe11a781df807d77a8672cc29ae9fe0414b79d"
+      },
+      "nov4-emitted-semantics.log": {
+        "bytes": 162,
+        "sha256": "e84bda63ad44e79693531dc3ffb1dbbe0207f9d14ad7401d9cc807cfd7af2c4a"
+      },
+      "nov4-extra-download.log": {
+        "bytes": 564,
+        "sha256": "4b08ba4c8f02ce26e70eb3e40ea58f89aa1f7cd4d45911d01a5aae4252fa3c73"
+      },
+      "nov4-homebrew-assemble-final.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-homebrew-assemble.log": {
+        "bytes": 112,
+        "sha256": "c4f48cb0a008d4d58def53e378b59e34ed97b2cf57dea8dfbdee77ab0faef298"
+      },
+      "nov4-homebrew-frontend-replay.log": {
+        "bytes": 152,
+        "sha256": "1fea2204c45af3bdc536e35c3b325c56f70281888f5e8500e4b9c9cd227f487d"
+      },
+      "nov4-homebrew-header-final.log": {
+        "bytes": 105,
+        "sha256": "31d2b1dcdfbec6666f8441329cb9bc284733cf97edee610c235423b6e26126d9"
+      },
+      "nov4-homebrew-package-final.log": {
+        "bytes": 305,
+        "sha256": "9d230337eb529e042406adf7f1bf0cd97a76fa7ca0412b592871044647151ca2"
+      },
+      "nov4-homebrew-package.log": {
+        "bytes": 524,
+        "sha256": "d50b6f0383c7b107c03105705bdb9620f58bbbbefe0471baa30256809c8646a7"
+      },
+      "nov4-homebrew-syntax-final.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-homebrew-syntax.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-ir-build-sanitized.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-ir-build.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-ir-run-sanitized.log": {
+        "bytes": 26,
+        "sha256": "1ce4066c8ea0341a5729ab052fd94442e9c18643c26b93182f2e8f2dbf2d8003"
+      },
+      "nov4-native-replay-compile.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-native-replay-link.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-native-replay-run.log": {
+        "bytes": 160,
+        "sha256": "e4b8ef1dab3ec307198b7dea0c79b05da673777419c35f60ba39df56f2d5e36f"
+      },
+      "nov4-onepaste-check.log": {
+        "bytes": 235,
+        "sha256": "ea3b5a263f1b7067f277b230e52168d10bf095f219feb38f51b0da9921b4efe8"
+      },
+      "nov4-onepaste-final-check.log": {
+        "bytes": 235,
+        "sha256": "ea3b5a263f1b7067f277b230e52168d10bf095f219feb38f51b0da9921b4efe8"
+      },
+      "nov4-reductions-validation-final.log": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "nov4-reductions-validation.log": {
+        "bytes": 156,
+        "sha256": "f475a95a05508d83c762d6b46b328fa2f146f7f586d1fc1b10a810b1639ea65d"
+      },
+      "nov4-startup-help-final.log": {
+        "bytes": 1127,
+        "sha256": "5aa8ff5ff602961e5238a55142849e611d0f9fe053a0c5d3ecca7761d8c91063"
+      },
+      "nov4-startup-help-unsuppressed.log": {
+        "bytes": 1127,
+        "sha256": "5aa8ff5ff602961e5238a55142849e611d0f9fe053a0c5d3ecca7761d8c91063"
+      },
+      "nov4-startup-help.log": {
+        "bytes": 1127,
+        "sha256": "5aa8ff5ff602961e5238a55142849e611d0f9fe053a0c5d3ecca7761d8c91063"
+      },
+      "nov4-submodules.log": {
+        "bytes": 18500,
+        "sha256": "88435a4f5a7b0b39705d64ba754422dd3a5cee5d774990da2b42856ede05c2e0"
+      },
+      "nov4-tools-install.log": {
+        "bytes": 28774,
+        "sha256": "acd44cb05237759104535dedebb3b652322b4296db3ceced2c621d8284c9b44f"
+      },
+      "nov4-uuid-download.log": {
+        "bytes": 159,
+        "sha256": "47a14daec061d6207c3d6432c02a56283a0dd0a4bd5016a19de3d9456d650860"
+      },
+      "nov4-x11-download.log": {
+        "bytes": 485,
+        "sha256": "50753e90c1411ff359a3d5589d201d88133294365eed9c18ec9e6c587e94829d"
+      }
+    },
+    "archive_sha256": "c12f47484df37d3b59477648e0fb9bfb0ffafc79de671222c1f67c7c3f6b6277",
+    "bytes": 144392
+  },
+  "preservation": {
+    "prior_journal_rows": 457,
+    "prior_journal_sha256": "4938a29fed107708acb32aef727b12ddc589d51a5dc9dfa543ca38e834f38567",
+    "source_files": {
+      "CMakeLists.txt": "8e32bb1d5fca82af7b096672729b93c28e4368bf6be6da1609e42d615e501969",
+      "src/core/libraries/font/fontft_internal.h": "5abc68c46774a5003c22373a1c67edb93da8964d767c3c08e8df9711c399ed20",
+      "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h": "c708ff2090120f55b99f3b3362cf5c4dad89fe848ea12bc4f93812009fbdcc46",
+      "src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp": "9ccac0ba7f3f225ca1da38e3ffcc1ca02e8ea5b6f98c6a8f5adca61d67c6499d",
+      "src/shader_recompiler/frontend/translate/translate.cpp": "bb5eafb100dc59d5a6fd5de81f0456c32e4651e9341c20e9dde8356671dbe087",
+      "src/shader_recompiler/frontend/translate/translate.h": "fddc0e2d6a4a267a31588917591ac47a0ab67377b0126a81f7e55deb306cabd4",
+      "src/shader_recompiler/frontend/translate/vector_alu.cpp": "0e505b90b7f060b8dcbd5899793c7bf0849e962fd7f123c91203b6f58e5d527d",
+      "src/shader_recompiler/ir/opcodes.inc": "4d5470802ab78c35f1b4b234c8f838167650469695efbbbac1417f63bf913a36",
+      "src/shader_recompiler/ir/passes/full_wave_reduction_pass.cpp": "9e492f54d7f5a38bc913451f88d8b083ba12d22124abb9f7ff8fe3528ce030e1",
+      "src/shader_recompiler/ir/passes/ir_passes.h": "89e27bcd75a075e5afa24f46168f832693f0b79bce5f5894995e957721672959",
+      "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp": "e332b3a64f7e96ecec9d12dcceb25a5084e08b06bf7cbff92cfee681ddba6302",
+      "src/shader_recompiler/recompiler.cpp": "0acfc7d503e8cc6f12fc78d98fdae373746666331c5b5cff0b150145717a7261",
+      "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "77d7954e667090082e746bd09c0d6a99cc2f4ceb43da29e4bff0a6a50eae33b0"
+    },
+    "prior_candidate_is_ancestor": true,
+    "current_upstream_is_ancestor": true,
+    "native_runner_changed": false,
+    "protected_binaries_and_user_services_touched": false
+  },
+  "limits": [
+    "Native GoT/GoW graphics, audio, FPS, GPU lifetime and performance remain untested for this source.",
+    "The guarded fold costs 64 shuffles per reduction; native performance is unknown.",
+    "Subgroup32 and general EXEC resurrection are unresolved. Unmatched sequences retain previous lowering.",
+    "Original trace and recovered permutation do not prove this instruction caused device loss.",
+    "DS dedicated seed and guest re-entry remain unfinished. No counter fallback or per-game mode added."
+  ],
+  "next_step": "Same pinned source/binary: native GoT first, then GoW only after confirmed safe exit; 118s TERM + 2s KILL, 8GiB free VRAM, reversible recorded model leases. Compare progress, pending submissions, shader evidence and GPU status. Stop on GPU loss/live or unconfirmed child; no main promotion before native/cross-title acceptance."
+}
