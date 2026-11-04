@@ -19,7 +19,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = 'aafaa0b05300c19e0ad11d5fcc48df9002db6c7ff69c30ea8b90c5d290b27e41'
+OBSERVER_SHA256 = '6e7cb1d3ee21dbe0aef06a4f2529c6f7ddd7b725b60096f1a5afee1b1c3a48b3'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -630,8 +630,8 @@ def main():
         record['vram_free_at_launch'] = free_vram()
         if record['vram_free_at_launch'] < MIN_FREE:
             raise RuntimeError('LESS_THAN_8_GIB_VRAM_FREE')
-        if diagnostics:
-            os.environ['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
+        os.environ['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
+        record['graphics_diagnostics_requested'] = True
         sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
                     '--game', str(game), '--cwd', str(runtime), '--report', str(out / 'capture'),
                     '--seconds', '118']
@@ -667,6 +667,7 @@ def main():
         record['stop_remaining_tests'] = bool(record.get('stop_remaining_tests') or
             record['game_launched'] and (
             record.get('native', {}).get('gpu_failure') or
+            not record.get('native', {}).get('graphics_diagnostics_active') or
             diagnostics and not record.get('native', {}).get('validation_layer_active') or
             not record.get('native', {}).get('owned_child_terminated', False)))
         if record.get('native', {}).get('gpu_failure'):
