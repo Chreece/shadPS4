@@ -1,0 +1,44 @@
+{
+  "schema_version": 2,
+  "record_id": "pr100-offline-generated-spirv-audit-prepared-20261028",
+  "recorded_on": "2026-10-28",
+  "record_type": "OFFLINE_DIAGNOSTIC_RUNNER_LOCAL_TESTED_HOST_VALIDATOR_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "related_prs": [99,100],
+  "context_games": ["CUSA11456","CUSA34384"],
+  "tested_games": [],
+  "prior_review": "20261028T172412183495Z-finite-raw-runtime.json",
+  "reason": "The actual PR100 output proves24 guarded image fetches and resolved finite descriptors, but presentation froze again at55/85/112seconds. Earlier PR99 also froze, so the causal change is unisolated. Prior C++ contract fixtures and narrow binary Phi/branch inspection do not replace complete validation of emitted SPIR-V. Do not add another unrelated shader feature or rerun the same screenshot-only test.",
+  "runner_commit": "63b25083d6811ebc49a1e569b4d815ec584a7f27",
+  "runner_path": "tools/development/c925_finite_raw/audit_generated_spirv.py",
+  "runner_sha256": "137cd94368b4cf30b7aaf5fca93d576bade370f84dd850a79d43ed758c564907",
+  "runner_git_blob": "71163c6cc878427507c3fa7c51f69c8cb9562580",
+  "tests_path": "tools/development/c925_finite_raw/test_audit_generated_spirv.py",
+  "scope": [
+    "Snapshot existing uploaded PR100 SPIR-V, existing isolated-profile modules when current ELF matches, and archived pre-PR100 diagnostic modules; retain per-file SHA/mtime/group provenance. Existing profile module revision is not silently asserted.",
+    "Use installed spirv-val if available. Otherwise download the checksum-pinned Debian Trixie amd64 spirv-tools package and extract only into project scripts. No apt install, sudo, package database modification or host reboot.",
+    "Invoke Khronos validator in universal SPIR-V1.6, Vulkan1.3 strict and Vulkan1.3 scalar-layout modes separately. Record every return code/diagnostic. Optional-feature/environment errors and unsupported newer features require review; no automatic inference that an error caused the freeze.",
+    "Deduplicate identical module bytes but retain every origin. Bound file counts, byte sizes, validation execution and evidence size. Keep target/failed modules plus disassembly for a bounded subset, no raw saves or executable bodies.",
+    "No emulator rebuild or launch, renderer/source/config writes, shader cache deletion, GPU access, Ollama request, debugger, service/container restart or network settings change. Check the current candidate hash remains unchanged during the audit."
+  ],
+  "pinned_package": {
+    "url": "https://deb.debian.org/debian/pool/main/s/spirv-tools/spirv-tools_2025.1~rc1-1_amd64.deb",
+    "sha256": "2cc272ef1340cf0b47de6c5fcccaf91574d7a8f4061abb718d6c639463e85aab",
+    "metadata_source": "https://packages.debian.org/trixie/amd64/spirv-tools/download",
+    "metadata_checked": "Official Debian download page identifies exact filename,4260164-byte size and SHA256. Actual package execution is not tested in the model environment; its network/DNS access could not retrieve the package. Host checksum and executable-version checks precede shader validation."
+  },
+  "local_tests": {
+    "python_syntax": "PASS",
+    "focused_unittest": "10/10 PASS in6.098s with ResourceWarning configured as error",
+    "coverage": "SPIR-V container screening; content dedup preserving origins; input budgets; symlink refusal; unsafe tar path/link filtering; actual child-process exit handling; actual owned-process timeout; bad package checksum prevents extraction/execution; installed-tool no-download path; end-to-end MOCK validator invocation with separate mode outcomes, read-only source hashes and archive creation.",
+    "limits": "Synthetic end-to-end validator is an orchestration fixture, not real SPIR-V semantic validation. No current shader was declared valid by these tests.",
+    "initial_local_correction": "First timeout test emitted a ResourceWarning for an unclosed subprocess output pipe. Finally cleanup now closes that pipe; all ten tests rerun cleanly before publication.",
+    "byte_parity": "GitHub fetched runner blob71163c6c... equals locally tested source blob; downloadable SHA256 recorded above."
+  },
+  "actual_full_spirv_validation": "PENDING_HOST_TOOL_EXECUTION",
+  "native_game_test": "NOT_RUN_AND_NOT_REQUESTED_BY_THIS_RUNNER",
+  "game_effect": "NO_NEW_GRAPHICS_FIX_CLAIM",
+  "decision": "KEEP_PROVEN_FINITE_TRANSLATION; HOLD_RUNTIME_PROMOTION; VALIDATE_ACTUAL_EXISTING_MODULES_OFFLINE_BEFORE_MORE_GPU_TRIALS",
+  "next_test": "Review validator diagnostics with matching module bytes and earlier-version comparison. A validation pass narrows the search but does not prove GPU execution or freeze resolution. Only an evidenced semantics-preserving source correction justifies the next changed-renderer test.",
+  "raw_game_shader_data_published": false
+}

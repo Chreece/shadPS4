@@ -499,24 +499,40 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
         }
         for (const auto& image : stage->images) {
             const u32 num_bindings = image.NumBindings(*stage);
-            bindings.push_back({
-                .binding = binding,
-                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
-                                                   : vk::DescriptorType::eSampledImage,
-                .descriptorCount = num_bindings,
-                .stageFlags = stage_bit,
-            });
-            binding += num_bindings;
+            const auto add_images = [&](u32 count) {
+                bindings.push_back({
+                    .binding = binding,
+                    .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+                                                       : vk::DescriptorType::eSampledImage,
+                    .descriptorCount = count,
+                    .stageFlags = stage_bit,
+                });
+                binding += count;
+            };
+            for (u32 i = 0; i < image.NumImageArrays(); ++i) {
+                add_images(num_bindings);
+            }
+            if (image.is_guest_indexed) {
+                bindings.push_back({
+                    .binding = binding++,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = stage_bit,
+                });
+            }
         }
         for (const auto& sampler : stage->samplers) {
+            const u32 count = sampler.NumBindings(*stage);
             bindings.push_back({
-                .binding = binding++,
+                .binding = binding,
                 .descriptorType = vk::DescriptorType::eSampler,
-                .descriptorCount = 1,
+                .descriptorCount = count,
                 .stageFlags = stage_bit,
             });
+            binding += count;
         }
     }
+    ValidateDescriptorLimits(bindings);
     uses_push_descriptors = binding < instance.MaxPushDescriptors();
     const auto flags = uses_push_descriptors
                            ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR

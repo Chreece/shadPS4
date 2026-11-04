@@ -39,7 +39,8 @@ public:
     void OnGpuUnmap(VAddr address, size_t size);
 
     /// Updates watches in the pages touching the specified region.
-    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) const;
+    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op,
+                            PageOp read_op = PageOp::None) const;
 
     /// Updates watches in the pages touching the inclusive bounds using a mask.
     void UpdatePageWatchersForRegion(VAddr base_addr, const Bounds& bounds,
