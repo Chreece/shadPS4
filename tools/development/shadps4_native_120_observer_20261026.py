@@ -86,20 +86,40 @@ def digest(path):
     return h.hexdigest()
 
 
-def existing_games():
+def existing_games(proc=Path('/proc')):
     found=[]
-    for p in Path('/proc').iterdir():
+    for p in proc.iterdir():
         if not p.name.isdecimal():
             continue
         try:
             if p.stat().st_uid!=os.getuid():
                 continue
-            state=(p/'stat').read_text().rsplit(') ',1)[1][0]
-            exe=Path(os.readlink(p/'exe')).name.lower()
-            if state not in ('X','Z') and exe.startswith('shadps4'):
-                found.append(int(p.name))
-        except (OSError,IndexError,ValueError):
+        except OSError:
+            continue
+        names=[]
+        try:
+            names.append(Path(os.readlink(p/'exe')).name.lower())
+        except OSError:
             pass
+        try:
+            names.append((p/'comm').read_text().strip().lower())
+        except OSError:
+            pass
+        if not any(name.startswith('shadps4') for name in names):
+            continue
+        try:
+            tasks=list((p/'task').iterdir())
+            busy=not tasks
+            for task in tasks:
+                try:
+                    state=(task/'stat').read_text().rsplit(') ',1)[1][0]
+                    busy=busy or state not in ('X','Z')
+                except (OSError,IndexError,ValueError):
+                    busy=busy or task.exists()
+        except OSError:
+            busy=True
+        if busy and p.exists():
+            found.append(int(p.name))
     return found
 
 
@@ -143,7 +163,8 @@ def term_owned(child,phase,deadline=None):
     return None
 
 
-def capture_owned_stop_state(pid, out, proc=Path('/proc')):
+def capture_owned_stop_state(pid, out, proc=Path('/proc'),
+                             filename='owned-process-stop-state.json'):
     state={'pid':pid,'threads':[]}
     process=proc/str(pid)
     try:
@@ -160,7 +181,7 @@ def capture_owned_stop_state(pid, out, proc=Path('/proc')):
             state['threads'].append(item)
     except OSError as error:
         state['error']=str(error)
-    save(out/'owned-process-stop-state.json',state)
+    save(out/filename,state)
 
 
 def summarize(console,out):
@@ -370,6 +391,8 @@ def main():
                 for second in due:
                     if elapsed>=second and second not in taken:
                         taken.add(second)
+                        capture_owned_stop_state(child.pid,report,
+                            filename=f'owned-process-state-{second:03d}s.json')
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
