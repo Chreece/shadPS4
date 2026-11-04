@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -290,8 +291,26 @@ private:
                                           bool indirect, VAddr address, u32 offset,
                                           u32 available_bytes);
 
-    void BindVertexBuffers(const GraphicsPipeline* pipeline);
-    void BindIndexBuffer(u32 index_offset = 0, bool is_indirect = false);
+    struct VertexBufferBindings {
+        VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
+        VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;
+        VertexInputs<vk::Buffer> buffers;
+        VertexInputs<vk::DeviceSize> offsets;
+        VertexInputs<vk::DeviceSize> sizes;
+        VertexInputs<vk::DeviceSize> strides;
+    };
+
+    struct IndexBufferBinding {
+        vk::Buffer buffer{};
+        u64 offset{};
+        u32 size{};
+        vk::IndexType type{};
+    };
+
+    VertexBufferBindings PrepareVertexBuffers(const GraphicsPipeline* pipeline);
+    IndexBufferBinding PrepareIndexBuffer(u32 index_offset, bool is_indirect = false);
+    void BindVertexBuffers(vk::CommandBuffer cmdbuf, const VertexBufferBindings& state) const;
+    void BindIndexBuffer(vk::CommandBuffer cmdbuf, const IndexBufferBinding& state) const;
 
     void ResetBindings(bool is_compute);
 
