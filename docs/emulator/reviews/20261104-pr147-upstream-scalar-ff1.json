@@ -1,0 +1,277 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T17:28:57.060330+00:00",
+  "page_context": "159f19ed-208f-4852-9b44-c4013bd00fd0",
+  "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+  "upstream_commit": "b2ad718fd9f57e8855b137c761899620b8f0aeef",
+  "prs": [
+    148,
+    149
+  ],
+  "native_review": {
+    "archive": "universal-two-games-20261104T171151Z-1704615.tar.gz",
+    "library_file_id": "libfile_947192005a34819194b09749fb4c37cf",
+    "sha256": "610b818c657faabbfde55819b985d1af484459068cef970814f58e8cce437d58",
+    "size_bytes": 4432338,
+    "batch_result": {
+      "exit_code": 3,
+      "runs": [
+        {
+          "schema_version": 2,
+          "record_id": "universal-upstream-20261104T171152Z-1704771",
+          "timestamp_utc": "2026-11-04T17:12:00.351751+00:00",
+          "scope": "UNIVERSAL_SHADPS4",
+          "stage": "NEW_UPSTREAM_REQUIRES_INTEGRATION",
+          "result": "BLOCKED_UPSTREAM_ADVANCED",
+          "exit_code": 3,
+          "requested_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+          "source_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+          "upstream_commit": "b2ad718fd9f57e8855b137c761899620b8f0aeef",
+          "game_launched": false,
+          "graphics_verified": false,
+          "installed_binary_changed": false,
+          "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T171152Z-1704771.tar.gz",
+          "decision": "REINTEGRATE_LATEST_UPSTREAM_BEFORE_BUILD"
+        }
+      ],
+      "graphics_verified": false,
+      "source_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+      "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+      "build_mode": "build",
+      "requested_game_order": [
+        "CUSA34384",
+        "CUSA11456"
+      ]
+    },
+    "full_build_runner_log_reviewed": true,
+    "build_runner_log_sha256": "e814209dae1b2264b9a77e82de43a20db5aa35fadcbc4d38fdb121e2471df169",
+    "configuration_ran": false,
+    "compilation_ran": false,
+    "games_launched": [],
+    "installed_binary_changed": false,
+    "interpretation": "Upstream gate correctly rejected the older reviewed candidate. No new crash, video, menu or gameplay observation exists in this archive."
+  },
+  "validation": {
+    "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+    "source_tree": "d357b4bf821f98da54cbd0a09db6adfcca1c7b81",
+    "upstream_commit": "b2ad718fd9f57e8855b137c761899620b8f0aeef",
+    "prs": [
+      148,
+      149
+    ],
+    "source_change": {
+      "files": 2,
+      "insertions": 2,
+      "deletions": 2,
+      "shader_cache_version": 30
+    },
+    "rebase": {
+      "commits_preserved": 50,
+      "conflicts": 0,
+      "published_trees_match_local": true,
+      "mapping": "nov4g-published-rebase-mapping.json"
+    },
+    "full_executable_build": "PASS Clang 18 Release; source build 7 targets; final revision/link build 4 targets; no errors or warnings in either incremental log",
+    "host_binary_sha256": "664c17f48c8235a8434aca9eabdb6fd8ce76bad314935b0758e64db8e1f1cdc6",
+    "startup_cases": 3,
+    "cpu_suite": {
+      "result": "PASS",
+      "ctests": 31,
+      "renderer_contracts": 7,
+      "srt_checks": 10418,
+      "sparse_ranges": 288,
+      "sparse_scenarios": 7,
+      "sparse_modes": [
+        "recorder",
+        "vulkan-headers"
+      ],
+      "descriptor_vma_abi": "PASS"
+    },
+    "ff1_emitted_operations": {
+      "method": "CPU evaluation of actual emitted SPIR-V function, with normative subgroup-width/poison model for the former ballot operation; not GPU execution",
+      "inputs_per_width": 16514,
+      "modules": [
+        {
+          "file": "nov4g-ff1-w32-new.spv",
+          "sha256": "c293f10ae72178e025d6ac9b7fd422afffcd553dcf9208bcc2e8e42826802e2c",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-ff1-w32-old.spv",
+          "sha256": "3d11088bf5d1ac0bb3703e6af1665c926b9702db81d3d241b2ad278f6994e283",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-ff1-w64-new.spv",
+          "sha256": "c293f10ae72178e025d6ac9b7fd422afffcd553dcf9208bcc2e8e42826802e2c",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-ff1-w64-old.spv",
+          "sha256": "3d11088bf5d1ac0bb3703e6af1665c926b9702db81d3d241b2ad278f6994e283",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w32-l128.spv",
+          "sha256": "1a6826fe5a5d56acc9f9f7912ad361ff4cddafc43f81dc13e4ccd8b67fa21834",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w32-l32.spv",
+          "sha256": "bbb038f14bba048cb386e39d99d35bfe0719e5824b2c8a0fd39a9d1caa12ddd1",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w32-l64.spv",
+          "sha256": "032651234aab6de50fc5f670f97c1265b24ab118ed7f5720da31e7da41290352",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w64-l128.spv",
+          "sha256": "1a6826fe5a5d56acc9f9f7912ad361ff4cddafc43f81dc13e4ccd8b67fa21834",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w64-l32.spv",
+          "sha256": "bbb038f14bba048cb386e39d99d35bfe0719e5824b2c8a0fd39a9d1caa12ddd1",
+          "validation": "PASS"
+        },
+        {
+          "file": "nov4g-homebrew-w64-l64.spv",
+          "sha256": "032651234aab6de50fc5f670f97c1265b24ab118ed7f5720da31e7da41290352",
+          "validation": "PASS"
+        }
+      ],
+      "widths": [
+        {
+          "width": 32,
+          "new_pass": 16514,
+          "old_poison_cases": 6277,
+          "old_defined_mismatches": 0
+        },
+        {
+          "width": 64,
+          "new_pass": 16514,
+          "old_poison_cases": 69,
+          "old_defined_mismatches": 0
+        }
+      ]
+    },
+    "original_homebrew": {
+      "gcn_assembly": "PASS gfx700",
+      "strict_host_c11": "PASS -Wall -Wextra -Werror -fsyntax-only",
+      "shader_sha256": "ae9361721735bf7ffed3b8e4ecc9bb17f64b68616e79416b773b2d67c439659a",
+      "compiled_modules": 6,
+      "find_lsb64_per_module": 2,
+      "workgroups": [
+        32,
+        64,
+        128
+      ],
+      "subgroup_profiles": [
+        32,
+        64
+      ],
+      "inputs": 72,
+      "dispatches": 216,
+      "output_words": 64512,
+      "checks": [
+        "normal EXEC",
+        "zero EXEC",
+        "SCC=1 preserved",
+        "SCC=0 preserved"
+      ],
+      "hardware_executed": false
+    },
+    "retained_replays": {
+      "fragment": {
+        "instructions": 1028,
+        "blocks": 63,
+        "wave64_min": 1,
+        "wave32_reductions": 0
+      },
+      "compute": {
+        "instructions": 2380,
+        "blocks": 115,
+        "wave64_min": 1,
+        "wave64_or": 1,
+        "wave32_reductions": 0
+      },
+      "readfirst": {
+        "instructions": 339,
+        "blocks": 40,
+        "reads": 26,
+        "dynamic_exec": 7,
+        "loop_phi_exec": 6,
+        "profiles": [
+          32,
+          64
+        ]
+      }
+    },
+    "handoff": {
+      "source": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+      "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+      "first_game": "CUSA34384",
+      "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+      "onepaste_sha256": "318f6f348350ae571972ab5279db5c9f0c6fec26c42b532ed23e2db43ea0befb",
+      "boundary_fixture": "PASS valid handoff, bad checksum rejection, failed download rejection, temporary cleanup; native launch mocked",
+      "same_binary_for_both": true,
+      "per_game_options": false,
+      "automated_input": false,
+      "term_seconds": 118,
+      "kill_grace_seconds": 2,
+      "minimum_free_vram_gib": 8,
+      "stop_remaining_after_gpu_loss_or_live_process": true,
+      "defer_ollama_restore_after_gpu_loss": true
+    },
+    "failed_attempts": [
+      {
+        "attempt": "backend fixture compile",
+        "result": "CORRECTED",
+        "detail": "Fixture used nonexistent ConstU64 helper; changed to existing Constant(U64,0ULL). Production was unchanged."
+      },
+      {
+        "attempt": "CPU suite launch",
+        "result": "CORRECTED",
+        "detail": "Initial PATH lacked cmake. Reran with installed compiler/tool PATH and LD_LIBRARY_PATH; all suites passed."
+      },
+      {
+        "attempt": "SPIR-V CPU evaluator",
+        "result": "CORRECTED",
+        "detail": "Fixture initially parsed an unrelated float constant as integer. Typed parsing corrected; all emitted-operation checks passed."
+      }
+    ],
+    "limits": [
+      "No GPU device or game run in this environment; host validation does not establish game recovery or universal compatibility.",
+      "GoW DS ordered-counter initialization and authentic guest continuation remain incomplete; existing assertion remains.",
+      "GoT last native result is intro followed by GPU context loss, without accepted menu or gameplay.",
+      "OpenOrbis SDK linking and PS4 hardware execution of the original scalar probe remain unverified.",
+      "The scalar fix is independent of subgroup width, but does not implement complete guest-wave64 execution on subgroup32."
+    ]
+  },
+  "artifacts": [
+    {
+      "file": "ff1-64-openorbis-20261104.zip",
+      "library_file_id": "libfile_8e409cb350188191b875059e146507bc",
+      "sha256": "1db84e397605a70162a6b63239364c8524439d742bf1d07742fd8542a3857577",
+      "size_bytes": 5016
+    },
+    {
+      "file": "ff1-64-host-validation-20261104.zip",
+      "library_file_id": "libfile_0d6ec5a81d748191b29139616d27d199",
+      "sha256": "769fb287710f9ff42d173156eb4620cf164fc5fc883bfa9d8fae549cf08d894d",
+      "size_bytes": 65538
+    }
+  ],
+  "previous_game_evidence": {
+    "archive": "universal-two-games-20261104T162521Z-1330280.tar.gz",
+    "source": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+    "gow": "DS_ORDERED_COUNT assertion at 25.377s; loading screenshot only; terminated; no GPU-loss marker",
+    "got": "Intro visible at 25s; GPU context loss at 62.136s; terminated; no accepted menu/gameplay/audio"
+  },
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "next_step": "Run the exact candidate with the pinned two-game runner, GoW first and GoT only after safe exit. No per-game mode changes. Record native progress and GPU/lifetime behavior; retain DS initialization/continuation limitation."
+}
