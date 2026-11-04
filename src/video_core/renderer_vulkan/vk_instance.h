@@ -219,6 +219,16 @@ public:
         return image_load_store_lod;
     }
 
+    bool IsSampledImageNonUniformIndexingSupported() const {
+        return bool(vk12_features.descriptorIndexing) &&
+               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&
+               bool(features.shaderSampledImageArrayDynamicIndexing);
+    }
+
+    bool IsSamplerArrayNonUniformIndexingSupported() const {
+        return IsSampledImageNonUniformIndexingSupported();
+    }
+
     /// Returns true when VK_AMD_gcn_shader is supported.
     bool IsAmdGcnShaderSupported() const {
         return amd_gcn_shader;
