@@ -1,0 +1,90 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-01T18:14:08.722764+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "prior_integration": "ea96a8b349c6d044a7610749f9f47f2734e438b3",
+  "upstream_commit": "8a66adabf74072e24162b098d7bfd3156b475393",
+  "fork_main": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "evidence": {
+    "archive": "universal-two-games-20261101T174314Z-1154303.tar.gz",
+    "bytes": 13206971,
+    "sha256": "c98a5b2a6e2c569df29c1c23efac583c7260d5bc73cdf9f13b332f3a0a322770",
+    "result": "BLOCKED_UPSTREAM_ADVANCED_NO_BUILD_OR_GAME",
+    "source_commit": "ea96a8b349c6d044a7610749f9f47f2734e438b3",
+    "observed_upstream": "6add101d85bc50e3cc79c7e9627aa6479700461e",
+    "binary_sha256": null,
+    "game_launched": false
+  },
+  "recovered_sources": [
+    {
+      "url": "https://github.com/nikmparis217-ux/shadPS4/tree/pr-ds-ordered-count",
+      "head": "c69a82869b429382985642d191a953b316808800",
+      "implementation_commit": "b9b2ce321bd97767e6f80bf3fb600350100330bc",
+      "retained": "TG_SIZE SGPR layout; recomputed for 3D linear workgroup index, wave/group append mode and correct next SGPR",
+      "not_imported": "Cross-workgroup GPU spin loop: scheduler forward progress not established, counter payload/seed/order not PS4-hardware-verified"
+    },
+    {
+      "url": "https://github.com/Chreece/shadPS4/pull/117",
+      "head": "aeefd9c2b2e79609cf7d57f1b9719840549e3bcc",
+      "retained": "Production decoder, typed IR, real register checkpoint/capture emitters, bounded owned buffers, direct/indirect dispatch, GPU readback/host resolution infrastructure",
+      "qualification": "Legacy packer host model is a hypothesis/diagnostic foundation; no enabled normal DS execution or resumed guest shader"
+    }
+  ],
+  "changes": [
+    "Rebase cumulative integration onto current upstream; preserve established fixes and original evidence. Upstream draw-submission option retained at upstream default, no title override used.",
+    "Recover selective PR117 production source without replacing current uniform-buffer-store, SRT or per-permutation ownership fixes.",
+    "Compute allocation is (VGPRS+1)*4, including 256 registers; widen runtime allocation field from 8 to 9 bits while retaining 32-bit property word.",
+    "Initialize optional TG_SIZE after enabled TGID registers; include TG_SIZE, append mode and LDS size in compute specialization identity. Hardware validation remains pending.",
+    "Isolate capture caches and skip shader binary, metadata and pipeline persistence for incomplete capture variants. Keep stable Info ownership for every normal/capture permutation.",
+    "Preserve guest LDS in storage with storage-buffer memory semantics; retain upstream divergence-aware barrier insertion; reject capture when a later workgroup barrier could strand waves.",
+    "Port new BufferCache API and access masks, reserve three capture descriptors in bounded uniform-store discovery, reject incompatible wave/subgroup/scratch state.",
+    "Explicit one-shot capture saves bounded original GPU packets and first 32 register checkpoints before complete checkpoint validation; runner archives up to two files of at most 4 MiB with hashes. Completion is never claimed from file existence.",
+    "Shader binary/meta cache versions advance to 16/9; update existing metadata version contract. No new emulator tests committed."
+  ],
+  "validation": {
+    "universal_cpu": "PASS: 31 CTest cases across nine suites, seven renderer contracts, 10418 production SRT checks, sparse production methods (288 ranges, seven scenarios, both backends), descriptor/mapping/ABI fixtures",
+    "translation_units": "PASS: 12 modified production translation units with GCC 14 C++23; rasterizer rechecked after final upstream rebase",
+    "spirv": "PASS: 12 modules from exact production checkpoint/cut emitters with 4/64/256 VGPRs, LDS enabled/disabled and lane 0/63; Vulkan 1.3 spirv-val; normal execution refusal",
+    "cache": "PASS ASan+UBSan: 30 production cache permutations, shrink-before-walker, reuse, six disk-load/collision cases; two separate capture permutations and zero capture metadata writes",
+    "compute_ir": "PASS ASan+UBSan: 5760 exact production compute IR evaluations, all 64 VGPR settings including 256, six specialization-key mutations, seven actual capture barrier/subgroup rejection cases",
+    "recovered_models": "PASS: all 18 prior standalone PR117 CPU programs, across initial and continuation runs. Initial run interrupted by temporary header removal during rebase; rerun remaining six on final tree passed. Models do not establish guest hardware semantics.",
+    "recovered_extracted_production": "PASS prior frontend, live register capture and capture-cut fixtures. Old textual IR contract runner is stale against upstream API/access-mask/helper changes; not claimed as passing.",
+    "runner": "PASS actual evidence-copy block bounds/minimum/symlink/two-file/SHA checks, capture flag and continuation=false; Python compilation and Bash syntax",
+    "hardware_probe": "All 16 authored Bonaire kernels assemble with LLVM 18 and host C11 syntax passes. OpenOrbis link and PS4 execution not run.",
+    "native_full_build": "NOT_RUN on this candidate; pinned host runner will build before launch",
+    "gpu_capture": "NOT_RUN",
+    "graphics_verified": false,
+    "ds_continuation": "NOT_IMPLEMENTED"
+  },
+  "hardware_probe": {
+    "file": "compute-wave-openorbis.zip",
+    "sha256": "2a5ff408428975a4eaa79c66e3c2998d44fc9ba85a7d0f98aad7de4636a5a35b",
+    "url": "https://chatgpt.com/library?file_id=libfile_c7d25980c54c81919ca41461ccad6ed1&account_id=personal",
+    "scope": "48 authored compute dispatches; TG_SIZE placement/modes and v255 allocation; no DS counter instructions"
+  },
+  "remaining": [
+    "Authentic PS4 ordered-counter payload, counter initialization/lifetime and wave creation order/overflow",
+    "Compile and execute post-DS guest continuation without replaying earlier effects",
+    "Native clean build, authentic GoW capture, GoT rendering and cross-platform validation"
+  ],
+  "decision": "Keep PR118 draft and fork main unchanged. Run global SHADPS4_PR117_CAPTURE_ONCE=1 bounded GoW then GoT. A GoW stop after first-pass capture is expected and is not game success.",
+  "validation_attempts": [
+    "Initial upstream API port compile errors (ObtainBuffer bool and SPIR-V enum |=) corrected; all 12 modified translation units pass C++23 syntax checking.",
+    "Original metadata test expected version 8; existing contract maintained for version 9; complete universal CPU runner passes.",
+    "Temporary SPIR-V fixture initially duplicated decorations on deduplicated Sirit types; fixture corrected and 12 production-emitted modules validate.",
+    "Temporary IR fixture needed repository include root and actual DS operand arity; later compilation overlapped rebase and was discarded. Final stable-tree ASan+UBSan fixture passes.",
+    "Recovered model run interrupted while rebase temporarily removed new headers; remaining six programs rerun successfully.",
+    "Original recovered text-contract script is stale for current APIs/helper names/access masks. Behavioral/extracted-production checks are reported independently; no claim that this script passes."
+  ],
+  "validation_logs_sha256": {
+    "universal-ds-cpu.log": "4c24757555930bbbaa4d6d15aeebc4e77c20aa2615a46066edb0574ac44cdeb6",
+    "ds-syntax.log": "9b3faa6e3ca7ca8ac9442fe66750b70c94e43f9878816cc59586a77c36255050",
+    "ds-extra-syntax.log": "1df71d4fd06c6244b6eb907ee4f497cd4690b25e062cf7059fec85ce6de92b6f",
+    "ds-rebase-syntax.log": "e273d605406782f699f2223b696d42f98feaa01c59fccc21e99b1d4f7418b105",
+    "ds-production-validation.log": "c2f57e8d7a41e68997f16ffc21ff67ea94b7a4309a86f1be5522573f49cf7bba",
+    "ds-cache-validation.log": "3d22757f2d083eaff280df6cef85dccfe8f954c5d59b7bc1d182a6f7bbc30ea0",
+    "tg-production-validation.log": "65d4390b2142048af34a050ca57d308fea18d7ed2e3552c5499e42750524a232",
+    "recovered-ds-models.log": "1bee3327e0f3f35404e82a10e7d2cdf94a2375417c1868578209df5b17a81ca0",
+    "recovered-ds-models-remaining.log": "8b8564bed21fde241f459747fa2d2f11b5ee6eb21610a53dc18c5e5caed2621a"
+  }
+}
