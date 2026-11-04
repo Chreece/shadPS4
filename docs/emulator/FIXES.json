@@ -524,7 +524,19 @@
       "main_merge_sha": null,
       "observed_game_effects": "PR130 build/CPU/startup PASS; automatic buffer/image publication confirmed with unchanged legacy settings. GoT loading then black; GPU context loss41.032s, child exit confirmed. GoW skipped.",
       "negative_result_or_prohibition": "No per-game readback mode, shader/title/vendor exceptions, or recovery inference from build/host tests. Legacy readback settings cannot gate core correctness.",
-      "next_test": "Investigate automatic publication ordering, alias overlap and unnecessary image synchronization from the captured evidence. No main promotion or claim of compatibility with other games."
+      "next_test": "PR131 replaces eager eligible-image publication with access-driven copies; run its exact checkpoint with the unchanged bounded runner. PR130 native failure remains recorded."
+    },
+    {
+      "id": "automatic-image-demand-publication",
+      "subsystem": "gpu-coherence",
+      "status": "BUILD_AND_HOST_CHECKS_PASS_NATIVE_PENDING",
+      "related_prs": [
+        131
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native run of PR131. Latest PR130 GoT remains black then GPU loss; GoW skipped.",
+      "negative_result_or_prohibition": "No game/shader/vendor exceptions or readback options. Host orchestration tests are not real Vulkan execution, and current eligibility does not cover arbitrary tiled/MSAA/stencil images.",
+      "next_test": "Build final checkpoint SHA; GoT then GoW with unchanged bounded diagnostic runner and DS capture. <=120s each, no automated input, no readback setting changes. Require actual image-demand/publication evidence when accessed. Stop after GPU failure or unconfirmed child exit. Preserve existing >=8GiB VRAM/display/process preflights."
     }
   ]
 }
