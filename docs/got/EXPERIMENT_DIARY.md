@@ -213,3 +213,10 @@ October 27 native ELF `395682a4...` visibly reached menu and partial world.
 Current `92c1a01e` loses context at 41.901s and lacks the older GPU-indexed
 image/sampler table routing. The unchanged captured shaders show the latest
 SRT fix did not recover GoT. See the [shared preservation review](../emulator/reviews/20261102-got-preservation-gap.json) and append-only universal journal.
+
+
+## 2026-11-02 19:26 native PR122: bounded black screen; PR123 candidate
+
+Source `df253cdc175dcf90f634ef4d90f47d1c386ee089` / binary `6014649debf24b4be4f289b00d96df9d32541987a5de689059cf64e12a36e7f6` completed 119.517 seconds, exit 0 after the bounded observer stop. Frames at 80 and 110 seconds are black; the latter shows a 29-FPS overlay. No menu/world recovery. Seven strided material discoveries had zero-record host V#; no indexed-image bind report establishes that BC5/11 was exercised. This is retained as a visual failure in the [shared review](../emulator/reviews/20261102-indexed-numeric-register-restoration.json) and append-only journal.
+
+[PR123](https://github.com/Chreece/shadPS4/pull/123) adds generic indexed numeric image arrays for the GoW blocker and restores an independently reproduced SH register range router. Its relationship to GoT black output remains unproven. Build/CPU/SPIR-V checks pass; native retest pending, main unchanged. DS seed/re-entry remains unfinished.
