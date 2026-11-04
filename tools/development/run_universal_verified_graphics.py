@@ -38,6 +38,10 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     recent = []
     recorded_work_hashes = []
     waiting_work_hashes = []
+    first_wait_work_hashes = []
+    first_wait_window = None
+    in_first_wait = False
+    first_wait_hashes_truncated = False
     work_reason = None
     current_hash = None
     capture_completed = False
@@ -63,11 +67,21 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 work_begin = re.match(r'GRAPHICS_WORK_BEGIN reason=(\S+)', line)
                 if work_begin:
                     work_reason = work_begin.group(1)
+                    in_first_wait = (first_wait_window is None and
+                                     work_reason in ('wait-timeout', 'wait-error'))
+                    if in_first_wait:
+                        first_wait_window = line.strip()
                 elif line.startswith('GRAPHICS_WORK_END'):
                     work_reason = None
+                    in_first_wait = False
                 work = re.match(r'GRAPHICS_WORK seq=\d+ .*\bshader=([0-9a-fA-F]+)\b', line)
                 if work:
                     shader_hash = format(int(work.group(1), 16), '016x')
+                    if in_first_wait and shader_hash not in first_wait_work_hashes:
+                        if len(first_wait_work_hashes) < 64:
+                            first_wait_work_hashes.append(shader_hash)
+                        else:
+                            first_wait_hashes_truncated = True
                     if shader_hash in recorded_work_hashes:
                         recorded_work_hashes.remove(shader_hash)
                     recorded_work_hashes.append(shader_hash)
@@ -121,6 +135,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         if match and match.group(1) not in priority:
             priority.append(match.group(1))
     priority.extend(h for h in reversed(blocked) if h not in priority)
+    priority.extend(h for h in first_wait_work_hashes if h not in priority)
     priority.extend(h for h in reversed(waiting_work_hashes) if h not in priority)
     priority.extend(h for h in reversed(recorded_work_hashes) if h not in priority)
     priority.extend(h for h in reversed(resource_warning_hashes) if h not in priority)
@@ -138,7 +153,9 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             if path.suffix in ('.bin', '.spv'):
                 variants.setdefault(path.stem, []).append(path)
         variant_order = sorted(variants, key=lambda stem:
-                               (-max(p.stat().st_mtime_ns for p in variants[stem]), stem))
+                               ({p.suffix for p in variants[stem]} != {'.bin', '.spv'},
+                                stem.endswith('.fetch'),
+                                -max(p.stat().st_mtime_ns for p in variants[stem]), stem))
         binary_groups.append([sorted(variants[stem]) for stem in variant_order])
     saved_ir = []
     total_ir = 0
@@ -163,7 +180,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 continue
             variant = group[depth]
             sizes = [path.stat().st_size for path in variant]
-            if len(saved_binary) + len(variant) > 32 or total_binary + sum(sizes) > 8 * 1024**2:
+            if len(saved_binary) + len(variant) > 128 or total_binary + sum(sizes) > 8 * 1024**2:
                 continue
             for path, size in zip(variant, sizes):
                 target = out / 'blocked-shader-binary' / path.name
@@ -171,6 +188,11 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 shutil.copyfile(path, target)
                 saved_binary.append({'file': path.name, 'bytes': size, 'sha256': digest(target)})
                 total_binary += size
+    saved_gcn = {Path(item['file']).stem for item in saved_binary
+                 if item['file'].endswith('.bin') and not item['file'].endswith('.fetch.bin')}
+    saved_spirv = {Path(item['file']).stem for item in saved_binary
+                   if item['file'].endswith('.spv')}
+    compiled_pairs = saved_gcn & saved_spirv
     return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
             'validation_named_hashes': validation_hashes,
             'validation_compilation_hashes': validation_compilation_hashes,
@@ -179,13 +201,18 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             'automatic_coherence_enabled': automatic_coherence,
             'recorded_gpu_work_hashes': list(reversed(recorded_work_hashes)),
             'waiting_gpu_work_hashes': list(reversed(waiting_work_hashes)),
+            'first_wait_window': first_wait_window,
+            'first_wait_work_hashes': first_wait_work_hashes,
+            'first_wait_hashes_truncated': first_wait_hashes_truncated,
+            'first_wait_missing_binary_hashes': [h for h in first_wait_work_hashes
+                if not any(h in stem for stem in compiled_pairs)],
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
             'saved_binary': saved_binary, 'saved_binary_bytes': total_binary,
             'binary_unrepresented_hashes': [h for h in priority
-                if not any(h in item['file'] for item in saved_binary)],
-            'binary_limit_bytes': 8 * 1024**2, 'binary_limit_files': 32,
+                if not any(h in stem for stem in compiled_pairs)],
+            'binary_limit_bytes': 8 * 1024**2, 'binary_limit_files': 128,
             'capture_completed_marker': capture_completed,
             'console_tail_complete': console.is_file() and console.stat().st_size <= 16 * 1024**2}
 
