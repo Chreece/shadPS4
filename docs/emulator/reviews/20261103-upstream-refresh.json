@@ -1,0 +1,586 @@
+{
+  "native_review": {
+    "schema_version": 2,
+    "record_id": "universal-graphics-20261103T043654Z-3202137-review",
+    "timestamp_utc": "2026-11-03T04:54:32.915122+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "archive": "universal-two-games-20261103T043653Z-3202130.tar.gz",
+    "archive_sha256": "d1881d073681d1d3d1d1b7dbced2c39eba186f88dcdd23a78faa3369290c55a9",
+    "pull_request": 124,
+    "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+    "runner_commit": "aef377d7fbce4923738aeae00c1ab247a0c0edcc",
+    "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+    "upstream_main_checked": "8729018155e54f305b6bc7576f850e756ffdd13c",
+    "game_launched": false,
+    "tested_games": [],
+    "context_games": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "result": "BLOCKED_UPSTREAM_ADVANCED_BEFORE_GAME_LAUNCH",
+    "native_record": {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261103T043654Z-3202137",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-03T04:36:54.042853+00:00",
+      "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261103T043654Z-3202137.tar.gz",
+      "result": "PREFLIGHT_FAILED",
+      "runner_commit": "aef377d7fbce4923738aeae00c1ab247a0c0edcc",
+      "runner_sha256": "9e550de4b1dc6a7ab4fa37d41269eec8d36aff24dac103221c966a7e3bd2fa4f",
+      "vulkan_diagnostics_requested": true,
+      "context_games": [
+        "CUSA11456"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261102T195315Z-3831723/result.json",
+      "upstream_main_checked": "8729018155e54f305b6bc7576f850e756ffdd13c",
+      "stop_remaining_tests": true,
+      "error": "BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing",
+      "tested_games": [],
+      "ordered_gds_capture_requested": true,
+      "ordered_gds_evidence": [],
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [],
+        "validation_named_hashes": [],
+        "recent_compiled_hashes": [],
+        "priority_hashes": [],
+        "saved_ir": [],
+        "saved_bytes": 0,
+        "limit_bytes": 20971520,
+        "limit_files": 48,
+        "saved_binary": [],
+        "saved_binary_bytes": 0,
+        "binary_limit_bytes": 8388608,
+        "binary_limit_files": 32,
+        "capture_completed_marker": false,
+        "console_tail_complete": false
+      },
+      "exit_code": 1
+    },
+    "interpretation": "Neither GoT nor GoW ran. No Vulkan-layer preflight, screenshots, shader captures, runtime validation or new crash evidence. The existing verified binary passed identity checks before the upstream ancestry gate rejected it.",
+    "installed_binary_changed": false,
+    "main_changed": false,
+    "decision": "REBASE_RETAINED_PATCHES_ON_CURRENT_UPSTREAM_THEN_BUILD_AND_CAPTURE",
+    "followup_pull_request": 125,
+    "review_file": "docs/emulator/reviews/20261103-upstream-refresh.json"
+  },
+  "integration_review": {
+    "schema_version": 2,
+    "record_id": "upstream-refresh-87290181-20261103",
+    "timestamp_utc": "2026-11-03T05:11:07.690242+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 125,
+    "previous_pull_request": 124,
+    "previous_upstream": "2183807e592b36d4440384878165b43d930c1dee",
+    "upstream_main_checked": "8729018155e54f305b6bc7576f850e756ffdd13c",
+    "local_code_commit": "81e06611955bd8fe8e8ee903ed65e9d0ee592106",
+    "published_code_commit": "53ab94fcea848becbd45255f0d7d530b1abc4592",
+    "verified_code_tree": "02646d49d8684673f377c41455a6e974f9a42b3c",
+    "result": "UPSTREAM_REBASE_BUILD_CPU_PASS_NATIVE_GPU_RETEST_PENDING",
+    "game_launched": false,
+    "tested_games": [],
+    "context_games": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "preservation": {
+      "old_head": "aef377d7fbce4923738aeae00c1ab247a0c0edcc",
+      "upstream": "8729018155e54f305b6bc7576f850e756ffdd13c",
+      "local_rebased_head": "81e06611955bd8fe8e8ee903ed65e9d0ee592106",
+      "published_rebased_head": "53ab94fcea848becbd45255f0d7d530b1abc4592",
+      "tree": "02646d49d8684673f377c41455a6e974f9a42b3c",
+      "changed_files": [
+        "src/core/file_sys/fs.cpp",
+        "src/core/file_sys/fs.h"
+      ],
+      "upstream_files_exact": true,
+      "all_other_tracked_files_unchanged": true,
+      "equivalent_replayed_commits": 11,
+      "range_diff": " 1:  6c5aef67 =  1:  f0b406f9 Rebase retained universal fixes and source evidence onto upstream 2183807e\n 2:  2c019cca =  2:  e4e84a8d Restore generic indexed descriptor sampling from recovered source\n 3:  96c5742b =  3:  6d391c90 Journal recovered renderer lineage and native build validation\n 4:  26f09e63 =  4:  5f6a2d7d Restore descriptor dependencies and scalar contracts lost during integration\n 5:  f6c7b43e =  5:  37a711fb Record PR120 native regressions and PR121 contract recovery evidence\n 6:  44008028 =  6:  e9fba7d1 Restore compatible texture layer growth and biased BC5 numeric conversion\n 7:  df253cdc =  7:  60d3e861 Journal both PR121 crashes and reviewed texture contract restoration\n 8:  cbd7c717 =  8:  a9b51ec7 Support numeric image variants in indexed tables and restore bounded SH register writes\n 9:  c6b126c3 =  9:  9ddbd3ca Record PR122 native failures and indexed numeric candidate validation\n10:  0994813e = 10:  ab59c7ad Capture runtime Vulkan validation with verified native binaries\n11:  aef377d7 = 11:  81e06611 Record PR123 native GPU loss and validation capture checkpoint\n",
+      "journal_prefix": {
+        "bytes": 840114,
+        "rows": 402,
+        "sha256": "e293fdeff48e1f719dea420b4ea7882a86ea3453901be96f26ca1ce18f95c83d"
+      },
+      "pinned_submodule_count": 54,
+      "runner_hashes": {
+        "scripts/shadps4-universal-two-game-check.sh": "e8b7ed0d0fe5475cd3e9979bdb211384dee76584d6da3a187cc85a183c538076",
+        "scripts/shadps4-universal-upstream-build.sh": "6f827be5ef09ff9e296a970c7c02d3ebda7b4c05d5d4a1dd79189716968e6416",
+        "tools/development/run_universal_verified_graphics.py": "9e550de4b1dc6a7ab4fa37d41269eec8d36aff24dac103221c966a7e3bd2fa4f",
+        "tools/development/shadps4_native_120_observer_20261026.py": "cfdb4de4cf4a74f18f26bc4a84410fb8eb1c7ba2751c39ec0e013875b4525545"
+      }
+    },
+    "upstream_change": {
+      "commit": "8729018155e54f305b6bc7576f850e756ffdd13c",
+      "pull_request": "shadps4-emu/shadPS4#5568",
+      "description": "Sort mount registrations by descending guest prefix length; normalize host path spelling and require component boundary for reverse lookup.",
+      "newly_authored_emulator_semantics": false,
+      "new_renderer_cpu_ds_or_runner_changes": false
+    },
+    "validation": {
+      "full_gcc14_release_compile_link": "PASS",
+      "build_environment": "Ubuntu 24.04 x86_64; GCC14, Ninja, Release; isolated dependency SDK; 54 exact pinned recursive submodules",
+      "local_binary_sha256": "26e79eeea50fc91aea52e8dc3bd06b1b4fed6b200b72171ac1e841a138cf0667",
+      "cli_startup_scenarios": 3,
+      "cli_result": "NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN",
+      "universal_cpu_regressions": "PASS",
+      "ctest_cases": 31,
+      "ctest_suites": 9,
+      "source_contract_checks": 7,
+      "production_srt_jit_checks": 10418,
+      "sparse_ranges_per_mode": 288,
+      "sparse_scenarios_per_mode": 7,
+      "sparse_modes": [
+        "recorder",
+        "vulkan-headers"
+      ],
+      "descriptor_pool_vma_hle_abi": "PASS",
+      "production_mount": [
+        {
+          "variant": "refreshed",
+          "exit_code": 0,
+          "stdout": "PRODUCTION_MOUNT_LOOKUP_PASS checks=114 permutations=6 GPU_NOT_RUN\n",
+          "stderr": "",
+          "production_objects_used": true,
+          "gpu_run": false
+        },
+        {
+          "variant": "prior_mount",
+          "exit_code": 1,
+          "stdout": "",
+          "stderr": "FAIL: longest guest component prefix\n",
+          "production_objects_used": true,
+          "gpu_run": false
+        }
+      ],
+      "current_production_unlink": {
+        "tests": [
+          {
+            "case": "missing",
+            "exit_code": 0,
+            "output": "PASS: missing\n"
+          },
+          {
+            "case": "sce_missing",
+            "exit_code": 0,
+            "output": "PASS: sce_missing\n"
+          },
+          {
+            "case": "null",
+            "exit_code": 0,
+            "output": "PASS: null\n"
+          },
+          {
+            "case": "long_path",
+            "exit_code": 0,
+            "output": "PASS: long_path\n"
+          },
+          {
+            "case": "directory",
+            "exit_code": 0,
+            "output": "PASS: directory\n"
+          },
+          {
+            "case": "read_only",
+            "exit_code": 0,
+            "output": "PASS: read_only\n"
+          },
+          {
+            "case": "unknown_mount",
+            "exit_code": 0,
+            "output": "PASS: unknown_mount\n"
+          },
+          {
+            "case": "success",
+            "exit_code": 0,
+            "output": "PASS: success\n"
+          },
+          {
+            "case": "open_file",
+            "exit_code": 0,
+            "output": "PASS: open_file\n"
+          },
+          {
+            "case": "already_removed",
+            "exit_code": 0,
+            "output": "PASS: already_removed\n"
+          },
+          {
+            "case": "no_host",
+            "exit_code": 0,
+            "output": "PASS: no_host\n"
+          },
+          {
+            "case": "errno_mapping",
+            "exit_code": 0,
+            "output": "PASS: errno_mapping\n"
+          },
+          {
+            "case": "io_errors",
+            "exit_code": 0,
+            "output": "PASS: io_errors\n"
+          }
+        ],
+        "permission_case": "NOT_RUN sandbox cannot drop uid/gid",
+        "fixture_changes": "Temporary exact-function extraction, plus current Exists/InvalidateCache mount stubs; production source unchanged."
+      },
+      "runner_python_bash_syntax": "PASS",
+      "runner_content_unchanged": true,
+      "new_repository_tests": false,
+      "native_gpu_execution": "NOT_RUN",
+      "native_vulkan_validation": "NOT_RUN",
+      "hardware_test": "NOT_RUN; upstream change imported unchanged; no new emulator behavior authored"
+    },
+    "attempts": [
+      {
+        "stage": "dependency_bootstrap",
+        "result": "FAILED_THEN_RECOVERED",
+        "details": "Initial apt sandbox setgroups failed; root sandbox option allowed metadata update. System install then failed cache/archive permissions and exited 100 without installation. Download-only packages were extracted into an isolated SDK."
+      },
+      {
+        "stage": "configure",
+        "result": "FAILED_THEN_PASS",
+        "details": "Initial configure lacked XTEST dependencies. Added isolated SDL/XTest/Wayland development packages; configure-2 passed."
+      },
+      {
+        "stage": "full_build_1",
+        "result": "FAILED",
+        "details": "libusb linux_udev.c could not find libudev.h. -k0 completed independent work; corrected local development-header search path. No production source edit."
+      },
+      {
+        "stage": "full_build_2",
+        "result": "INTERRUPTED_AFTER_HEADER_CONFLICT",
+        "details": "Broad SDK CPATH selected Ubuntu Vulkan 1.3 headers ahead of the pinned Vulkan 1.4 headers, causing missing eMesaKosmickrisp and secondary imgui errors. Interrupted only this owned build. Restricted CPATH to needed udev/UUID/X11 headers and deleted all 122 compiled application objects; no mixed-header objects retained."
+      },
+      {
+        "stage": "full_build_3",
+        "result": "FAILED",
+        "details": "All application objects rebuilt with verified pinned Vulkan headers. kernel.cpp alone lacked uuid/uuid.h; exposed UUID and X11 headers in narrow SDK include directory. Remaining independent objects completed."
+      },
+      {
+        "stage": "full_build_4",
+        "result": "PASS",
+        "details": "Recompiled kernel.cpp and linked complete Release shadps4. Final incremental log contains zero compiler errors/warnings; earlier complete build logs contain warnings, recorded separately."
+      },
+      {
+        "stage": "legacy_unlink_fixture",
+        "result": "FAILED_THEN_ADAPTED_OUTSIDE_REPOSITORY",
+        "details": "Old fixture extraction terminator does not match current production source. Temporary brace-based extraction uses exact current syscall bodies and real IOFile, with current Exists/InvalidateCache mount stubs. Thirteen cases pass; permission case not run because uid/gid cannot be dropped. No repository tests changed."
+      },
+      {
+        "stage": "production_mount_counterexample",
+        "result": "PASS_NEW_EXPECTED_FAIL_OLD",
+        "details": "Actual refreshed production objects pass 114 checks over all six registration orders. Replacing only fs.cpp object with the old production Mount implementation fails longest guest component prefix. This is not a complete historical-binary A/B."
+      }
+    ],
+    "limitations": [
+      "No game ran in the uploaded archive or local validation. Native Vulkan layer availability and activation remain unchecked on the game host.",
+      "Last actual GoW remains PR123 GPU context loss at 29.354 seconds with loading screen only. Last actual GoT remains df253cdc black at 80/110 seconds. Neither title is recovered.",
+      "All seven DS wave operands were confirmed previously; dedicated ordered-counter seed and guest re-entry remain unfinished.",
+      "Mount lookup validation does not establish a cause or fix for black output/GPU loss. Vulkan diagnostics alter overhead and scheduling; diagnostic FPS is not performance acceptance.",
+      "Old branches, protected native binaries and main retained; no promotion based on build/CPU-only evidence."
+    ],
+    "main_changed": false,
+    "main_sha_checked": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "historical_binaries_changed": false,
+    "next_test": {
+      "source_branch": "fix/upstream-refresh-20261103",
+      "mode": "build",
+      "runner_sha256": "e8b7ed0d0fe5475cd3e9979bdb211384dee76584d6da3a187cc85a183c538076",
+      "game_order": [
+        "CUSA11456",
+        "CUSA34384"
+      ],
+      "vulkan_diagnostics": true,
+      "ds_capture_once": true,
+      "max_seconds_per_game": 120,
+      "automatic_input": false,
+      "stop_remaining_on_gpu_failure_or_unconfirmed_stop": true
+    },
+    "decision": "KEEP_DRAFT_PR125; BUILD_AND_RUN_NATIVE_VALIDATION; NO_MAIN_PROMOTION"
+  },
+  "replayed_commits": [
+    {
+      "old": "6c5aef67f3eff13722bc53db9f2c367f0b05be47",
+      "new_local": "f0b406f9c6e18ecdc1e34da423a917f70a8f61d0",
+      "old_tree": "7f99c47b79a075f2f472f15a0ae1c92e226083e7",
+      "new_tree": "8c8dee3dd3e09367a9079b1091121c96c71ba491",
+      "message": "Rebase retained universal fixes and source evidence onto upstream 2183807e\n\nPreserves the exact integration and audit tree from PRs #118 and #119, with upstream libSceJpegDec #5607 integrated. Original reviewed commits remain available on their existing branches. Native game rendering is not promoted by this rebase.",
+      "published": "d840ff6a232508fdb2a5ae5d616664c081718b14"
+    },
+    {
+      "old": "2c019ccabe2245e37ec4e0488a6608e6634a0597",
+      "new_local": "e4e84a8df5480d6f275efc5b32766146aa9605cd",
+      "old_tree": "966ff989684d10b56054f0ac2c5d04f18cc51380",
+      "new_tree": "9ffe8b671c971844d6059784d950cc15a2ac9f8e",
+      "message": "Restore generic indexed descriptor sampling from recovered source\n\nRecover exact descriptor masks, finite direct Phi sources, dynamic scalar buffer reads and GPU-indexed image/sampler arrays. Preserve retained ordered-GDS capture, bounded uniform stores, DMA synchronization and upstream changes. Use complete dimension-array capacities and exact Vulkan limits; recompile when table size changes. Reject unsupported numeric/dimension/conversion cases explicitly.\n\nLocal source tree 966ff989684d10b56054f0ac2c5d04f18cc51380 builds with GCC 14. Production resource discovery passes 12 checks; five backend shaders pass spirv-val for Vulkan 1.3. Native GoT/GoW graphics remain unverified.",
+      "published": "bc69bf71e8ebc4cd7be13ceedf73c54a74714924"
+    },
+    {
+      "old": "96c5742b6d00685429f1564bafce9693d1ee939a",
+      "new_local": "6d391c9068f37d9c74c23867fe874ad62847150e",
+      "old_tree": "5e7a441fb5d6a926e71408346444e8595d257f0d",
+      "new_tree": "91fc51ba317a9ea10442aa058ae4d8cbbd64037f",
+      "message": "Journal recovered renderer lineage and native build validation\n\nVerify 678 captured source hashes and four exact historical file matches. Preserve protected binary identities and append all preparation/build/fixture outcomes. Native game graphics and DS continuation remain unverified; no main promotion.",
+      "published": "a0d903baef4f617f3282758e5aab385790a9c33a"
+    },
+    {
+      "old": "26f09e63d43780e2d5b90aee62842f9af58246ca",
+      "new_local": "5f6a2d7d57c7b4d2e213db4324552491c35db6d1",
+      "old_tree": "3b235825ba8600951240fbe1ab007d4e2bf21138",
+      "new_tree": "55d4d0d040185e52f36432bbcd77eb52c94b0e29",
+      "message": "Restore descriptor dependencies and scalar contracts lost during integration",
+      "published": "19bc2b4a3439ff733afecef9bd6f4328fbb378d6"
+    },
+    {
+      "old": "f6c7b43eb34b282809f67016ec6d2d1e4f583a92",
+      "new_local": "37a711fb92d4ecb854cc0e1bed4d7a2760c965fc",
+      "old_tree": "55b8710d0074ac580741faf0b07283eb29a464a8",
+      "new_tree": "86c07fd6e41a0ee555c09e77390221fe4631c35d",
+      "message": "Record PR120 native regressions and PR121 contract recovery evidence",
+      "published": "069aa63157d793b5b3fd8af4d23f0183e033106e"
+    },
+    {
+      "old": "4400802878015f1e2cdbcb61388dfe25d54ccbf0",
+      "new_local": "e9fba7d1ba6e1c53905cf6f5483484bba0e3cf56",
+      "old_tree": "c3c86aa4152bab4d1adc404b379dafef78036f04",
+      "new_tree": "039200291994b851a92318cd3b7f438ae78292f0",
+      "message": "Restore compatible texture layer growth and biased BC5 numeric conversion",
+      "published": "e2724d0109ba2ad120ca4c2618fc4abbea0c0402"
+    },
+    {
+      "old": "df253cdc175dcf90f634ef4d90f47d1c386ee089",
+      "new_local": "60d3e8610ae517f6b3f0c982ead78950a1b37ac7",
+      "old_tree": "20adf9d65dd4eaa848ec647c7d52d01a6ab8f912",
+      "new_tree": "fce770ca878955c2f13c37a03cf154b5ace48c5c",
+      "message": "Journal both PR121 crashes and reviewed texture contract restoration",
+      "published": "f143745c549957682ffdbd0ee88204320c8df11b"
+    },
+    {
+      "old": "cbd7c717dcdf64b67874e6bd319adc694607490e",
+      "new_local": "a9b51ec70026e3a0a7dcb311e89fed23bbec5b1d",
+      "old_tree": "a86563c650180ab895bef056571108d70b75c943",
+      "new_tree": "8c27011b2f80c0fbb919ae1d39ebec716eafcc6f",
+      "message": "Support numeric image variants in indexed tables and restore bounded SH register writes",
+      "published": "9cc42172e6d14750d51ed368e15c3837d4b129c5"
+    },
+    {
+      "old": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "new_local": "9ddbd3ca256a60583404a1f8bec1658419407bbf",
+      "old_tree": "e1b91a184d907941d89bbe86ff48834550e545de",
+      "new_tree": "85ada248f0b859484ab7de08ccae0a3e07e12f5d",
+      "message": "Record PR122 native failures and indexed numeric candidate validation",
+      "published": "8f7027e0f4ea939f22e799cbde3a803d4f699c9c"
+    },
+    {
+      "old": "0994813ee02b433593db3180ca31a8b7c81b2a06",
+      "new_local": "ab59c7ad18bef70ce824515be672b69c226f5351",
+      "old_tree": "947fa91fa0b871166e6505e1559ae5f972887338",
+      "new_tree": "c3ac6f4d6a45adacd7ad460bab3990e3d54534fb",
+      "message": "Capture runtime Vulkan validation with verified native binaries",
+      "published": "a27ae243a78284980b67b44406b6dba882afb104"
+    },
+    {
+      "old": "aef377d7fbce4923738aeae00c1ab247a0c0edcc",
+      "new_local": "81e06611955bd8fe8e8ee903ed65e9d0ee592106",
+      "old_tree": "4907dfd47e9e1d25e32d558cec8ad006628d492a",
+      "new_tree": "02646d49d8684673f377c41455a6e974f9a42b3c",
+      "message": "Record PR123 native GPU loss and validation capture checkpoint",
+      "published": "53ab94fcea848becbd45255f0d7d530b1abc4592"
+    }
+  ],
+  "pinned_submodules": [
+    " 12ba4ac4dbaa6489cb07e01be796e2bc074ef4f4 externals/CLI11 (v1.7.1-685-g12ba4ac)",
+    " 57a1c6a6d44bd99e844e3642d27851f6c065af62 externals/ImGuiFileDialog (v0.6.6.1-4-g57a1c6a)",
+    " 946e05a9212976626a9f5e52f29c0a7202871f29 externals/LibAtrac9 (heads/master)",
+    " ee76460efbdb147e26d804c798949c23f174460b externals/aacdec/fdk-aac (android-platform-15.0.0_r21-24-gee76460)",
+    " 76bb24329e8bf5f39704eb10d21b9a80befa7c81 externals/abseil-cpp (20250512.1)",
+    " 28f8264d134a576422cd0f99f19719c2749d9e47 externals/cpp-httplib (v0.31.0-185-g28f8264)",
+    " a45ea7c17b4a7f320e199b71436074bd624c9e15 externals/date (a45ea7c)",
+    " 19f66e6dcabb2268965f453db9e5774ede43238f externals/discord-rpc (heads/master)",
+    " d621dc9e9c77f81e5c8a35b8dcc16dcd63351321 externals/discord-rpc/thirdparty/rapidjson (v1.1.0-761-gd621dc9e)",
+    " ba96d0b1161f540656efdaed035b3c062b60e006 externals/discord-rpc/thirdparty/rapidjson/thirdparty/gtest (release-1.8.0-1003-gba96d0b1)",
+    " 18159584bb3d17e601b9315a7398ace018251bdc externals/epoll-shim (v0.0.20240608-6-g1815958)",
+    " ca6f230e67be7cc45fc919057f07b2aee64dadc1 externals/ext-boost (ca6f230)",
+    " d3bb81035304a0dc6a5ca48ebf0f8cee1fe269e4 externals/ext-wepoll (heads/dist)",
+    " 94dde08c8a9e4271a93a2a7e4159e9fb05d30c0a externals/ffmpeg-core (94dde08)",
+    " ec73fb72477d80926c758894a3ab2cb3994fd051 externals/fmt (heads/master)",
+    " b91f75bd02db43b06d634591eb286d3eb0ce3b65 externals/freetype (b91f75bd0)",
+    " 395ccad2c1e0daae535c4d20bb0a3f2424648e17 externals/freetype/subprojects/dlg (v0.2.2-50-g395ccad)",
+    " ba1640446f3826a518721d1f083f3a8cca1120c3 externals/glslang (ba164044)",
+    " 1ddada225144cac0de8f6b5c0dd9acffd99a2e68 externals/half (1ddada2)",
+    " 8660006e0ca4aae5dda7a29e585968b50b0273b7 externals/hwinfo (heads/main)",
+    " 7e1b65d26d52e9dd199d889c148c72184de647b4 externals/imgui (v1.92.9b-docking-52-g7e1b65d26)",
+    " 55f93686c01528224f448c19128836e7df245f72 externals/json (v3.12.0)",
+    " c1cc0f3f4c3d4abd11ca68c59446a29ff6f95003 externals/libpng (c1cc0f3f4)",
+    " b0504086dbbc186724b0cc92e6ba1832c245de0b externals/libressl (heads/main)",
+    " d087ea86539ab1f1ec42faf86e2357e2fad126a6 externals/libusb (v1.0.23-rc1-672-gd087ea86)",
+    " a413fcc9c46a020a746907136a384c227f3cd095 externals/magic_enum (a413fcc)",
+    " 89621426a2390cf94f07187cd99a3d158d4295f5 externals/mesa-kosmickrisp (heads/main)",
+    " 1c853169eff74d19a521094ac26964acb4652e93 externals/mesa-kosmickrisp/externals/mesa (heads/main)",
+    " 7b590fdcfa5a79c033e76eacc05d0c3e4c79f536 externals/minimp3 (7b590fd)",
+    " bf4215a7574f88aa55859db9db00e3ae58cf42d6 externals/miniupnp (miniupnpd_2_1-1138-gbf4215a)",
+    " 174573d60290f447c13a2b1b3405de2b96e27d6c externals/miniz (3.1.0)",
+    " 83ea7236c6f23fc98e2b62eb9c5b3abfd4b2be86 externals/openal-soft (latest-217-g83ea7236c)",
+    " 5917ee224a7e47383a78acc129628511fe210dff externals/protobuf (v33-dev-1748-g5917ee224)",
+    " caade5a28aad86b92a4b5337a9dc70c4ba73c5eb externals/pugixml (caade5a)",
+    " 4ec1bf19c6a96125ea22062f38c2cf5b958e448e externals/robin-map (4ec1bf1)",
+    " d5af35e3fbb5bb6555ed00e69740d52af2a4e877 externals/sdl3 (release-3.4.0-744-gd5af35e3f)",
+    " fc2b42d5e57ee2f638676c0c02f7fd71934b596a externals/sirit (fc2b42d)",
+    " 2acb319af38d43be3ea76bfabf3998e5281d8d12 externals/sirit/externals/SPIRV-Headers (1.5.4.raytracing.fixed-362-g2acb319)",
+    " b8944a4bcd478ee03375c9c50dc8d6c741f43f7b externals/spdlog (b8944a4b)",
+    " a01fe3b4c14c6d7b99ee3f07c9e80058c6403097 externals/toml11 (a01fe3b)",
+    " 2f64607bc9a4caa6ffc4ed7f614c8ad9a5b6611c externals/toml11/docs/themes/hugo-book (v10-17-g2f64607)",
+    " ae7a13539fb71f270b87eb2e874fbac80bc8dda2 externals/toml11/tests/extlib/doctest (v2.4.11)",
+    " 8c391e04fe4195d8be862c97f38cfe10e2a3472e externals/toml11/tests/extlib/json (v3.11.2-97-g8c391e04f)",
+    " 143a53d1985b8e52a7590a0daca30a0a7c653b42 externals/tracy (143a53d)",
+    " f378e7b3f18f6e2b06b957f6ba7b1c7207d2a536 externals/vma (f378e7b)",
+    " ee3b5caaa7e372715873c7b9c390ee1c3ca5db25 externals/vulkan-headers (ee3b5ca)",
+    " 466498bc64eb77955c3b782f0127520548224de0 externals/vulkan-loader (466498bc)",
+    " 44a72f369268f7d552650891b296693e91db86bb externals/xbyak (44a72f3)",
+    " 953a09abc39096da9e216b6eb0002c681cdc1199 externals/xxhash (953a09a)",
+    " 965b66c8d67b6b7e30fd63b3b75aa91a99ff303b externals/zarchive (heads/master)",
+    " fd0d263cedab1a136f40d65199987e3eaeecfcbd externals/zlib-ng (heads/develop)",
+    " 5c7b7bad26808e6b40ac3b3d0075466e27738a9d externals/zstd (v1.4.7-3029-g5c7b7bad)",
+    " 120e0e705f8e3b507dc49377ac2879979f0d545c externals/zydis (120e0e7)",
+    " 38d4f0285e6157ee840ea82a9b90aba71c8a705d externals/zydis/dependencies/zycore (v1.5.0-4-g38d4f02)"
+  ],
+  "local_log_manifest": [
+    {
+      "name": "nov3-configure.log",
+      "bytes": 24052,
+      "sha256": "def8ae1b9af25bc9bf45675d93e7f896dd7a316745357c6615ca60c4c1a906f4",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-configure-2.log",
+      "bytes": 26846,
+      "sha256": "ad5e1d1aac64451d7b01ff198890d36790fd850eafb07caccf830fabb22a1c4b",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-build.log",
+      "bytes": 270352,
+      "sha256": "5825a5e420b6f9f73f89a3409ee43467da9663b015a038d4e91fab1c9ca3da14",
+      "warning_lines": 85,
+      "compiler_error_lines": 1
+    },
+    {
+      "name": "nov3-build-2.log",
+      "bytes": 58075,
+      "sha256": "ed82a3f3d23ba8fba01c17145c18d83888616bcbc6d583b333321583bdbfea14",
+      "warning_lines": 11,
+      "compiler_error_lines": 5
+    },
+    {
+      "name": "nov3-build-3.log",
+      "bytes": 104551,
+      "sha256": "4cb1d7f476e5c3f9b934d5660edb65474638448281c39ee0b11804a4651d7036",
+      "warning_lines": 39,
+      "compiler_error_lines": 1
+    },
+    {
+      "name": "nov3-build-4.log",
+      "bytes": 166,
+      "sha256": "5f347fb46aef3639ec63b83f1d9c02adfd03c4ef3c4e6aec387d9ea261d4b4a7",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-cpu.log",
+      "bytes": 6201,
+      "sha256": "c14e0e2774f4f50b4560e3de219d67a2421ef63b7eebdf0206a31e2034bab1cd",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-cli.log",
+      "bytes": 57,
+      "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-vulkan-header-selection.log",
+      "bytes": 20853,
+      "sha256": "906ebb7f3bddeb861ac7083621787b164ce6230865828dac312c6b387a3b28fd",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-mount-refreshed-link.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    },
+    {
+      "name": "nov3-mount-prior_mount-link.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "warning_lines": 0,
+      "compiler_error_lines": 0
+    }
+  ],
+  "journal_prefix_preserved": {
+    "bytes": 840114,
+    "rows": 402,
+    "sha256": "e293fdeff48e1f719dea420b4ea7882a86ea3453901be96f26ca1ce18f95c83d"
+  },
+  "primary_reference_urls": [
+    "https://github.com/shadps4-emu/shadPS4/commit/8729018155e54f305b6bc7576f850e756ffdd13c",
+    "https://github.com/Chreece/shadPS4/pull/124",
+    "https://github.com/Chreece/shadPS4/pull/125"
+  ],
+  "record_id": "upstream-refresh-87290181-20261103-review",
+  "recorded_on": "2026-11-03",
+  "scope": "UNIVERSAL_SHADPS4",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "game_launched": false,
+  "related_prs": [
+    125,
+    124
+  ],
+  "fix_id": "upstream-mount-prefix-integration-20261103",
+  "decision": "BUILD_CPU_PASS_NATIVE_GPU_PENDING",
+  "generic_change": "All retained patches rebased onto upstream87290181; only its two filesystem files differ from prior candidate.",
+  "next_test": {
+    "source_branch": "fix/upstream-refresh-20261103",
+    "mode": "build",
+    "runner_sha256": "e8b7ed0d0fe5475cd3e9979bdb211384dee76584d6da3a187cc85a183c538076",
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "vulkan_diagnostics": true,
+    "ds_capture_once": true,
+    "max_seconds_per_game": 120,
+    "automatic_input": false,
+    "stop_remaining_on_gpu_failure_or_unconfirmed_stop": true
+  },
+  "journal_query_check": {
+    "schema_version": 2,
+    "record_id": "upstream-refresh-journal-integrity-20261103",
+    "timestamp_utc": "2026-11-03T05:11:43.441034+00:00",
+    "recorded_on": "2026-11-03",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 125,
+    "fix_id": "upstream-mount-prefix-integration-20261103",
+    "tested_games": [],
+    "game_launched": false,
+    "result": "JSON_LEDGER_INTEGRITY_PASS_LEGACY_QUERY_SCHEMA_BLOCKED",
+    "details": "Default shared query exits2 at pre-existing review20261029T173957378511Z-c925-cndmask-negative.json because it lacks top-level record_id. Earlier review files remain unchanged. Every ledger row parses as JSON object; original402rows/840114bytes retained. New review supplies record_id and passes the current loader independently. No query-tool or game runtime change.",
+    "main_changed": false
+  }
+}
