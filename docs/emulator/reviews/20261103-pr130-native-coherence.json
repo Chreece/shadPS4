@@ -1,0 +1,474 @@
+{
+  "schema_version": 2,
+  "record_id": "pr130-native-coherence-review-20261103",
+  "reviewed_at": "2026-11-03T17:00:53.401514+00:00",
+  "source_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+  "pr": 130,
+  "archive": "universal-two-games-20261103T164250Z-3849223.tar.gz",
+  "archive_sha256": "eeb51c6c4950e5dc8f55b0e56481c84b696dd3d6131ccf22354d9cb0cc637862",
+  "runs": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261103T165721Z-3961328",
+      "scope": "UNIVERSAL_SHADPS4",
+      "timestamp_utc": "2026-11-03T16:57:21.169872+00:00",
+      "source_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+      "binary_sha256": "1aee305b15fb98ebecec89bd5dc48ad964318686a52d5a24f3eb0ffdf61e5b53",
+      "game_launched": true,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261103T165721Z-3961328.tar.gz",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "runner_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+      "runner_sha256": "488c972b48a76575f26e2e58b7afe1d58e38f1ffdad5b085815fda706b6e6518",
+      "vulkan_diagnostics_requested": true,
+      "context_games": [
+        "CUSA11456"
+      ],
+      "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261103T164251Z-3849236/result.json",
+      "upstream_main_checked": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+      "observer_sha256": "a5b976d9e00a46fff0d9100ae51db464a348cdcbb46d779b66b37b19cc23d855",
+      "recovered_captures": [],
+      "display": ":0",
+      "display_preflight": {
+        "exit_code": 0,
+        "timed_out": false
+      },
+      "vulkan_layers": [
+        {
+          "name": "VK_LAYER_VALVE_steam_fossilize_32",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_fossilize_64",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_overlay_64",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_VALVE_steam_overlay_32",
+          "spec_version": 4206799,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_MESA_device_select",
+          "spec_version": 4210991,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_MESA_overlay",
+          "spec_version": 4210991,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_INTEL_nullhw",
+          "spec_version": 4198473,
+          "implementation_version": 1
+        },
+        {
+          "name": "VK_LAYER_KHRONOS_validation",
+          "spec_version": 4210997,
+          "implementation_version": 1
+        }
+      ],
+      "profile_source": "/home/chreece/.local/share/shadPS4",
+      "profile_files_copied": 205,
+      "profile_config_sha256": "d91bbf96e82ab2453f30c04b0ef95393bdec45002ce29da9568fee4ef709425c",
+      "configured_readbacks_mode": 0,
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "vram_free_before": 5220700160,
+      "ollama_unloaded": [
+        "qwen3.8-greek:latest"
+      ],
+      "ollama_attempts": [
+        {
+          "transport": "direct-local-http",
+          "error": "[Errno 104] Connection reset by peer"
+        },
+        {
+          "transport": "ollama-0d489daca772-before",
+          "exit_code": 127
+        },
+        {
+          "transport": "docker:8f919e1ace79",
+          "listed_models": [
+            "qwen3.8-greek:latest"
+          ],
+          "post_unload_query_succeeded": true
+        }
+      ],
+      "vram_free_at_launch": 25633161216,
+      "native": {
+        "binary_sha256": "1aee305b15fb98ebecec89bd5dc48ad964318686a52d5a24f3eb0ffdf61e5b53",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 3961829,
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "elapsed_seconds": 41.032,
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "srt_rejections": {},
+        "console_lines": 6115,
+        "warning_lines": 425,
+        "error_lines": 1252,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 833611,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 6,
+        "srt_source_blocks": {
+          "5508355:5508355": 1,
+          "5508356:5508356": 1,
+          "5508358:5508358": 1,
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 8810,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "stop_remaining_tests": true,
+      "ordered_gds_capture_requested": true,
+      "ordered_gds_evidence": [],
+      "shader_diagnostics": {
+        "dump_enabled": true,
+        "blocked_hashes": [],
+        "validation_named_hashes": [],
+        "validation_compilation_hashes": [],
+        "resource_warning_hashes": [
+          "000000005e89a8b4"
+        ],
+        "observed_readbacks_modes": [],
+        "automatic_coherence_enabled": true,
+        "recent_compiled_hashes": [
+          "000000009911cadd",
+          "00000000361a48f5",
+          "00000000e1fb67ac",
+          "00000000745c455a",
+          "00000000273a7c18",
+          "00000000628dd8fd",
+          "0000000015d7e72a",
+          "000000001cb77b64"
+        ],
+        "priority_hashes": [
+          "000000005e89a8b4",
+          "000000009911cadd",
+          "00000000361a48f5",
+          "00000000e1fb67ac",
+          "00000000745c455a",
+          "00000000273a7c18",
+          "00000000628dd8fd",
+          "0000000015d7e72a",
+          "000000001cb77b64"
+        ],
+        "saved_ir": [
+          "cs_0x000000005e89a8b4.irprogram.txt",
+          "vs_0x000000009911cadd.irprogram.txt",
+          "fs_0x00000000361a48f5.irprogram.txt",
+          "cs_0x00000000e1fb67ac.irprogram.txt",
+          "cs_0x00000000745c455a.irprogram.txt",
+          "cs_0x00000000273a7c18.irprogram.txt",
+          "cs_0x00000000628dd8fd.irprogram.txt",
+          "cs_0x0000000015d7e72a.irprogram.txt",
+          "cs_0x000000001cb77b64.irprogram.txt",
+          "cs_0x000000005e89a8b4.pre-lower-phi.irprogram.txt",
+          "vs_0x000000009911cadd.pre-lower-phi.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000745c455a.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000273a7c18.pre-lower-phi.irprogram.txt",
+          "cs_0x00000000628dd8fd.pre-lower-phi.irprogram.txt",
+          "cs_0x0000000015d7e72a.pre-lower-phi.irprogram.txt",
+          "cs_0x000000001cb77b64.pre-lower-phi.irprogram.txt",
+          "cs_0x000000005e89a8b4.pre-res-discover.irprogram.txt",
+          "vs_0x000000009911cadd.pre-res-discover.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-res-discover.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-res-discover.irprogram.txt",
+          "cs_0x00000000745c455a.pre-res-discover.irprogram.txt",
+          "cs_0x00000000273a7c18.pre-res-discover.irprogram.txt",
+          "cs_0x00000000628dd8fd.pre-res-discover.irprogram.txt",
+          "cs_0x0000000015d7e72a.pre-res-discover.irprogram.txt",
+          "cs_0x000000001cb77b64.pre-res-discover.irprogram.txt",
+          "cs_0x000000005e89a8b4.pre-res-patch.irprogram.txt",
+          "vs_0x000000009911cadd.pre-res-patch.irprogram.txt",
+          "fs_0x00000000361a48f5.pre-res-patch.irprogram.txt",
+          "cs_0x00000000e1fb67ac.pre-res-patch.irprogram.txt",
+          "cs_0x00000000745c455a.pre-res-patch.irprogram.txt",
+          "cs_0x00000000273a7c18.pre-res-patch.irprogram.txt",
+          "cs_0x00000000628dd8fd.pre-res-patch.irprogram.txt",
+          "cs_0x0000000015d7e72a.pre-res-patch.irprogram.txt",
+          "cs_0x000000001cb77b64.pre-res-patch.irprogram.txt"
+        ],
+        "saved_bytes": 5383760,
+        "limit_bytes": 20971520,
+        "limit_files": 48,
+        "saved_binary": [
+          {
+            "file": "cs_0x000000005e89a8b4_0.bin",
+            "bytes": 752,
+            "sha256": "ee1befdc69a81b6318e4e39c505980d6313726b345f5b8bade2395f427aa25e7"
+          },
+          {
+            "file": "cs_0x000000005e89a8b4_0.spv",
+            "bytes": 9732,
+            "sha256": "a5511e3a4b49c2a18eaca5ef9e200bbc64aedbf7628de34614d1476428cc3285"
+          },
+          {
+            "file": "vs_0x000000009911cadd.fetch.bin",
+            "bytes": 24,
+            "sha256": "a7c349893686a3f3e5a4290ff450a3d183df9f3868dee25e6ad33f725f33a31d"
+          },
+          {
+            "file": "fs_0x00000000361a48f5_0.bin",
+            "bytes": 936,
+            "sha256": "f96372ebea181f5835de279390c6b8b90b2e1fbaca925554096e088d5753084b"
+          },
+          {
+            "file": "fs_0x00000000361a48f5_0.spv",
+            "bytes": 10440,
+            "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23"
+          },
+          {
+            "file": "cs_0x00000000e1fb67ac_0.bin",
+            "bytes": 196,
+            "sha256": "3171375f99d882ab310e7995d2b462489d7f5a5ea07efba389e1cc5849b11a00"
+          },
+          {
+            "file": "cs_0x00000000e1fb67ac_0.spv",
+            "bytes": 4996,
+            "sha256": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee"
+          },
+          {
+            "file": "cs_0x00000000745c455a_0.bin",
+            "bytes": 12464,
+            "sha256": "9e99e8f767f3f43a18e921b01d7222b3b1d2f30c94c6c4b735f3709b9fe63e0b"
+          },
+          {
+            "file": "cs_0x00000000745c455a_0.spv",
+            "bytes": 134996,
+            "sha256": "e437c660074d01f50c158fcbda9b4db7a5b0e6013ea4a58e30f6353b9f91ebc8"
+          },
+          {
+            "file": "cs_0x00000000273a7c18_1.bin",
+            "bytes": 2904,
+            "sha256": "fa70df8d8fb0806f0fb41e202c43aa9fefa2fb1b39fb3fd98ca74ec0d8626040"
+          },
+          {
+            "file": "cs_0x00000000273a7c18_1.spv",
+            "bytes": 36720,
+            "sha256": "64a56dc4ca41e2b8d3393df0171faed490bc10a30a22a1c6b93916f789732a2f"
+          },
+          {
+            "file": "cs_0x00000000628dd8fd_1.bin",
+            "bytes": 1328,
+            "sha256": "b455c307321d258322ce0b617caf6d1b60a6a6a77a1917db27b71d28b9136ece"
+          },
+          {
+            "file": "cs_0x00000000628dd8fd_1.spv",
+            "bytes": 15400,
+            "sha256": "03b0594bb37b833bea17b60e96c7da2f383505e4a4779116953ccd1bb8df4c07"
+          },
+          {
+            "file": "cs_0x0000000015d7e72a_1.bin",
+            "bytes": 2148,
+            "sha256": "10a36abb9eee7e37e8a9c693f73646de39e41627f3ed9a17856c499b1dc403d4"
+          },
+          {
+            "file": "cs_0x0000000015d7e72a_1.spv",
+            "bytes": 23048,
+            "sha256": "f74f4ae25b4380869194842928403c18292ee28207371e01da4ac314ecee5c63"
+          },
+          {
+            "file": "cs_0x000000001cb77b64_1.bin",
+            "bytes": 2220,
+            "sha256": "efd921561f667e0147e325813cbcd4e1df0636c1fd3e1e8df33d239b92f1e9c6"
+          },
+          {
+            "file": "cs_0x000000001cb77b64_1.spv",
+            "bytes": 23624,
+            "sha256": "70b1a046da384f3acca3dbb2cfb6aae8611727974438cbc07ee11074b7a0b76d"
+          },
+          {
+            "file": "vs_0x000000009911cadd_0.bin",
+            "bytes": 60,
+            "sha256": "3b16b8c2e9e67a203c2824fe8d861bba8d0d6257d5a82d00e8154078ba4add32"
+          },
+          {
+            "file": "vs_0x000000009911cadd_0.spv",
+            "bytes": 3240,
+            "sha256": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6"
+          },
+          {
+            "file": "cs_0x00000000273a7c18_0.bin",
+            "bytes": 2904,
+            "sha256": "fa70df8d8fb0806f0fb41e202c43aa9fefa2fb1b39fb3fd98ca74ec0d8626040"
+          },
+          {
+            "file": "cs_0x00000000273a7c18_0.spv",
+            "bytes": 36720,
+            "sha256": "0a01a5f3e82826bdebd7f248e8a143ad1fa9692c54830059a19e220267927046"
+          },
+          {
+            "file": "cs_0x00000000628dd8fd_0.bin",
+            "bytes": 1328,
+            "sha256": "b455c307321d258322ce0b617caf6d1b60a6a6a77a1917db27b71d28b9136ece"
+          },
+          {
+            "file": "cs_0x00000000628dd8fd_0.spv",
+            "bytes": 15400,
+            "sha256": "b967f922bd4715fa00d65ea3533a16277b79be5cf8b083207a21caf0c03a74f5"
+          },
+          {
+            "file": "cs_0x0000000015d7e72a_0.bin",
+            "bytes": 2148,
+            "sha256": "10a36abb9eee7e37e8a9c693f73646de39e41627f3ed9a17856c499b1dc403d4"
+          },
+          {
+            "file": "cs_0x0000000015d7e72a_0.spv",
+            "bytes": 23048,
+            "sha256": "f3ae080d8ea95e892eab4c761f971e7ab8ac0b7ec6b211e1520bae68559465f9"
+          },
+          {
+            "file": "cs_0x000000001cb77b64_0.bin",
+            "bytes": 2220,
+            "sha256": "efd921561f667e0147e325813cbcd4e1df0636c1fd3e1e8df33d239b92f1e9c6"
+          },
+          {
+            "file": "cs_0x000000001cb77b64_0.spv",
+            "bytes": 23624,
+            "sha256": "eae1625e871787cf2306c6674069bfa83ed3ac4284991ab59e9df3ca3e32d9de"
+          }
+        ],
+        "saved_binary_bytes": 392620,
+        "binary_unrepresented_hashes": [],
+        "binary_limit_bytes": 8388608,
+        "binary_limit_files": 32,
+        "capture_completed_marker": false,
+        "console_tail_complete": true
+      },
+      "exit_code": 1,
+      "record_type": "REVIEWED_USER_NATIVE_ARCHIVE",
+      "reviewed_at": "2026-11-03T17:00:53.401514+00:00",
+      "uploaded_archive": "universal-two-games-20261103T164250Z-3849223.tar.gz",
+      "uploaded_archive_sha256": "eeb51c6c4950e5dc8f55b0e56481c84b696dd3d6131ccf22354d9cb0cc637862",
+      "review_file": "docs/emulator/reviews/20261103-pr130-native-coherence.json",
+      "main_changed": false,
+      "reviewed_result": "FAIL_GPU_CONTEXT_LOST",
+      "visual_review": "8s loading overlay at26 FPS; 25s black guest frame at28 FPS. No menu or gameplay in captured images.",
+      "audio_verified": false,
+      "frame_sha256": {
+        "frame-008s.png": "19917f8899f9188a0f7c5e3b35efca5ed4e6146d63e8bea1a274958eddbaa3d7",
+        "frame-025s.png": "c797360e43ee345289e9103241cea4c126964449b876b76c078e420ebdf68c95"
+      },
+      "reviewed_coherence_events": [
+        "GRAPHICS_DIAG ms=5127 event=buffer-readback count=1 address=0x1506780000 bytes=128 async=0",
+        "GRAPHICS_DIAG ms=5161 event=buffer-readback count=2 address=0x1506780000 bytes=128 async=0",
+        "GRAPHICS_DIAG ms=5233 event=image-readback count=1 address=0x110adef000 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=5425 event=buffer-readback count=3 address=0x1504200000 bytes=896 async=0",
+        "GRAPHICS_DIAG ms=6500 event=image-readback count=2 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6500 event=buffer-readback count=4 address=0x110b180000 bytes=576 async=0",
+        "GRAPHICS_DIAG ms=6504 event=buffer-readback count=5 address=0x1504200000 bytes=896 async=0",
+        "GRAPHICS_DIAG ms=6513 event=buffer-readback count=6 address=0x1506780000 bytes=87680 async=0",
+        "GRAPHICS_DIAG ms=6528 event=buffer-readback count=7 address=0x110b180000 bytes=576 async=0",
+        "GRAPHICS_DIAG ms=6530 event=image-readback count=3 address=0x110adef000 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6532 event=buffer-readback count=8 address=0x1506780000 bytes=128 async=0",
+        "GRAPHICS_DIAG ms=6540 event=image-readback count=4 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6565 event=image-readback count=5 address=0x110adef000 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6596 event=image-readback count=6 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6599 event=buffer-readback count=16 address=0x1504200000 bytes=896 async=0",
+        "GRAPHICS_DIAG ms=6629 event=image-readback count=7 address=0x110adef000 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6662 event=image-readback count=8 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=6796 event=buffer-readback count=32 address=0x110b180000 bytes=576 async=0",
+        "GRAPHICS_DIAG ms=6928 event=image-readback count=16 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=7166 event=buffer-readback count=64 address=0x1504200000 bytes=896 async=0",
+        "GRAPHICS_DIAG ms=7462 event=image-readback count=32 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=7897 event=buffer-readback count=128 address=0x1506780000 bytes=128 async=0",
+        "GRAPHICS_DIAG ms=8529 event=image-readback count=64 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=9336 event=buffer-readback count=256 address=0x1506780000 bytes=87680 async=0",
+        "GRAPHICS_DIAG ms=10662 event=image-readback count=128 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=12305 event=buffer-readback count=512 address=0x1506780000 bytes=87680 async=0",
+        "GRAPHICS_DIAG ms=14931 event=image-readback count=256 address=0x110af43d00 bytes=1395968 sync=0",
+        "GRAPHICS_DIAG ms=18265 event=buffer-readback count=1024 address=0x110b180000 bytes=576 async=0",
+        "GRAPHICS_DIAG ms=23232 event=image-readback count=512 address=0x110af43d00 bytes=1395968 sync=0"
+      ]
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261103T164251Z-3849236",
+      "timestamp_utc": "2026-11-03T16:57:20.955636+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "COMPLETE_BUILD_ONLY",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "exit_code": 0,
+      "requested_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+      "source_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+      "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261103T164251Z-3849236.tar.gz",
+      "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+      "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-206b87493012/build/shadps4",
+      "binary_sha256": "1aee305b15fb98ebecec89bd5dc48ad964318686a52d5a24f3eb0ffdf61e5b53",
+      "record_type": "REVIEWED_USER_NATIVE_ARCHIVE",
+      "reviewed_at": "2026-11-03T17:00:53.401514+00:00",
+      "uploaded_archive": "universal-two-games-20261103T164250Z-3849223.tar.gz",
+      "uploaded_archive_sha256": "eeb51c6c4950e5dc8f55b0e56481c84b696dd3d6131ccf22354d9cb0cc637862",
+      "review_file": "docs/emulator/reviews/20261103-pr130-native-coherence.json",
+      "main_changed": false,
+      "reviewed_result": "PASS_NATIVE_BUILD_CPU_STARTUP"
+    },
+    {
+      "schema_version": 2,
+      "record_id": "pr130-gow-skipped-after-got-device-loss-20261103",
+      "record_type": "REVIEWED_BATCH_SKIP",
+      "reviewed_at": "2026-11-03T17:00:53.401514+00:00",
+      "source_commit": "206b874930128d1ab7a8170bc0098ffce130746c",
+      "context_games": [
+        "CUSA34384"
+      ],
+      "tested_games": [],
+      "game_launched": false,
+      "result": "SKIPPED_AFTER_GOT_GPU_CONTEXT_LOST",
+      "uploaded_archive": "universal-two-games-20261103T164250Z-3849223.tar.gz",
+      "uploaded_archive_sha256": "eeb51c6c4950e5dc8f55b0e56481c84b696dd3d6131ccf22354d9cb0cc637862",
+      "review_file": "docs/emulator/reviews/20261103-pr130-native-coherence.json",
+      "main_changed": false
+    }
+  ],
+  "decision": "NATIVE_FAILED_NO_MAIN_PROMOTION",
+  "findings": [
+    "Native build/CPU/startup pass. Automatic policy marker and actual buffer/image publication are present despite inherited readbacks_mode0; no profile readback override was used.",
+    "GoT GPU context lost at41.032s, exit-11, owned child termination confirmed. Validation layer active with no recorded validation failure or GPU memory-fault report. The two captured frames do not show menu/gameplay.",
+    "At least1024 buffer publication events and512 image publication events occurred before failure, based on the bounded cumulative counters. These are not final totals. Sampled image transfers were1395968bytes each.",
+    "GoW was correctly skipped after GoT GPU failure; no new GoW execution claim.",
+    "PR129 previously remained black for119.814s without device loss. PR130 has a worse observed termination outcome; these two runs do not isolate which change or execution path caused it.",
+    "Buffer reads are access-driven, but image queues are driven by eligible writable resource bindings and drained at fences/submissions without proving CPU demand. Therefore automatic does not mean zero overhead or proven compatibility with games that never read those images.",
+    "No software patch, per-game mode, hardware result or all-games safety claim follows from this review. The next core investigation must address publication ordering, overlapping resources and unnecessary image synchronization using this evidence."
+  ]
+}
