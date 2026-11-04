@@ -553,16 +553,16 @@
     {
       "id": "vulkan-wait-pool-progress-and-live-worker-preflight",
       "subsystem": "renderer-vulkan-and-native-observer",
-      "status": "HOST_PASS_NATIVE_GOW_STALL_GOT_GPU_CONTEXT_LOST",
+      "status": "HOST_PASS_NATIVE_GOT_BLACK_GOW_GPU_CONTEXT_LOST",
       "related_prs": [
         133
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Source7fb734fc: prior GoW stalls at loading/unconfirmed exit; latest GoT intro at25s then GPU loss62.175s. Waits now captured on ticks3752/3814. No gameplay recovery.",
+      "observed_game_effects": "af408e93: GoT black without captured gpu-wait; GoW waits for tick4 known2 then GPU loss18.257s. Both child exits confirmed. No gameplay recovery.",
       "negative_result_or_prohibition": "No forced GPU completion, total-wait watchdog, per-title/vendor switch, service reset or claimed game recovery.",
-      "next_test": "PR135 independently reproduced draw binding repair; native GoT then GoW if safe.",
+      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
       "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json",
-      "latest_review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
+      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
     },
     {
       "id": "required-native-graphics-diagnostics",
@@ -572,24 +572,51 @@
         134
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "Runner711fd6d native: required startup marker and bounded event log active; validation active, no VUID captured. GoT intro then GPU loss62.175s; GoW skipped. Collector success only.",
+      "observed_game_effects": "af408e93: both games have required graphics and validation diagnostics; no VUID captured. GoT black, GoW GPU loss. Collector success only.",
       "negative_result_or_prohibition": "Do not claim graphics recovery or infer successful waits from missing diagnostic output.",
-      "next_test": "Retain collector for PR135 native build/test.",
+      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
       "review_file": "docs/emulator/reviews/20261103-pr133-native-required-diagnostics.json",
-      "latest_review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
+      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
     },
     {
       "id": "draw-bindings-after-resource-readbacks",
       "subsystem": "Vulkan draw command state",
-      "status": "HOST_VERIFIED_NATIVE_PENDING",
+      "status": "HOST_PASS_NATIVE_GOT_BLACK_GOW_GPU_LOSS",
       "related_prs": [
         135
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No native candidate run. Latest parent GoT fails GPU context; association to binding defect unproven.",
+      "observed_game_effects": "af408e93: GoT black at80/110s, safe bounded exit118.815s; GoW GPU loss18.257s. Zero draw-preparation-flush events in both complete consoles. Native cause and recovery not proved.",
       "negative_result_or_prohibition": "No per-title/shader exceptions or readback options; no claim of recovering menu/gameplay from mock/CPU checks.",
-      "next_test": "Build immutable candidate; GoT then GoW <=120s, mandatory diagnostics and stop policy.",
-      "review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json"
+      "next_test": "PR136 bounded GPU-work capture, GoT then GoW if safe; preserve prior fixes and require native acceptance before promotion.",
+      "review_file": "docs/emulator/reviews/20261103-pr134-native-draw-binding-state.json",
+      "latest_review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+    },
+    {
+      "id": "bounded-gpu-work-submission-history",
+      "subsystem": "Vulkan diagnostics and native observer",
+      "status": "HOST_PASS_NATIVE_PENDING",
+      "related_prs": [
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No candidate native run; parent has no command-to-submission provenance for GoW tick4 stall or GoT black screen.",
+      "negative_result_or_prohibition": "Recorded commands and submit calls do not prove execution; no new GPU waits/barriers or title/hash exceptions.",
+      "next_test": "Pinned PR136 native capture; inspect gpu-work.log, overwrite/cap metadata and pending-window shaders.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
+    },
+    {
+      "id": "conditional-ollama-unload-restoration",
+      "subsystem": "native test runner",
+      "status": "HOST_MOCK_PASS_NATIVE_PENDING",
+      "related_prs": [
+        136
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Old runner unloaded model before GoT but never restored it. New API lease path passes33 mocks; no live model touched.",
+      "negative_result_or_prohibition": "No reload after GPU failure or live/unconfirmed emulator; no overwriting concurrent model changes or blind CLI unload.",
+      "next_test": "If conditional unload occurs, verify safe-exit restoration digest/context and expiry or explicitly record unsafe deferral.",
+      "review_file": "docs/emulator/reviews/20261103-pr135-native-gpu-work-history.json"
     }
   ]
 }
