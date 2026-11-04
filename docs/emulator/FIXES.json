@@ -541,14 +541,27 @@
     {
       "id": "gpu-buffer-image-partial-write-coherence",
       "subsystem": "gpu-coherence",
-      "status": "BUILD_AND_HOST_CHECKS_PASS_NATIVE_PENDING",
+      "status": "HOST_PASS_NATIVE_GOW_LOADING_STOP_UNCONFIRMED",
       "related_prs": [
         132
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR132 not natively run; PR131 logo progress and GPU loss recorded.",
+      "observed_game_effects": "PR132 native2812bc6f: GoW remains at emulator loading screen at80/110s; termination unconfirmed at120s, zombie leader plus D worker in dma_fence_default_wait. GoT not run. No native recovery acceptance.",
       "negative_result_or_prohibition": "Host reproduction establishes byte-preservation/invalidation defects, not the native GPU-loss cause. No title/shader/vendor exceptions or readback options. Unsupported layouts and native performance remain unproven.",
-      "next_test": "Build the final checkpoint with the unchanged two-game runner. GoW FIRST, then GoT if safe: the last two GoT GPU failures prevented GoW from running. <=120s each; no automatic input or readback options. Keep >=8GiB VRAM/display/process preflights; stop after GPU failure or unconfirmed child exit."
+      "next_test": "PR133 host error/pool/preflight fixes; pinned GoW then GoT if safe; no readback setting changes."
+    },
+    {
+      "id": "vulkan-wait-pool-progress-and-live-worker-preflight",
+      "subsystem": "renderer-vulkan-and-native-observer",
+      "status": "BUILD_HOST_PASS_NATIVE_PENDING",
+      "related_prs": [
+        133
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "No native test of PR133. Parent PR132 GoW loading/stall; GoT skipped. Correct Vulkan error propagation, remaining descriptor accounting and live-thread detection reproduced on host.",
+      "negative_result_or_prohibition": "No forced GPU completion, total-wait watchdog, per-title/vendor switch, service reset or claimed game recovery.",
+      "next_test": "Pinned common source GoW then GoT only if safe, <=120s each, no automatic input or settings changes. Before building, refuse any remaining live/unreadable emulator worker and archive evidence. Keep >=8GiB VRAM/conditional Ollama unload, upstream freshness check, and stop remaining games after GPU failure or unconfirmed exit.",
+      "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json"
     }
   ]
 }
