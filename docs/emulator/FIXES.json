@@ -492,12 +492,13 @@
       "status": "BUILD_AND_PRODUCTION_CHECKS_PASS_NATIVE_PENDING",
       "related_prs": [
         127,
-        128
+        128,
+        129
       ],
       "main_merge_sha": null,
       "observed_game_effects": "PR126 GoT integer-sampler validation failure; no menu/video, stop unconfirmed and GoW skipped. PR127 attempt blocked before build by advanced upstream; neither game launched. Rebased candidate has no native result.",
       "negative_result_or_prohibition": "No title/hash/vendor cases. Do not equate legal integer filtering with solved interpolation of scaled/converted float formats. Do not claim an OS-uninterruptible process was killed.",
-      "next_test": "Build exact published revision; GoT then GoW with Vulkan diagnostics and DS capture, <=120s each, no automatic input. Require upstream ancestry, display, no pre-existing game process and >=8GiB free VRAM. Stop remaining tests after GPU failure or unconfirmed owned-process exit."
+      "next_test": "Build the exact PR129 pin; GoT then GoW, Vulkan diagnostics and DS capture, <=120s each and no input. Preserve >=8GiB VRAM/display/existing-process preflights. Stop remaining games after GPU failure or unconfirmed exit."
     },
     {
       "id": "upstream-943df2e3-user-color-contract",
