@@ -39,6 +39,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     capture_completed = False
     validation_hashes = []
     validation_compilation_hashes = []
+    resource_warning_hashes = []
+    readbacks_modes = set()
     compilation_by_thread = {}
     validation_log = out / 'capture/vulkan-validation.log'
     if validation_log.is_file():
@@ -53,6 +55,9 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         with console.open(errors='replace') as f:
             for line in f:
                 line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                mode = re.search(r'GPU readbacksMode: (\d+)\b', line)
+                if mode:
+                    readbacks_modes.add(int(mode.group(1)))
                 thread = re.search(r'<\w+> \(([^)]+)\)', line)
                 match = re.search(r'Compiling \w+ shader (0x[0-9a-fA-F]+)', line)
                 if match:
@@ -74,6 +79,13 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                     if current_hash in blocked:
                         blocked.remove(current_hash)
                     blocked.append(current_hash)
+                match = re.search(r'BindBuffers: Clamped size .* for stage (0x[0-9a-fA-F]+)', line)
+                if match:
+                    shader_hash = format(int(match.group(1), 16), '016x')
+                    if shader_hash in resource_warning_hashes:
+                        resource_warning_hashes.remove(shader_hash)
+                    resource_warning_hashes.append(shader_hash)
+                    resource_warning_hashes = resource_warning_hashes[-8:]
                 capture_completed |= 'PR117_REAL_GCN_CAPTURE_DONE epoch=' in line
         with console.open('rb') as f:
             start = max(0, console.stat().st_size - 16 * 1024**2)
@@ -86,16 +98,23 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         if match and match.group(1) not in priority:
             priority.append(match.group(1))
     priority.extend(h for h in reversed(blocked) if h not in priority)
+    priority.extend(h for h in reversed(resource_warning_hashes) if h not in priority)
     priority.extend(h for h in reversed(recent) if h not in priority)
     dumps = runtime / 'user/shader/dumps'
     groups = []
-    binaries = []
+    binary_groups = []
     for shader_hash in priority:
         paths = [p for p in dumps.glob('*' + shader_hash + '*')
                  if p.is_file() and not p.is_symlink()]
         groups.append(sorted((p for p in paths if p.name.endswith('irprogram.txt')),
                              key=lambda p: ('.pre-' in p.name, p.name)))
-        binaries.extend(sorted(p for p in paths if p.suffix in ('.bin', '.spv')))
+        variants = {}
+        for path in paths:
+            if path.suffix in ('.bin', '.spv'):
+                variants.setdefault(path.stem, []).append(path)
+        variant_order = sorted(variants, key=lambda stem:
+                               (-max(p.stat().st_mtime_ns for p in variants[stem]), stem))
+        binary_groups.append([sorted(variants[stem]) for stem in variant_order])
     saved_ir = []
     total_ir = 0
     for depth in range(max(map(len, groups), default=0)):
@@ -113,22 +132,31 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             total_ir += size
     saved_binary = []
     total_binary = 0
-    for path in binaries:
-        size = path.stat().st_size
-        if len(saved_binary) >= 32 or total_binary + size > 8 * 1024**2:
-            continue
-        target = out / 'blocked-shader-binary' / path.name
-        target.parent.mkdir(exist_ok=True)
-        shutil.copyfile(path, target)
-        saved_binary.append({'file': path.name, 'bytes': size, 'sha256': digest(target)})
-        total_binary += size
+    for depth in range(max(map(len, binary_groups), default=0)):
+        for group in binary_groups:
+            if depth >= len(group):
+                continue
+            variant = group[depth]
+            sizes = [path.stat().st_size for path in variant]
+            if len(saved_binary) + len(variant) > 32 or total_binary + sum(sizes) > 8 * 1024**2:
+                continue
+            for path, size in zip(variant, sizes):
+                target = out / 'blocked-shader-binary' / path.name
+                target.parent.mkdir(exist_ok=True)
+                shutil.copyfile(path, target)
+                saved_binary.append({'file': path.name, 'bytes': size, 'sha256': digest(target)})
+                total_binary += size
     return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
             'validation_named_hashes': validation_hashes,
             'validation_compilation_hashes': validation_compilation_hashes,
+            'resource_warning_hashes': list(reversed(resource_warning_hashes)),
+            'observed_readbacks_modes': sorted(readbacks_modes),
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
             'limit_bytes': 20 * 1024**2, 'limit_files': 48,
             'saved_binary': saved_binary, 'saved_binary_bytes': total_binary,
+            'binary_unrepresented_hashes': [h for h in priority
+                if not any(h in item['file'] for item in saved_binary)],
             'binary_limit_bytes': 8 * 1024**2, 'binary_limit_files': 32,
             'capture_completed_marker': capture_completed,
             'console_tail_complete': console.is_file() and console.stat().st_size <= 16 * 1024**2}
@@ -368,7 +396,7 @@ def profile_source(project):
     raise RuntimeError('NO_EXISTING_PROFILE_WITH_SYSTEM_MODULES')
 
 
-def copy_profile(old, new, diagnostics=False):
+def copy_profile(old, new, diagnostics=False, precise_readbacks=False):
     allowed = {'sys_modules', 'custom_modules', 'fonts', 'licenses', 'home',
                'savedata', 'game_data', 'trophy', 'config.json'}
     files = []
@@ -405,6 +433,8 @@ def copy_profile(old, new, diagnostics=False):
         data.setdefault('GPU', {})['dump_shaders'] = True
     else:
         data = {'GPU': {'dump_shaders': True}}
+    if precise_readbacks:
+        data.setdefault('GPU', {})['readbacks_mode'] = 2
     if diagnostics:
         data.setdefault('Vulkan', {}).update(
             vkvalidation_enabled=True, vkvalidation_core_enabled=True,
@@ -512,7 +542,9 @@ def main():
     record['runner_commit'] = os.environ.get('SHADPS4_TEST_RUNNER_COMMIT', PIN)
     record['runner_sha256'] = digest(Path(__file__))
     diagnostics = os.environ.get('SHADPS4_VULKAN_DIAGNOSTICS') == '1'
+    precise_readbacks = os.environ.get('SHADPS4_TEST_PRECISE_READBACKS') == '1'
     record['vulkan_diagnostics_requested'] = diagnostics
+    record['requested_readbacks_mode'] = 2 if precise_readbacks else None
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
@@ -580,11 +612,13 @@ def main():
             verify_validation_layer(out, record)
         old = profile_source(project)
         record['profile_source'] = str(old)
-        record['profile_files_copied'] = copy_profile(old, runtime / 'user', diagnostics)
+        record['profile_files_copied'] = copy_profile(
+            old, runtime / 'user', diagnostics, precise_readbacks)
         profile_config = runtime / 'user/config.json'
         record['profile_config_sha256'] = digest(profile_config)
+        settings = json.loads(profile_config.read_text())
+        record['configured_readbacks_mode'] = settings.get('GPU', {}).get('readbacks_mode')
         if diagnostics:
-            settings = json.loads(profile_config.read_text())
             save(out / 'vulkan-diagnostic-settings.json',
                  {key: settings[key] for key in ('Vulkan', 'Log')})
         record['profile_policy'] = 'isolated saves; global config; no custom title configs, patches, cheats or old shader cache'
@@ -663,6 +697,14 @@ def main():
                     'guest_continuation_executed': False})
         record['shader_diagnostics'] = collect_shader_diagnostics(
             runtime, out, out / 'capture/full-console.log', record['ordered_gds_evidence'])
+        if precise_readbacks and record['game_launched']:
+            record['precise_readbacks_confirmed'] = (
+                record['shader_diagnostics']['observed_readbacks_modes'] == [2])
+            if not record['precise_readbacks_confirmed']:
+                record['stop_remaining_tests'] = True
+                if rc == 0:
+                    rc = 1
+                    record['result'] = 'REQUESTED_READBACK_POLICY_NOT_CONFIRMED'
         if (record['ordered_gds_capture_requested'] and record['ordered_gds_evidence'] and
                 record['shader_diagnostics']['capture_completed_marker'] and
                 not record['stop_remaining_tests']):
