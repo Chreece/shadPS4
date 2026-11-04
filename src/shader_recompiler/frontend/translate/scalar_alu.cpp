@@ -563,7 +563,7 @@ void Translator::S_FF1_I32_B32(const GcnInst& inst) {
 
 void Translator::S_FF1_I32_B64(const GcnInst& inst) {
     const IR::U64 src0{GetSrc64(inst.src[0])};
-    SetDst(inst.dst[0], ir.BallotFindLsb(src0));
+    SetDst(inst.dst[0], ir.FindILsb(src0));
 }
 
 void Translator::S_FLBIT_I32_B32(const GcnInst& inst) {
