@@ -487,6 +487,8 @@ Id EmitCubeFaceCoordS(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitCubeFaceCoordT(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitCubeFaceMajorAxis(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitLaneId(EmitContext& ctx);
+Id EmitGroupReduceUMin(EmitContext& ctx, Id value);
+Id EmitGroupReduceOr(EmitContext& ctx, Id value);
 Id EmitWarpId(EmitContext& ctx);
 Id EmitQuadBroadcast(EmitContext& ctx, Id value, Id index);
 Id EmitShuffle(EmitContext& ctx, Id value, Id index);
