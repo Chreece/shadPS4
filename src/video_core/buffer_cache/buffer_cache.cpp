@@ -254,6 +254,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
+        texture_cache.InvalidateMemoryFromGPU(device_addr, size);
     }
     return {arena, arena->Offset(device_addr)};
 }
@@ -281,6 +282,7 @@ void BufferCache::MarkRegionAsGpuModified(VAddr addr, size_t size) {
     texture_cache.MarkAsMaybeGpuDirty(addr, size);
     memory_tracker->MarkRegionAsGpuModified(addr, size);
     gpu_modified_ranges.Add(addr, size);
+    texture_cache.InvalidateMemoryFromGPU(addr, size);
 }
 
 void BufferCache::ReadEdgeImagePages(const Image& image) {
