@@ -155,7 +155,7 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     if (threadgroup_size != GcnSubgroupSize || !profile.needs_lds_barriers) {
         // GCN waves can use shared memory between invocations without explicit barriers because
         // they run in lockstep. Host compilers can reorder these accesses, so keep their order
-        // with subgroup memory barriers.
+        // with subgroup control barriers.
         for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
             if (node.type == IR::AbstractSyntaxNode::Type::Block) {
                 EmitBarrierInBlock(node.data.block, program.info, true);
