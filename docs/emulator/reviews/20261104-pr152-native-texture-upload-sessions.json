@@ -1,0 +1,361 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T19:34:02.236947+00:00",
+  "page_context": "c717fd00-1f3e-44cd-a07c-80b030280140",
+  "source_commit": "b4e8a206d513630aad255012feab2ec3250f9013",
+  "upstream_commit": "ce7643cab4c956cd386f3410edd149df7052394d",
+  "prs": [
+    152,
+    153
+  ],
+  "archive": {
+    "filename": "universal-two-games-20261104T184455Z-2402459.tar.gz",
+    "library_file_id": "libfile_f0219d0773508191bed842896522fd6b",
+    "sha256": "1dfc7dfd8a580293c7b29ec9f7612798604f4ce02dd7530df9d030b8686a320b",
+    "size_bytes": 11618352
+  },
+  "native_build": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261104T184456Z-2402848",
+    "timestamp_utc": "2026-11-04T18:59:35.342314+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "COMPLETE_BUILD_ONLY",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0,
+    "requested_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+    "source_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+    "upstream_commit": "ce7643cab4c956cd386f3410edd149df7052394d",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T184456Z-2402848.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-de307020a418/build/shadps4",
+    "binary_sha256": "5dc2a7a58265d9763f43b51d9d217b53160c1965240b6e255dbe908c1cf98d3d",
+    "complete_log_reviewed": true,
+    "build_log_sha256": "b0f989d7d8543416ec173cbd714148cd0d70899afb326e164fd260221c344162",
+    "build_log_lines": 3281,
+    "warnings": 115,
+    "errors": 0,
+    "warning_multiset_matches_previous_native": true,
+    "compiler": "GCC14",
+    "cpu_suite": "PASS",
+    "startup_cases": 3
+  },
+  "native_games": {
+    "gow": {
+      "title": "CUSA34384",
+      "source_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+      "binary_sha256": "5dc2a7a58265d9763f43b51d9d217b53160c1965240b6e255dbe908c1cf98d3d",
+      "elapsed_seconds": 20.571,
+      "exit_code": -11,
+      "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_loss_marker": false,
+      "vuid_count": 0,
+      "gpu_memory_fault_reports": 0,
+      "automatic_coherence_enabled": true,
+      "audio": "NOT_OBSERVED",
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "sustained_performance": "NOT_ACCEPTED",
+      "full_console_lines": 11748,
+      "full_console_bytes": 1705398,
+      "console_excerpt_complete": true,
+      "native_record_sha256": "96949651fec887e4729692b704728ab10c7532d7dda5bc1094d6a698a7948535",
+      "full_console_sha256": "cc9f3476bbad3ab97c5afa512de44cd370d30f2a2d2c335ad6a240e7b40f67c0",
+      "ollama_restore_leases": [
+        {
+          "endpoint": "http://172.23.0.2:11434",
+          "model": "qwen3.8-greek:latest",
+          "context_length": 16384,
+          "expires_at": "2319-02-14T18:20:17.098358+00:00",
+          "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+          "size_vram": 17361985862,
+          "status": "RESTORED",
+          "restored_size_vram": 17315848518
+        }
+      ],
+      "vram_free_before": 5157031936,
+      "vram_free_at_launch": 25599717376,
+      "screenshots": [
+        {
+          "file": "frame-008s.png",
+          "sha256": "36b49cba23f38048dcbac70d1f051f49e821581de9786f67bd955bd4522dceb8"
+        }
+      ],
+      "fatal": {
+        "site": "emit_spirv.cpp:821",
+        "message": "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered SPIR-V atomic lowering",
+        "shader": "dbaa6ae4",
+        "sites": [
+          "0x4158",
+          "0x41d4"
+        ],
+        "dispatch_groups": 7,
+        "workgroup_size": 64,
+        "vgprs": 52,
+        "lds_bytes": 1536
+      },
+      "visual": "8s loading only; 60 FPS overlay is not gameplay performance",
+      "decision": "ORDERED_INITIALIZATION_AND_AUTHENTIC_CONTINUATION_STILL_INCOMPLETE"
+    },
+    "got": {
+      "title": "CUSA11456",
+      "source_commit": "de307020a418c8e3653867097fb175fac2bbf4df",
+      "binary_sha256": "5dc2a7a58265d9763f43b51d9d217b53160c1965240b6e255dbe908c1cf98d3d",
+      "elapsed_seconds": 119.166,
+      "exit_code": 0,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_loss_marker": false,
+      "vuid_count": 0,
+      "gpu_memory_fault_reports": 0,
+      "automatic_coherence_enabled": true,
+      "audio": "NOT_OBSERVED",
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "sustained_performance": "NOT_ACCEPTED",
+      "full_console_lines": 11720,
+      "full_console_bytes": 1593691,
+      "console_excerpt_complete": true,
+      "native_record_sha256": "3d35e2cfc07b5a91777929f16a4a88fbb561818440fffa24f77ac34e71891118",
+      "full_console_sha256": "2d925f4238a822d6dbff34a12133421de9d7eef132a77bc3ffd80adb58b6705b",
+      "ollama_restore_leases": [
+        {
+          "endpoint": "http://172.23.0.2:11434",
+          "model": "qwen3.8-greek:latest",
+          "context_length": 16384,
+          "expires_at": "2319-02-14T18:20:36.170796+00:00",
+          "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+          "size_vram": 17315848518,
+          "status": "ALREADY_LOADED"
+        }
+      ],
+      "vram_free_before": 5947035648,
+      "vram_free_at_launch": 25597571072,
+      "screenshots": [
+        {
+          "file": "frame-008s.png",
+          "sha256": "938ee4dcfdc0f5b70e709df00f012c2b537305b8cc3e49f2bf717e83961ffd4f"
+        },
+        {
+          "file": "frame-025s.png",
+          "sha256": "e264faf383f0d5ab9dfa2135ff2c6f477e8d94dfb54efe0fd57025c293ebee83"
+        },
+        {
+          "file": "frame-080s.png",
+          "sha256": "ad1f34f63e2deb02c0838355fa38adb39b5ac9e3054ae7ed49842e2c87999341"
+        },
+        {
+          "file": "frame-110s.png",
+          "sha256": "ad1f34f63e2deb02c0838355fa38adb39b5ac9e3054ae7ed49842e2c87999341"
+        }
+      ],
+      "fatal": null,
+      "visual": {
+        "8s": "Loading;30 FPS UI overlay",
+        "25s": "Visible blue PlayStation intro;30 FPS UI overlay",
+        "80s": "Black;11 FPS/87.8ms overlay",
+        "110s": "Black;no visible overlay"
+      },
+      "previous_release_mem_assertion": "NOT_REPRODUCED_IN_FULL_BOUNDED_RUN",
+      "packet_attribution": "Native progression supports retaining PR151; raw prior DATA_SEL remains unknown, and complete game recovery is not established.",
+      "ollama_note": "ALREADY_LOADED with original matching digest/context16384; this does not establish restoration by this runner. An external reload during execution cannot be excluded.",
+      "remaining_resource_warnings": [
+        "5e89a8b4 buffer clamp",
+        "5065ed7b unflattened resource"
+      ],
+      "gpu_work": {
+        "sha256": "7d0e4277a89db30641faf4e76fbae05cdde9ad52bb56e5756a0eae27226ce8e5",
+        "retained_records": 2048,
+        "recorded": 193119,
+        "overwritten": 191071,
+        "kinds": {
+          "image-upload": 1024,
+          "detile": 1024
+        },
+        "ticks": {
+          "4054": 2048
+        },
+        "first_ms": 106670,
+        "last_ms": 117273,
+        "dump_reason": "exit",
+        "completed_tick_interpretation": "completed=0 is a placeholder in an exit dump with semaphore=nil, not evidence of a stalled GPU semaphore.",
+        "first_wait_window": null,
+        "last_image_table": {
+          "shader": "b5c898c7",
+          "entries": 27651,
+          "bound_2d": 27612,
+          "bound_3d": 35,
+          "bound_cube": 4,
+          "bound_float": 27651,
+          "record_stride": 0,
+          "indexed_image_resources_in_captured_spirv": 1,
+          "typed_arrays": 9,
+          "slots_per_array": 27652
+        },
+        "inference": "One large binding pass is still recording detile/uploads late in the black interval. Per-command-buffer driver/validation recording cost is a plausible contributor, not proven causal attribution.",
+        "discarded_hypothesis": "The final module has one indexed image resource, not three duplicate whole-heap image resources; descriptor-table deduplication was not applied."
+      }
+    }
+  },
+  "fix": {
+    "source_commit": "b4e8a206d513630aad255012feab2ec3250f9013",
+    "tree": "e3872a32e50aef006034ad0cea86fb259be8399e",
+    "pr": 153,
+    "integration_pr": 152,
+    "base_commit": "161cf057fea4d764f3f28cc1dbdf79920daa98f7",
+    "changed_files": 4,
+    "insertions": 32,
+    "deletions": 9,
+    "behavior": "At a completed image-binding boundary after1024 actual image uploads, flush pending barriers and begin a new command-buffer recording session. Every session remains at the same scheduler tick for one later submission. No descriptor is dropped. Small/cached tables do not split. Profiling scopes end per session. Optional work diagnostics report progress.",
+    "semantics": "Host recording granularity only; guest instruction/packet semantics unchanged, so no new PS4 instruction homebrew was introduced.",
+    "selectors": [
+      "actual upload count only"
+    ],
+    "unchanged": [
+      "guest descriptor prefix, slots, views and metadata",
+      "draw/dispatch pipeline resources bound after texture preparation",
+      "submission timeline and allocation retirement",
+      "automatic coherence and global settings",
+      "shader/cache version",
+      "DS ordered guard"
+    ],
+    "references": [
+      "https://docs.vulkan.org/spec/latest/chapters/fundamentals.html#fundamentals-queueoperation",
+      "https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdPipelineBarrier.html"
+    ],
+    "reference_scope": "Command-buffer boundaries reset state but do not add ordering; explicit barriers span submission order. The implementation flushes barriers before the boundary and invalidates dynamic state."
+  },
+  "candidate_validation": {
+    "source_commit": "b4e8a206d513630aad255012feab2ec3250f9013",
+    "source_tree": "e3872a32e50aef006034ad0cea86fb259be8399e",
+    "full_target_clang18_release_build": "PASS incremental22 changed targets; formatting2 targets; published-revision4 targets",
+    "binary_sha256": "3937f6069a2777c1142cc71c2cf4b2eea8112bf45f99244b27bb1af6d6aaed89",
+    "startup": "NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN",
+    "cpu_suite": "PASS31 CTests,7 renderer contracts,10418 production SRT checks,sparse288 ranges/7 scenarios in both modes,descriptor/VMA/ABI",
+    "fixture": {
+      "production_bodies": [
+        "Rasterizer::BindTextures second pass",
+        "Runtime::UploadImage",
+        "Scheduler::BeginSession",
+        "Scheduler::EndSession",
+        "Scheduler::EndRendering",
+        "Scheduler::UploadCommandBuffer",
+        "Scheduler::SubmitExecution"
+      ],
+      "scenarios": 49,
+      "baseline_checks": 449107,
+      "candidate_checks_profiling_disabled": 449830,
+      "candidate_checks_profiling_enabled": 450036,
+      "asan_ubsan": "PASS in both profiling branches, leak detection disabled",
+      "distributed_replay": "PASS after fixing helper path concatenation",
+      "dense_case": {
+        "uploads": 27651,
+        "baseline_max_per_primary": 27651,
+        "candidate_max_per_primary": 1024,
+        "session_splits": 27,
+        "submission_calls": 1,
+        "signal_tick": 4054
+      },
+      "covers": [
+        "empty/small/boundary/large tables",
+        "cached images",
+        "null slots",
+        "aliases",
+        "texture/storage/depth/feedback layouts",
+        "image rebinding",
+        "u64 counter wraparound",
+        "all output bindings and copies retained",
+        "barriers flushed before each session end",
+        "upload-primary order and same-tick signal",
+        "dynamic state invalidated",
+        "profiling scopes balanced"
+      ],
+      "dependencies_stubbed": [
+        "Vulkan driver",
+        "texture cache lookup/backing",
+        "barrier tracker",
+        "timeline completion"
+      ],
+      "GPU_executed": false,
+      "limitations": [
+        "Not a GPU synchronization/lifetime test",
+        "Not a driver-performance benchmark",
+        "Profiling enabled branch is tested with host substitutes; production GPU profiling remains disabled."
+      ]
+    },
+    "captured_spirv": {
+      "modules": 41,
+      "gow": 30,
+      "got": 11,
+      "result": "PASS Vulkan1.3 structural validation; modules from preceding native source, not new candidate GPU execution",
+      "details_sha256": "cd33c2dbfb55068b8eb77766922c3126bdf2fd9a115042ad02ff7e69702e824a"
+    },
+    "build_logs": {
+      "nov4j-build.log": {
+        "sha256": "bc48ac1cbc7d0eff995f70e136acef295df3840034619cf48820c5e3dd454903",
+        "lines": 367,
+        "warnings": 1,
+        "errors": 0
+      },
+      "nov4j-formatted-build.log": {
+        "sha256": "1c752f42ddb62435d29a2a6a3a626b10097c8386b1812ad92940ed4fd7b68419",
+        "lines": 3,
+        "warnings": 0,
+        "errors": 0
+      },
+      "nov4j-final-build.log": {
+        "sha256": "2a8510191ae4f46c6481e6308ce7b79ba0bc69a07eb613acf3cee81d8c799092",
+        "lines": 345,
+        "warnings": 0,
+        "errors": 0
+      }
+    },
+    "host_warning": "One existing ignored nodiscard ObtainBuffer return in unchanged buffer_cache.cpp:354; formatted/final build zero warnings.",
+    "retention": "Fast-forward of retained161cf057; all earlier commits preserved; latest upstream ce7643ca remains an ancestor; API-created tree exactly matches local staged tree."
+  },
+  "corrected_host_failures": [
+    "Initial host recorder compilation rejected unused stage parameter and signed/unsigned comparison under Werror; fixture corrected.",
+    "Initial CPU-suite command could not find cmake on PATH; no production test ran in that invocation. Rerun with toolchain PATH/LD_LIBRARY_PATH passed.",
+    "Initial distributed host-fixture replay exposed path concatenation TypeError; helper corrected and all49 scenarios replayed in all four candidate build modes before saving."
+  ],
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/texture-upload-evidence/texture-upload-host-evidence-20261104.zip",
+    "sha256": "b3fde38f46dd1dfd839b2ec9ee819e9e0e9214b78af2a0d291561ece9189cdac",
+    "size": 42656,
+    "entries": 33,
+    "library_file_id": "libfile_0a5c318d08a481919549cd271a15c939",
+    "url": "https://chatgpt.com/library?file_id=libfile_0a5c318d08a481919549cd271a15c939&account_id=personal"
+  },
+  "handoff": {
+    "source": "b4e8a206d513630aad255012feab2ec3250f9013",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "981e94362df08f83940172eeb4e75dd72b89ad335e3da5b442a14c01d81f4cd3",
+    "first_game": "CUSA34384",
+    "same_binary_for_both": true,
+    "native_build_mode": "build",
+    "term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "minimum_free_vram_gib": 8,
+    "exact_conditional_model_leases": true,
+    "stop_after_gpu_loss_or_live_child": true,
+    "defer_restoration_after_gpu_loss_or_live_child": true,
+    "per_game_settings": false,
+    "automatic_input": false,
+    "boundary_fixture": "ONEPASTE case=pass expected_exit=0 handoff=True PASS\nONEPASTE case=bad_checksum expected_exit=1 handoff=False PASS\nONEPASTE case=download_fail expected_exit=22 handoff=False PASS\nDOWNLOAD_AND_NATIVE_RUN_BOUNDARIES_STUBBED; GPU_NOT_RUN",
+    "bash": "bash <<'BASH'\nset -Eeuo pipefail\nSOURCE=b4e8a206d513630aad255012feab2ec3250f9013\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nBASH\n"
+  },
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "limits": [
+    "GoT packet crash did not recur, but menu/gameplay/audio and sustained performance are not accepted.",
+    "Native performance benefit of recording-session splitting is unproven; black-screen root cause is not established.",
+    "GoW DS ordered-count initialization and authentic guest continuation remain incomplete; guard retained.",
+    "New candidate has no native GPU execution here; native GPU/lifetime, same-scene,cross-title and cross-platform acceptance remain pending.",
+    "No per-game mode,game/hash/vendor/address branch,descriptor truncation,forced counter,CPU override or automatic input was introduced."
+  ]
+}
