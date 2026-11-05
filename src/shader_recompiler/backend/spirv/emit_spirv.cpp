@@ -170,6 +170,16 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
 // No guest order, counter seed, synthetic resumed register, or replay is
 // generated. This source path is still diagnostic until a real producer/
 // consumer dispatch scheduler is implemented.
+Id CompleteWave64(EmitContext& ctx) {
+    const Id active = ctx.OpGroupNonUniformBallot(
+        ctx.U32[4], ctx.ConstU32(static_cast<u32>(spv::Scope::Subgroup)), ctx.true_value);
+    return ctx.OpLogicalAnd(ctx.U1[1],
+                            ctx.OpIEqual(ctx.U1[1], ctx.OpCompositeExtract(ctx.U32[1], active, 0),
+                                         ctx.ConstU32(~u32{0})),
+                            ctx.OpIEqual(ctx.U1[1], ctx.OpCompositeExtract(ctx.U32[1], active, 1),
+                                         ctx.ConstU32(~u32{0})));
+}
+
 void EmitOrderedGdsTerminalBypass(EmitContext& ctx) {
     namespace Gds = Shader::Gcn::OrderedGds;
     ASSERT_MSG(ctx.ordered_gds_capture_pass && ctx.hw_stage == HwStage::Compute &&
@@ -198,6 +208,7 @@ void EmitOrderedGdsTerminalBypass(EmitContext& ctx) {
                "GDS terminal capture missing GPU descriptor storage");
 
     const Id local_index = ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index);
+    const Id complete_wave = CompleteWave64(ctx);
     const Id lane = ctx.OpUMod(ctx.U32[1], local_index, ctx.ConstU32(Gds::GcnWaveLanes));
     const Id wave_in_group = ctx.OpUDiv(ctx.U32[1], local_index, ctx.ConstU32(Gds::GcnWaveLanes));
     const Id physical_slot = ctx.OpIAdd(ctx.U32[1],
@@ -244,10 +255,11 @@ void EmitOrderedGdsTerminalBypass(EmitContext& ctx) {
     const Id token_valid =
         ctx.OpLogicalOr(ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], token_lo, ctx.u32_zero_value),
                         ctx.OpINotEqual(ctx.U1[1], token_hi, ctx.u32_zero_value));
-    const Id valid = ctx.OpLogicalAnd(
+    const Id authority_valid = ctx.OpLogicalAnd(
         ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], declared_slots_valid, slot_valid),
         ctx.OpLogicalAnd(ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], source_valid, epoch_valid),
                          token_valid));
+    const Id valid = ctx.OpLogicalAnd(ctx.U1[1], authority_valid, complete_wave);
 
     // Bypass does not consume DS, return a VDST, or need a GPU continuation
     // token. The host validates this exact canonical packet and separately
@@ -436,7 +448,8 @@ void SetupCapabilities(const Info& info, const Profile& profile, const RuntimeIn
     if (info.uses_group_shuffle) {
         ctx.AddCapability(spv::Capability::GroupNonUniformShuffle);
     }
-    if (info.uses_group_ballot || info.loads.Get(IR::Attribute::SubgroupLtMask)) {
+    if (info.uses_group_ballot || info.uses_ordered_gds ||
+        info.loads.Get(IR::Attribute::SubgroupLtMask)) {
         ctx.AddCapability(spv::Capability::GroupNonUniformBallot);
     }
     if (info.uses_shader_clock) {
@@ -1013,12 +1026,14 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank, u
             const u32 valid_stamp =
                 packet_stamp ? (index == 0u ? Gds::CapturePacketTag : Gds::CaptureFlags)
                              : (index == 0u ? Gds::GcnCheckpointTag : Gds::GcnCheckpointFlags);
+            const Id full_wave = CompleteWave64(ctx);
             // No valid stamp for unpreserved LDS or partial guest waves.
             // Actual counter resolution and guest shader re-entry remain
             // separate, fail-closed operations.
             real_value =
                 complete_wave64_lds_ready
-                    ? ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(valid_stamp), ctx.u32_zero_value)
+                    ? ctx.OpSelect(ctx.U32[1], ctx.OpLogicalAnd(ctx.U1[1], valid, full_wave),
+                                   ctx.ConstU32(valid_stamp), ctx.u32_zero_value)
                     : ctx.u32_zero_value;
         } else {
             const u32 authority_word = packet ? (index == 1u    ? 1u
