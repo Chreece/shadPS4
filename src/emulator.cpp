@@ -695,7 +695,6 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
             std::quick_exit(0);
         }
 
-
 #ifdef ENABLE_DISCORD_RPC
         // Discord RPC
         if (EmulatorSettings.IsDiscordRPCEnabled()) {
@@ -725,7 +724,6 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
         Startup::progress.SetStage(Startup::Stage::Modules);
         linker->Execute(args);
     }};
-
 
     window->InitTimers();
     while (window->IsOpen()) {
