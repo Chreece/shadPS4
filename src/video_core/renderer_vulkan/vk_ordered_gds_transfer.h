@@ -10,6 +10,7 @@
 #include <optional>
 #include <span>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -237,17 +238,19 @@ public:
     // Runtime::CopyBuffer then adds the appropriate compute-write -> copy-read
     // dependency through its tracked buffer barriers. A post-copy barrier,
     // GPU timeline completion and VMA invalidation expose exact bytes to CPU.
-    [[nodiscard]] static std::vector<Capture> Download(Runtime& runtime, Scheduler& scheduler,
-                                                       const VideoCore::Buffer& source,
-                                                       u64 source_offset,
-                                                       std::size_t packet_count) {
-        const u64 bytes = CheckedPacketBytes(packet_count);
+    template <typename Packet = Capture>
+    [[nodiscard]] static std::vector<Packet> Download(Runtime& runtime, Scheduler& scheduler,
+                                                      const VideoCore::Buffer& source,
+                                                      u64 source_offset, std::size_t packet_count) {
+        static_assert(std::is_same_v<Packet, Capture> || std::is_same_v<Packet, Resume> ||
+                      std::is_same_v<Packet, Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth>);
+        const u64 bytes = CheckedPacketBytes(packet_count) / sizeof(Capture) * sizeof(Packet);
         if ((source_offset & 3u) != 0 || source_offset > source.SizeBytes() ||
             bytes > source.SizeBytes() - source_offset) {
             throw std::invalid_argument("ordered GDS capture range outside device buffer");
         }
         const auto readback = runtime.GetStagingPool().Request(
-            bytes, VideoCore::MemoryType::HostCached, alignof(Capture));
+            bytes, VideoCore::MemoryType::HostCached, alignof(Packet));
         if (!readback.buffer || !readback.mapped || readback.size < bytes) {
             throw std::runtime_error("ordered GDS capture readback allocation unavailable");
         }
@@ -278,7 +281,7 @@ public:
         scheduler.Finish();
         readback.Invalidate();
 
-        std::vector<Capture> packets(packet_count);
+        std::vector<Packet> packets(packet_count);
         std::memcpy(packets.data(), readback.mapped, bytes);
         return packets;
     }
@@ -393,6 +396,23 @@ public:
     OrderedGdsEpochDeviceBuffers& operator=(const OrderedGdsEpochDeviceBuffers&) = delete;
     OrderedGdsEpochDeviceBuffers(OrderedGdsEpochDeviceBuffers&&) = delete;
     OrderedGdsEpochDeviceBuffers& operator=(OrderedGdsEpochDeviceBuffers&&) = delete;
+
+    void PrepareContinuationState(const Instance& instance, Runtime& runtime, u32 words) {
+        const u64 bytes =
+            u64(words) * plan.waves * Shader::Gcn::OrderedGds::GcnWaveLanes * sizeof(u32);
+        if (!words || bytes > Plan::MaxEpochDeviceBytes - plan.combined_device_bytes) {
+            throw std::invalid_argument("ordered GDS continuation exceeds dispatch memory budget");
+        }
+        if (continuation_state) {
+            if (continuation_state->SizeBytes() != bytes) {
+                throw std::invalid_argument("ordered GDS continuation shader layout changed");
+            }
+            return;
+        }
+        continuation_state.emplace(instance, 0, bytes, VideoCore::MemoryType::DeviceLocal,
+                                   "Ordered GDS persistent compiler state");
+        runtime.FillBuffer(&*continuation_state, 0, bytes, 0);
+    }
 
     // Initialize once before any guest LDS writes. Runtime::FillBuffer
     // tracks transfer-write hazards; BindBuffers later inserts a compute
@@ -520,6 +540,7 @@ public:
     std::optional<VideoCore::Buffer> capture_lds;
     std::optional<VideoCore::Buffer> resume_lds;
     std::optional<VideoCore::Buffer> persistent_lds;
+    std::optional<VideoCore::Buffer> continuation_state;
 
 private:
     std::vector<Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority_;

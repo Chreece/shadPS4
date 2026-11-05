@@ -381,6 +381,12 @@ public:
     // along a reachable GPU path until authenticated host resolution and
     // a separate state-restoring guest continuation are implemented.
     bool ordered_gds_capture_pass{};
+    size_t ordered_gds_state_index{};
+    size_t ordered_gds_resume_index{};
+    Id ordered_gds_resume_site{};
+    Id ordered_gds_previous{};
+    Id ordered_gds_resume_consumed{};
+    Id ordered_gds_state_base{};
     size_t bda_pagetable_index{};
     size_t fault_buffer_index{};
     Id physical_pointer_type_u32;

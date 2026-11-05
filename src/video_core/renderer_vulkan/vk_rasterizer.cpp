@@ -10,12 +10,14 @@
 #include <string_view>
 #include "common/debug.h"
 #include "common/path_util.h"
+#include "common/scope_exit.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "shader_recompiler/compact_image_indices.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
 #include "shader_recompiler/frontend/ordered_gds_resume_state.h"
+#include "shader_recompiler/frontend/ordered_gds_state.h"
 #include "shader_recompiler/guest_descriptor_coherence.h"
 #include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/resource.h"
@@ -475,32 +477,13 @@ void Rasterizer::DispatchDirect() {
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
     if (cs.uses_ordered_gds) {
-        if (!IsPr117OneShotCaptureProbe()) {
-            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
-        }
-        // The original pre-DS GCN executes on the GPU. Stop this process
-        // after its authenticated readback: returning from DispatchDirect
-        // here would falsely signal completion without guest re-entry.
         auto owner = AllocateOrderedGdsEpochBuffers(
             {cs_program.dim_x, cs_program.dim_y, cs_program.dim_z},
             {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
              cs_program.num_thread_z.full},
             cs_program.NumVgprs(), cs_program.SharedMemSize());
-        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
-        const auto packets = DispatchOriginalGcnOrderedCaptureDirect(*owner, epoch);
-        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
-            const auto& p = packets[index];
-            LOG_WARNING(Render_Vulkan,
-                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
-                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
-                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0, p.exec_hi, p.exec_lo,
-                        p.encoded_control);
-        }
-        LOG_WARNING(Render_Vulkan,
-                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
-                    "source=vkCmdDispatch; stopping before unimplemented re-entry",
-                    epoch, packets.size());
-        throw std::runtime_error("PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
+        ExecuteOrderedGdsDispatch(std::move(owner));
+        return;
     }
     if (ExecuteShaderHLE(cs, liverpool->regs, cs_program, *this)) {
         return;
@@ -543,30 +526,13 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
     if (cs.uses_ordered_gds) {
-        if (!IsPr117OneShotCaptureProbe()) {
-            throw std::runtime_error("ordered GDS capture pipeline outside explicit probe");
-        }
         auto owner = AllocateOrderedGdsEpochBuffersFromGpuIndirect(
             address, offset, size,
             {cs_program.num_thread_x.full, cs_program.num_thread_y.full,
              cs_program.num_thread_z.full},
             cs_program.NumVgprs(), cs_program.SharedMemSize());
-        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(*owner);
-        const auto packets =
-            DispatchOriginalGcnOrderedCaptureIndirect(*owner, epoch, address, offset, size);
-        for (std::size_t index = 0; index < std::min(packets.size(), size_t{32}); ++index) {
-            const auto& p = packets[index];
-            LOG_WARNING(Render_Vulkan,
-                        "PR117_REAL_GCN_GPU_CAPTURE_SLOT={} FLAGS={:#x} "
-                        "PC={:#x} M0={:#x} EXEC={:#x}:{:#x} CONTROL={:#x}",
-                        p.logical_slot, p.flags, p.site_pc, p.runtime_m0, p.exec_hi, p.exec_lo,
-                        p.encoded_control);
-        }
-        LOG_WARNING(Render_Vulkan,
-                    "PR117_REAL_GCN_CAPTURE_DONE epoch={} waves={} "
-                    "source=vkCmdDispatchIndirect; stopping before unimplemented re-entry",
-                    epoch, packets.size());
-        throw std::runtime_error("PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
+        ExecuteOrderedGdsDispatch(std::move(owner));
+        return;
     }
 
     if (!BindResources(pipeline)) {
@@ -664,6 +630,97 @@ u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(OrderedGdsEpochDeviceBuffers&
     return issued.epoch;
 }
 
+void Rasterizer::ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDeviceBuffers> owned) {
+    using namespace Shader::Gcn::OrderedGds;
+    SCOPE_EXIT {
+        scheduler.DeferOperation([keep_alive = std::move(owned)] {});
+    };
+    auto& owner = *owned;
+    const auto* pipeline = pipeline_cache.GetComputePipeline();
+    ASSERT(pipeline);
+    const auto& stage = pipeline->GetStage(Shader::SwStage::Compute);
+    owner.PrepareContinuationState(instance, runtime, stage.ordered_gds_state_words);
+    std::vector<u32> sites;
+    for (const auto& site : stage.ordered_gds_sites) {
+        sites.push_back(site.pc);
+    }
+    std::vector<GpuResumePacket> resumes(owner.plan.waves);
+    for (auto& resume : resumes) {
+        resume.site_pc = InitialResumeSite;
+    }
+    std::optional<VerifiedGuestCreationOrder> creation;
+    std::vector<bool> completed(owner.plan.waves);
+    u32 phase{};
+    while (true) {
+        const u32 epoch = AuthorizeNewOrderedGdsCaptureEpoch(owner);
+        const auto authority = owner.CaptureAuthority();
+        for (u32 slot = 0; slot < owner.plan.waves; ++slot) {
+            auto& resume = resumes[slot];
+            resume.tag = ResumePacketTag;
+            resume.epoch = epoch;
+            resume.logical_slot = slot;
+            resume.token_lo = authority[slot].token_lo;
+            resume.token_hi = authority[slot].token_hi;
+        }
+        UploadOrderedGdsPackets(owner.resume_packets, 0, resumes);
+        const auto captured = DispatchOriginalGcnOrderedCaptureDirect(owner, epoch);
+        bool all_completed = true;
+        for (const auto& packet : captured) {
+            const bool terminal = IsCanonicalGcnTerminalBypass(packet, epoch);
+            if (completed.at(packet.logical_slot) && !terminal) {
+                throw std::runtime_error("completed ordered GDS wave unexpectedly resumed");
+            }
+            completed[packet.logical_slot] = terminal;
+            all_completed &= terminal;
+        }
+        if (all_completed) {
+            LOG_INFO(Render_Vulkan, "Ordered GDS dispatch completed: phases={}, waves={}",
+                     phase + 1, owner.plan.waves);
+            return;
+        }
+        if (IsPr117OneShotCaptureProbe()) {
+            throw std::runtime_error(
+                "PR117_REAL_GCN_CAPTURE_COMPLETED_STOP_BEFORE_GUEST_CONTINUATION");
+        }
+        if (!creation) {
+            creation = VerifiedGuestCreationOrder::FromCompleteCikComputeM0(captured, epoch);
+            if (!creation) {
+                throw std::runtime_error(
+                    "ordered GDS first phase has no complete CIK creation order");
+            }
+        }
+        std::vector<CounterKey> keys;
+        for (const auto& packet : captured) {
+            if (packet.flags == CaptureBypassFlags) {
+                continue;
+            }
+            if (((packet.runtime_m0 >> 13) & 7u) ||
+                (packet.runtime_m0 & 0x1fffu) != creation->RankForSlot(packet.logical_slot)) {
+                throw std::runtime_error("ordered GDS continuation changed its creation identity");
+            }
+            keys.push_back(
+                CompleteBatch::KeyFromM0(packet.runtime_m0, packet.encoded_control >> 2 & 63u));
+        }
+        const auto snapshot = SnapshotOrderedGdsDwords();
+        const auto seeds = MakeCikGdsCounterSeed(snapshot, keys);
+        auto counters = MakeExplicitOrderedCounterSeed(
+            seeds, OrderedCounterSeedOrigin::SynchronizedCikGdsMemory);
+        SparseOrderedGdsEpoch host{owner.plan.waves, std::move(counters), sites};
+        StageGpuCaptures(host, epoch, captured, *creation);
+        resumes = ResolveGpuCaptures(host, epoch, *creation);
+        RequireResolvedGcnResumeHandoff(resumes, captured, *creation, epoch);
+        std::vector<std::pair<u32, u32>> updates;
+        for (const auto& [key, value] : host.CounterSnapshot()) {
+            updates.emplace_back(key.ByteOffset(), value);
+        }
+        // Publish the ordered instruction before its continuation can read GDS.
+        CommitOrderedGdsDwords(updates);
+        if (++phase == 65536) {
+            throw std::runtime_error("ordered GDS dispatch exceeded bounded continuation phases");
+        }
+    }
+}
+
 std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
 Rasterizer::DispatchOriginalGcnOrderedCaptureDirect(OrderedGdsEpochDeviceBuffers& owner,
                                                     u32 expected_epoch) {
@@ -694,7 +751,7 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
     }
     scheduler.PopPendingOperations();
     const auto& cs_program = liverpool->GetCsRegs();
-    DispatchExtent groups{cs_program.dim_x, cs_program.dim_y, cs_program.dim_z};
+    DispatchExtent groups = owner.groups;
     const DispatchExtent local{cs_program.num_thread_x.full, cs_program.num_thread_y.full,
                                cs_program.num_thread_z.full};
     const VideoCore::Buffer* indirect_command_buffer{};
@@ -733,7 +790,7 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
         throw std::invalid_argument("stale original GCN capture buffer plan");
     }
 
-    const ComputePipeline* pipeline = pipeline_cache.GetOrderedGdsCapturePipeline();
+    const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
     if (!pipeline) {
         throw std::runtime_error("original-GCN capture pipeline not compiled");
     }
@@ -783,10 +840,9 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
     // These synchronized copies are from real GPU-written device buffers.
     // They do not derive guest ranks from Vulkan physical invocation order.
     const auto captured = DownloadOrderedGdsPackets(owner.capture_packets, 0, owner.plan.waves);
-    RequireCaptureTokenAuthority(captured, owner.CaptureAuthority(), expected_epoch);
     const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
         runtime, scheduler, owner.capture_registers, 0, owner.plan.register_layout);
-    if (IsPr117OneShotCaptureProbe()) {
+    const auto save_evidence = [&] {
         const auto& layout = owner.plan.register_layout;
         const u32 saved_waves = std::min(owner.plan.waves, 32u);
         const std::array<u32, 12> header{0x32445347u,
@@ -814,19 +870,75 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
             throw std::runtime_error("failed to save ordered GDS GPU evidence");
         }
         LOG_WARNING(Render_Vulkan,
-                    "PR117_GPU_EVIDENCE file={} packets={} checkpoint_waves={}; "
-                    "validation follows; guest continuation has not executed",
+                    "ORDERED_GDS_GPU_EVIDENCE file={} packets={} checkpoint_waves={}; "
+                    "raw bytes are not a validated continuation",
                     path.string(), captured.size(), saved_waves);
+    };
+    const bool capture_requested = IsPr117OneShotCaptureProbe();
+    if (capture_requested) {
+        save_evidence();
     }
-    RequireCompleteGcnWaveCheckpoints(state, captured, owner.plan.register_layout, expected_epoch,
-                                      sites);
-    if (owner.plan.lds_layout && !owner.HasPersistentLdsBinding(expected_epoch)) {
-        throw std::invalid_argument("original GCN guest LDS capture did not bind persistent SSBO");
+    try {
+        RequireCaptureTokenAuthority(captured, owner.CaptureAuthority(), expected_epoch);
+        RequireCompleteGcnWaveCheckpoints(state, captured, owner.plan.register_layout,
+                                          expected_epoch, sites);
+        if (owner.plan.lds_layout && !owner.HasPersistentLdsBinding(expected_epoch)) {
+            throw std::invalid_argument(
+                "original GCN guest LDS capture did not bind persistent SSBO");
+        }
+    } catch (const std::invalid_argument& error) {
+        LOG_ERROR(Render_Vulkan, "Ordered GDS rejected epoch={} shader={:016x}: {}", expected_epoch,
+                  stage.pgm_hash, error.what());
+        for (u32 slot = 0; slot < std::min(owner.plan.waves, 32u); ++slot) {
+            const auto& packet = captured[slot];
+            LOG_ERROR(Render_Vulkan,
+                      "Ordered GDS raw packet index={} slot={} tag={:08x} epoch={} "
+                      "flags={:08x} site={:08x} m0={:08x} exec={:08x}{:08x} "
+                      "token={:08x}{:08x}",
+                      slot, packet.logical_slot, packet.tag, packet.epoch, packet.flags,
+                      packet.site_pc, packet.runtime_m0, packet.exec_hi, packet.exec_lo,
+                      packet.token_hi, packet.token_lo);
+        }
+        try {
+            if (!capture_requested) {
+                save_evidence();
+            }
+            const auto gpu_resume = OrderedGdsPacketTransfer::Download<GpuResumePacket>(
+                runtime, scheduler, owner.resume_packets, 0, owner.plan.waves);
+            const auto gpu_authority = OrderedGdsPacketTransfer::Download<GpuGcnOrderedEpochAuth>(
+                runtime, scheduler, owner.capture_auth, 0, owner.plan.waves);
+            const auto authority = owner.CaptureAuthority();
+            const std::array<u32, 12> header{0x49445347u,
+                                             2u,
+                                             expected_epoch,
+                                             owner.plan.waves,
+                                             u32(sizeof(GpuGcnOrderedEpochAuth)),
+                                             u32(sizeof(GpuResumePacket))};
+            const auto path =
+                Common::FS::GetUserPath(Common::FS::PathType::LogDir) /
+                fmt::format("ordered-gds-{:016x}-{}.inputs.bin", stage.pgm_hash, expected_epoch);
+            std::ofstream evidence{path, std::ios::binary};
+            evidence.write(reinterpret_cast<const char*>(header.data()), sizeof(header));
+            evidence.write(reinterpret_cast<const char*>(authority.data()), authority.size_bytes());
+            evidence.write(reinterpret_cast<const char*>(gpu_authority.data()),
+                           gpu_authority.size() * sizeof(GpuGcnOrderedEpochAuth));
+            evidence.write(reinterpret_cast<const char*>(gpu_resume.data()),
+                           gpu_resume.size() * sizeof(GpuResumePacket));
+            evidence.close();
+            if (!evidence) {
+                throw std::runtime_error("failed to save ordered GDS input evidence");
+            }
+            LOG_WARNING(Render_Vulkan, "Ordered GDS host/device authority and GPU resume bytes: {}",
+                        path.string());
+        } catch (const std::exception& diagnostic_error) {
+            LOG_ERROR(Render_Vulkan, "Ordered GDS evidence unavailable: {}",
+                      diagnostic_error.what());
+        }
+        throw;
     }
     LOG_WARNING(Render_Vulkan,
                 "PR117 original guest GCN GPU first pass completed: epoch={}, "
-                "waves={}, sites={}; authentic guest creation order, dedicated "
-                "CIK packer seed and guest shader re-entry NOT yet supplied",
+                "waves={}, sites={}; captured phase ready for ordered resolution",
                 expected_epoch, captured.size(), sites.size());
     return captured;
 }
@@ -1552,7 +1664,19 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             vk::AccessFlagBits2::eShaderRead |
             (desc.is_written ? vk::AccessFlagBits2::eShaderWrite : vk::AccessFlagBits2::eNone);
         if (desc.IsSpecial()) {
-            if (desc.buffer_type == Shader::BufferType::OrderedGdsEpochAuth) {
+            if (desc.buffer_type == Shader::BufferType::OrderedGdsState ||
+                desc.buffer_type == Shader::BufferType::OrderedGdsResume) {
+                ASSERT(stage.uses_ordered_gds && active_ordered_gds_capture_);
+                const auto& owner = *active_ordered_gds_capture_;
+                ASSERT(owner.continuation_state);
+                const auto& buffer = desc.buffer_type == Shader::BufferType::OrderedGdsState
+                                         ? *owner.continuation_state
+                                         : owner.resume_packets;
+                buffer_infos.emplace_back(buffer.Handle(), 0, buffer.SizeBytes());
+                needs_barrier |=
+                    runtime.IsBufferAccessed(&buffer, 0, buffer.SizeBytes(), desc.is_written);
+                bound_buffers.emplace_back(&buffer, 0, buffer.SizeBytes(), src_access);
+            } else if (desc.buffer_type == Shader::BufferType::OrderedGdsEpochAuth) {
                 ASSERT_MSG(stage.hw_stage == Shader::HwStage::Compute && stage.uses_ordered_gds &&
                                !desc.is_written && active_ordered_gds_capture_ &&
                                active_ordered_gds_capture_->AuthorizedEpoch() != 0,

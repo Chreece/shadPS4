@@ -956,7 +956,7 @@ std::unordered_map<IR::Inst*, IR::Value> ExpandUniformBufferStores(IR::Program& 
     std::unordered_map<IR::Inst*, IR::Value> guards;
     IR::ComputeDominators(program.post_order_blocks);
     u32 buffer_uses =
-        static_cast<u32>(BufferType::ClipPlanes) + (program.info.uses_ordered_gds ? 3u : 0u);
+        static_cast<u32>(BufferType::ClipPlanes) + (program.info.uses_ordered_gds ? 5u : 0u);
     for (auto* block : program.blocks) {
         for (auto& inst : *block) {
             buffer_uses += IsBufferInstruction(inst);
