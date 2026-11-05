@@ -1,0 +1,532 @@
+{
+  "schema_version": 2,
+  "record_id": "descriptor-pool-20261105-review",
+  "timestamp_utc": "2026-11-05T18:28:51.541218+00:00",
+  "source_commit": "3bcbc4dcef79f408e70e249cb759dd19c529967d",
+  "source_tree": "891d583c819ec3086b7e99c44ecc6af3880a2a41",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "pr": 165,
+  "depends_on_pr": 164,
+  "archive": {
+    "filename": "universal-two-games-20261105T175448Z-3057016.tar.gz",
+    "sha256": "ee9830f14f23762f8104a3c65e1d12a676358c910ab598e13b6e2dd0ca0a54b1",
+    "library_file_id": "libfile_db948d8a55a48191bc149e59f8e86281"
+  },
+  "native": [
+    {
+      "record_id": "universal-graphics-20261105T181155Z-3182757",
+      "source_commit": "a7210a604e4197091b18d778cdb1f40da5dbc455",
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "native": {
+        "binary_sha256": "49a27a48cbe8fca60e3b7ee13b786b83d966ce47c73f3b41e04005de996851ca",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 3182859,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 119.814,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 11949,
+        "warning_lines": 590,
+        "error_lines": 1525,
+        "gpu_work_entries": 2048,
+        "gpu_work_bytes": 274484,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 328553,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "buffer-readback": 2048,
+          "image-readback": 128,
+          "image-read-demand": 64,
+          "conditional-exec": 8,
+          "image-buffer-write": 64,
+          "draw-preparation-flush": 16,
+          "copy-layers": 32
+        },
+        "graphics_diagnostics_bytes": 8895,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1614622,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 4,
+        "srt_source_blocks": {
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1,
+          "5507461:5507461": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "ds_completed": 0,
+      "ds_rejected": 0,
+      "ds_phases": {},
+      "pool_underprovision_by_type": {
+        "SampledImage": 2,
+        "Sampler": 2
+      },
+      "pool_regression_examples": [
+        {
+          "type": "SampledImage",
+          "required": 248869,
+          "capacity": 8192
+        },
+        {
+          "type": "Sampler",
+          "required": 110608,
+          "capacity": 1024
+        },
+        {
+          "type": "SampledImage",
+          "required": 248884,
+          "capacity": 248869
+        },
+        {
+          "type": "Sampler",
+          "required": 110615,
+          "capacity": 110608
+        }
+      ],
+      "native_screen": "Black at 110s, overlay 3 FPS (336.1ms)",
+      "graphics_recovery": false,
+      "audio_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED"
+    },
+    {
+      "record_id": "universal-graphics-20261105T180934Z-3167822",
+      "source_commit": "a7210a604e4197091b18d778cdb1f40da5dbc455",
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "native": {
+        "binary_sha256": "49a27a48cbe8fca60e3b7ee13b786b83d966ce47c73f3b41e04005de996851ca",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 3168806,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 118.665,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 18255,
+        "warning_lines": 1232,
+        "error_lines": 3587,
+        "gpu_work_entries": 2048,
+        "gpu_work_bytes": 294659,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 172151,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "image-readback": 512,
+          "image-read-demand": 256,
+          "image-buffer-write": 512,
+          "buffer-readback": 512,
+          "draw-preparation-flush": 3,
+          "copy-layers": 5
+        },
+        "graphics_diagnostics_bytes": 6881,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 2634818,
+        "console_excerpt_complete": false,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 78,
+        "srt_source_blocks": {
+          "4203470:4203470": 1,
+          "4203471:4203471": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201296:4201296": 1,
+          "4201306:4201306": 1,
+          "4201297:4201297": 1,
+          "4201298:4201298": 1,
+          "4203464:4203464": 1,
+          "4203473:4203473": 1,
+          "4203465:4203465": 1,
+          "4203466:4203466": 1,
+          "4205661:4205661": 1,
+          "4205662:4205662": 1,
+          "4205663:4205663": 1,
+          "4205664:4205664": 1,
+          "4205665:4205665": 1,
+          "4205666:4205666": 1,
+          "4201288:4201288": 1,
+          "4201305:4201305": 1,
+          "4203492:4203492": 1,
+          "4203481:4203481": 1,
+          "4203482:4203482": 1,
+          "4203472:4203472": 1,
+          "4203480:4203480": 1,
+          "4203490:4203490": 1,
+          "4201299:4201299": 1,
+          "4203487:4203487": 1,
+          "4201314:4201314": 1,
+          "4203467:4203467": 1,
+          "4201309:4201309": 1,
+          "4201300:4201300": 1,
+          "4201308:4201308": 1,
+          "4201316:4201316": 1,
+          "4201289:4201289": 1,
+          "4201291:4201291": 1,
+          "4201290:4201290": 1,
+          "4203493:4203493": 1,
+          "4203488:4203488": 1,
+          "4203489:4203489": 1,
+          "4201307:4201307": 1,
+          "4203485:4203485": 1,
+          "4203483:4203483": 1,
+          "4203484:4203484": 1,
+          "4203468:4203468": 1,
+          "4201315:4201315": 1,
+          "4201328:4201328": 1,
+          "4719383:4719383": 1,
+          "4203494:4203494": 1,
+          "4205603:4205603": 1,
+          "4205629:4205629": 1,
+          "4205630:4205630": 1,
+          "4205631:4205631": 1,
+          "4201319:4201319": 1,
+          "4203491:4203491": 1,
+          "4203504:4203504": 1,
+          "4201320:4201320": 1,
+          "4201327:4201327": 1,
+          "4203495:4203495": 1,
+          "4201326:4201326": 1,
+          "4201318:4201318": 1,
+          "4203503:4203503": 1,
+          "4201311:4201311": 1,
+          "4203502:4203502": 1,
+          "4205633:4205633": 1,
+          "4205634:4205634": 1,
+          "4205635:4205635": 1,
+          "4205605:4205605": 1,
+          "4201317:4201317": 1,
+          "4201334:4201334": 1,
+          "4201323:4201323": 1,
+          "4201324:4201324": 1,
+          "4201301:4201301": 1,
+          "4203499:4203499": 1,
+          "4203510:4203510": 1,
+          "4203500:4203500": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "ds_completed": 43,
+      "ds_rejected": 0,
+      "ds_phases": {
+        "2": 43
+      },
+      "pool_underprovision_by_type": {
+        "SampledImage": 389,
+        "Sampler": 244
+      },
+      "pool_regression_examples": [
+        {
+          "type": "SampledImage",
+          "required": 22356,
+          "capacity": 8192
+        },
+        {
+          "type": "Sampler",
+          "required": 4968,
+          "capacity": 1024
+        },
+        {
+          "type": "SampledImage",
+          "required": 22437,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 4986,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 52218,
+          "capacity": 22437
+        },
+        {
+          "type": "Sampler",
+          "required": 11604,
+          "capacity": 4986
+        },
+        {
+          "type": "SampledImage",
+          "required": 62397,
+          "capacity": 52218
+        },
+        {
+          "type": "Sampler",
+          "required": 13866,
+          "capacity": 11604
+        },
+        {
+          "type": "SampledImage",
+          "required": 62721,
+          "capacity": 62397
+        },
+        {
+          "type": "Sampler",
+          "required": 13938,
+          "capacity": 13866
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        },
+        {
+          "type": "SampledImage",
+          "required": 64260,
+          "capacity": 22356
+        },
+        {
+          "type": "Sampler",
+          "required": 14280,
+          "capacity": 4968
+        }
+      ],
+      "native_screen": "Sony Interactive Entertainment presents at 110s, overlay 1 FPS (1551.7ms)",
+      "graphics_recovery": false,
+      "audio_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED"
+    }
+  ],
+  "root_defect": {
+    "observed": "GoW records 389 sampled-image and 244 sampler underprovision warnings. Previously expanded capacities repeatedly regress to older smaller pools when layouts alternate.",
+    "mechanism": "Retired pool selection tested only the current layout requirement; creation expanded from the original baseline instead of retaining already measured peak per-type demand.",
+    "correction": "Own and retain the measured capacity budget, reuse only covering pools, and destroy obsolete retired pools only after their recorded timeline tick is complete.",
+    "guest_semantics_changed": false,
+    "per_game_changes": false,
+    "limits": "No measured native FPS gain yet; large indexed tables and GoT rendering remain unresolved."
+  },
+  "validation": {
+    "pool_replay": [
+      {
+        "mode": "baseline",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\ncommits=700 creates=25 resets=576 destroys=25 underprovision=600 allocations=601 unsafe=0 validation_errors=0\n",
+        "stderr": ""
+      },
+      {
+        "mode": "fixed",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\ncommits=700 creates=26 resets=476 destroys=26 underprovision=6 allocations=601 unsafe=0 validation_errors=0\n",
+        "stderr": ""
+      }
+    ],
+    "counter_meaning": "underprovision counts per-type warning messages, not unique pool switches; resets count resetDescriptorPool calls.",
+    "driver": "Lavapipe/llvmpipe LLVM19.1.7 with Khronos validation",
+    "scope": "Actual extracted production DescriptorHeap method bodies use real Vulkan pool allocation/reset/destruction with observed device wrapper. Logical timeline completion is simulated four frames behind; no physical GPU submission/rendering.",
+    "commits": 700,
+    "baseline": {
+      "per_type_underprovision_warnings": 600,
+      "resets": 576,
+      "creates": 25,
+      "allocation_calls": 601,
+      "unsafe_release": 0,
+      "validation_errors": 0
+    },
+    "fixed": {
+      "per_type_underprovision_warnings": 6,
+      "resets": 476,
+      "creates": 26,
+      "allocation_calls": 601,
+      "unsafe_release": 0,
+      "validation_errors": 0
+    },
+    "full_build": "PASS published source SHA embedded",
+    "binary_sha256": "6da04bea382e3cc67086737866a5d2ffa2a7ccf95eec9bc32ee80f6916691d9e",
+    "cpu": "PASS established universal CPU suite",
+    "cli": "PASS three existing user-directory cases",
+    "native_build_log_review": [
+      {
+        "file": "build.log",
+        "bytes": 363531,
+        "sha256": "3d1a54dec304b2908f29c92d9814ab0a97f3ec96b9feaa6e3d75f2d8c7299d43",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "cpu-tests.log",
+        "bytes": 7263,
+        "sha256": "d1ba45211424a61c4c6e1527ea5390d05a8f324759d71a9f03221b1098434fda",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "fetch.log",
+        "bytes": 117,
+        "sha256": "624ca36975eab0ab52568fd392101afe602af82bf69c3224837b85f8eec0c463",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "native-startup.log",
+        "bytes": 57,
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "submodules.log",
+        "bytes": 21503,
+        "sha256": "60ff91f4ab05e02c0cbc3604f7714b5997974240a873d26b926404affefcb9ca",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "clone.log",
+        "bytes": 92,
+        "sha256": "ee02e81622a3e28d0df06b05720877ed1e36b5544adbdebaa4f186986dd791b5",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "checkout.log",
+        "bytes": 96,
+        "sha256": "2cc3336612dba7b9eb6263b6e7933fa37c910b7ab2ec088f472a084777baa70b",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "configure.log",
+        "bytes": 47048,
+        "sha256": "d39ac1f7a845a1098070140e40d87bdf0274bc06c349d9520eae95133f72b5f7",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "upstream-fetch.log",
+        "bytes": 142,
+        "sha256": "4350da73ac32af27e85b45e7717415216849ee4728c36266af43c440e89b7ef6",
+        "compiler_error_lines": []
+      },
+      {
+        "file": "compiler-check.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "compiler_error_lines": []
+      }
+    ],
+    "homebrew": "No guest emulation change in this patch: host descriptor pool management only. Earlier DS and helper OpenOrbis probes are retained; no new PS4 execution claimed.",
+    "rejected_attempts": [
+      "Initial external probe compiler include pointed at externals/boost; corrected to externals/ext-boost, then both baseline/fixed probes build and run.",
+      "First native archive summary assumed every run entry had native metrics; corrected to distinguish the build-only record.",
+      "Per-type underprovision warning counts are not distinct pool-switch counts; reporting clarified."
+    ],
+    "handoff": "PASS valid, checksum-failure and download-failure paths; download/run boundaries stubbed, no games executed."
+  },
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/descriptor-pool-evidence-20261105/descriptor-pool-capacity-evidence-20261105.zip",
+    "sha256": "1cfd00cb2613c1aeaa77955420ab43685d0aef80158e9eb07b247efa6ed28cfe",
+    "bytes": 26543,
+    "files": 18,
+    "library_file_id": "libfile_649bbc30f7a881918d334e782451ee86",
+    "url": "https://chatgpt.com/library?file_id=libfile_649bbc30f7a881918d334e782451ee86&account_id=personal"
+  },
+  "next_run": {
+    "source_commit": "3bcbc4dcef79f408e70e249cb759dd19c529967d",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "capture_requested": false,
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=3bcbc4dcef79f408e70e249cb759dd19c529967d\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "protections": "118s TERM + 2s KILL, >=8GiB VRAM, conditional Ollama lease restoration, stop/defer on GPU loss or live child, no automatic input.",
+    "expectation": "Measure pool churn and visual/FPS progress under normal execution. Both prior DS and auxiliary interface corrections are included. No promise of menu/gameplay recovery."
+  },
+  "decision": {
+    "pr164": "NATIVE_INTERFACE_ERROR_CLEARED_MARKED_READY_FOR_REVIEW",
+    "ds": "43_COMPLETED_NATIVE_DISPATCHES_ZERO_REJECTIONS",
+    "pr165": "LOCALLY_REPRODUCED_FIX_NATIVE_PERFORMANCE_PENDING",
+    "main_changed": false,
+    "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "main_reason": "Stack still carries retained rendering regressions. Whole ancestry is not promoted; source correction remains isolated and reviewable.",
+    "got_recovery": false,
+    "gow_menu_or_gameplay": false
+  }
+}
