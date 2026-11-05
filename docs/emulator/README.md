@@ -2,7 +2,7 @@
 
 **Canonical home:** this directory on fork `main`. Keep **one universal history of every attempted emulator change**; separate game notebooks are *views and original evidence*, not competing logs. A correct engine change applies across titles; game IDs only label where behavior was observed. **Do not implement title-specific source workarounds, shader-hash exceptions, readback overrides, or CPU options.**
 
-**Current rendering gap (2026-11-02):** [GoT preservation audit](reviews/20261102-got-preservation-gap.json) confirms earlier menu/partial-world progress was not preserved in the unified renderer. PR118 remains draft; native build passes do not supersede that visual baseline.
+**Current rendering candidate (2026-11-02):** the [preservation audit](reviews/20261102-got-preservation-gap.json) established missing historical renderer paths. The [indexed descriptor restoration](reviews/20261102-indexed-renderer-restoration.json) now ports verified recovered source onto upstream `2183807e`, retains ordered-GDS work, and passes native compilation, CPU checks and five production-emitted SPIR-V cases. GoT pixels and GoW continuation are not verified; main remains unchanged pending bounded native evidence.
 
 ## Open these before trying any new idea
 
