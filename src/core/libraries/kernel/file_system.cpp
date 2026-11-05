@@ -2275,7 +2275,7 @@ s32 PS4_SYSV_ABI posix_unlink(const char* path) {
         *__Error() = POSIX_EFAULT;
         return -1;
     }
-    if (strlen(path) > 255) {
+    if (strlen(path) > ORBIS_MAX_PATH) {
         *__Error() = POSIX_ENAMETOOLONG;
         return -1;
     }
@@ -2300,20 +2300,36 @@ s32 PS4_SYSV_ABI posix_unlink(const char* path) {
         return -1;
     }
 
-    if (fs::is_directory(host_path)) {
+    std::error_code ec;
+    if (fs::is_directory(host_path, ec)) {
         *__Error() = POSIX_EPERM;
+        return -1;
+    }
+    if (ec) {
+        const auto condition = ec.default_error_condition();
+        SetPosixErrno(condition.category() == std::generic_category() ? condition.value() : EIO);
+        LOG_INFO(Kernel_Fs, "Unlink {} failed, error = {}", path, *__Error());
         return -1;
     }
 
     auto* file = h->GetFile(host_path);
+    int error = 0;
     if (file == nullptr) {
-        std::error_code ec;
-        if (!fs::remove(host_path, ec) && ec) {
-            *__Error() = POSIX_ENOENT;
-            return -1;
+        if (!fs::remove(host_path, ec)) {
+            const auto condition = ec.default_error_condition();
+            error = ec ? (condition.category() == std::generic_category() ? condition.value() : EIO)
+                       : ENOENT;
         }
     } else if (auto* host = file->GetHostFile()) {
-        host->Unlink();
+        error = host->Unlink();
+    } else {
+        // Archive-backed files have no writable host handle.
+        error = EROFS;
+    }
+    if (error != 0) {
+        SetPosixErrno(error);
+        LOG_INFO(Kernel_Fs, "Unlink {} failed, error = {}", path, *__Error());
+        return -1;
     }
 
     mnt->InvalidateCache(path);

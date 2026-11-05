@@ -341,6 +341,13 @@ public:
     void DS_SWIZZLE_B32(const GcnInst& inst);
     void DS_APPEND(const GcnInst& inst);
     void DS_CONSUME(const GcnInst& inst);
+    void DS_ORDERED_COUNT(const GcnInst& inst);
+    // Emit side-effecting typed IR reads of the *live* pre-DS guest state.
+    // This must run before SSA lowering; it never reconstructs registers
+    // from shader source, a static register table or Vulkan workgroup order.
+    void RecordOrderedGdsCheckpoint(const IR::U32& site_pc, const IR::U64& exec_mask,
+                                    const IR::U32& source_value, u32 next_guest_pc,
+                                    u32 destination_vgpr, u32 encoded_control);
     void DS_CMPST(int bit_size, bool rtn, const GcnInst& inst);
 
     // Buffer Memory

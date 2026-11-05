@@ -1,0 +1,68 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-spirv-offline-20261028T191758Z-726219-reviewed",
+  "recorded_at": "2026-10-28",
+  "scope": "Shared emulator compiler evidence; CUSA34384 identifies captured workload only",
+  "archive": "gow-spirv-offline-20261028T191758Z-726219.tar.gz",
+  "archive_sha256": "3ec4cbe29e362b598676e05464016f22cb9d0c5ab89bdb4283d6212dd5d2fb07",
+  "game_launched": false,
+  "tested_games": [],
+  "validator": "Khronos SPIRV-Tools v2025.1 from checksum-pinned Debian 2025.1~rc1-1 package; actual host execution, not a custom validator",
+  "validator_sha256": "f386e67676bc134802b6bfec6d96fff0f9437d0f60e4c97ee0afa59ab4f1c4ea",
+  "validation_flags": ["--target-env", "vulkan1.3", "--scalar-block-layout", "--uniform-buffer-standard-layout"],
+  "accepted": 58,
+  "rejected": 2,
+  "tool_errors": 0,
+  "rejections": [
+    {
+      "module": "cs_0x0000000007934c8c_0.spv",
+      "sha256": "4a7bb1a7d124f2eb1a012a97846bb25b326852aef0339319f39b44324a271baf",
+      "first_error_instruction": 325,
+      "diagnostic": "Expected Image 'Sampled Type' to be the same as the Type pointed to by Result Type",
+      "affected_atomic_iadd_sites": 8
+    },
+    {
+      "module": "cs_0x00000000657297e6_0.spv",
+      "sha256": "f21d0b0a2607a9af9305f228104ab1037b1299201f43601aeb1941b45476cfcd",
+      "first_error_instruction": 421,
+      "diagnostic": "Expected Image 'Sampled Type' to be the same as the Type pointed to by Result Type",
+      "affected_atomic_iadd_sites": 9
+    }
+  ],
+  "actual_module_inspection": "Both images are 3D R32i storage images with Sampled Type signed 32-bit integer. All 17 OpImageTexelPointer instructions instead return Image pointers to unsigned 32-bit integers; their OpAtomicIAdd instructions also use unsigned result and input types. SPIR-V requires the image sampled type and texel pointer pointee type to match.",
+  "workload_link": "The existing full console from gow-real-shaders-20261028T173505Z-3869132 shows both modules being compiled and recorded for dispatch at scheduler ticks 2 and 3 before the failed tick4 submission. They are not merely unused source paths. Recorded dispatches do not establish the original hardware fault's exact instruction.",
+  "source_cause": "ImageAtomicU32 and ImageAtomicU32CmpSwap unconditionally choose ctx.image_u32 and ctx.U32[1] although DefineImagesAndSamplers correctly selects S32 for a signed image. The atomic emitter in the captured source and the current fork main has blob a7db8e204bb944814e8bffc390b2adef2d7be19c.",
+  "candidate": {
+    "branch": "fix/signed-image-atomic-types-20261028",
+    "package_commit": "3ac99b824434c5828c66ddef59903e1060679a60",
+    "runner_commit": "dff995e87b3b580f6f8be6e0124c7f713c7fc80f",
+    "runner_path": "scripts/shadps4_signed_image_atomics_20261028.py",
+    "runner_sha256": "8da3a0fc6729f361a4a1b14d806debb4d90d63efb219f7fbdfabe66f17b0f1e6",
+    "runner_blob": "7858902b9832a46d74ff9030394491e3578f5121",
+    "patch_blob": "64ff09731c4554739852739b6445222d63f0ed91",
+    "fixture_blob": "1d2125817719217c7aa665f434fec438dacba09b",
+    "offline_regression_blob": "ebb8a0b5f1b764b3fbc5e6c3880a6999509e4494",
+    "source_base": "60f87071d0c19c968253c9c25e3e5c318e756994",
+    "upstream_snapshot_retained": "0cd6e4f2cb6617af12eb8267cca848cc41ad20d7",
+    "rebase": false,
+    "production_delta": ["src/shader_recompiler/backend/spirv/emit_spirv_atomic.cpp", "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"],
+    "correction": "For signed image formats, generate an Image pointer to S32, bitcast the operand and compare-exchange comparator to S32, emit the original atomic opcode with matching S32 result type, then bitcast the result to the IR's U32 representation. Preserve all bits and one atomic side effect. Unsigned and native floating-point paths remain unchanged. Increment shader-binary cache version 17 to 18; metadata version remains 10. No game/shader hash condition exists in production.",
+    "scope_limit": "This patch corrects integer image signedness only. Existing floating-point fallback issues or other resource/synchronization defects are not claimed fixed. No game rendering recovery is established."
+  },
+  "local_validation": {
+    "exact_helper_tests": "Actual AtomicArgs, FixImageAtomicCoords, ImageAtomicU32 and ImageAtomicU32CmpSwap bodies extracted into typed recording collaborators. Old source reproduces 2156 invalid signed cases out of 4312. Corrected source passes all 4312, preserving raw-bit return values, arithmetic/bitwise/CAS side effects, scope/semantics, unsigned path and coordinate lowering.",
+    "compilers": "GCC14.2 and Clang17, strict C++23 release and AddressSanitizer+UndefinedBehaviorSanitizer builds for old and corrected helpers: all eight executions passed their expected results. Not full native emulator compilation or GPU execution.",
+    "offline_corpus": "A generic type-based transform on private copies of the actual 60 captured modules changes exactly the two rejected modules and 17 atomics; all other 58 modules are byte-identical. Transformation is idempotent. These copies are regression fixtures only, never loaded as shader patches. Their complete Khronos validation is PENDING on host.",
+    "exact_patch": "Exact-preimage git apply and reverse-check pass. Generated atomic source equals tested corrected source.",
+    "runner_safety": "Six real temporary-Git scenarios pass: CPU-gate failure restores; native-build failure restores; simulated runtime success restores; simulated runtime failure propagates nonzero/restores; initially dirty source refused; external source edits preserved and restoration refused. Native build/game were simulated in these control-flow tests; actual helper compilation was separately performed.",
+    "initial_tooling_failure": "Wrapper extraction originally counted helper call sites as declarations and refused before execution. Fixed to match unique typed declarations; actual emitted C++ fixture then matches the previously tested fixture byte-for-byte.",
+    "runtime_composition": "Substitutions against the actual last readconst runtime template and bash -n pass. Published runner blob equals local tested bytes.",
+    "local_validator_limit": "No spirv-val binary exists in analysis environment; attempted direct Debian download failed. Do not claim that corrected offline copies have already passed official validation. The uploaded original 58/60 result is real host evidence.",
+    "native_emulator": "PENDING",
+    "gameplay": "NOT_RUN"
+  },
+  "host_gate": "Reuse the already extracted checksum-pinned validator. Verify original capture/archive and all module hashes; reproduce exactly the same two original rejections; require all 60 independently repaired regression copies to validate. Only then compile the actual changed emitter/serialization objects and link, and run one normal-flag isolated 118+2-second GoW trial. Shader overrides remain disabled. Capture and validate fresh production-generated modules afterward, preserve candidate and restore PR94, append shared local diary, collect visible frames. Failure of either offline or native gate means no game launch.",
+  "causality_limit": "This is an observed invalid-output compiler defect in dispatched shaders, not proof that it alone caused RADV loss. Structural acceptance and CPU model passes do not prove correct resources, successful GPU execution or recovered gameplay.",
+  "decision": "TEST_EVIDENCE_LINKED_SIGNED_IMAGE_ATOMIC_CORRECTION; KEEP_EXISTING_CANDIDATES_AND_PROTECTED_GAMEPLAY_EXECUTABLE; NO_UNRELATED_REBASE_OR_REFERENCE_SEARCH",
+  "privacy": "Guest shader binaries and generated modules remain private; only generic code and hashes/counts/diagnostics are stored in the repository."
+}

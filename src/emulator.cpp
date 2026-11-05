@@ -45,6 +45,7 @@
 #include "core/libraries/usbd/usbstorage.h"
 #include "core/linker.h"
 #include "core/memory.h"
+#include "core/startup_progress.h"
 #include "core/user_settings.h"
 #include "emulator.h"
 #include "video_core/cache_storage.h"
@@ -607,6 +608,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
                                        Common::g_scm_branch, Common::g_scm_desc, game_title);
         }
     }
+    Startup::progress.Begin();
     window = std::make_unique<Frontend::WindowSDL>(EmulatorSettings.GetWindowWidth(),
                                                    EmulatorSettings.GetWindowHeight(), controllers,
                                                    window_title);
@@ -689,11 +691,12 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     Libraries::InitHLELibs(&linker->GetHLESymbols());
 
     std::jthread init_thread{[&, this]() {
-        // Load the module with the linker.
+        Startup::progress.SetStage(Startup::Stage::Executable);
         if (linker->LoadModule(guest_eboot_path) == -1) {
             LOG_CRITICAL(Loader, "Failed to load game's eboot.bin: {}", guest_eboot_path);
             std::quick_exit(0);
         }
+
 
 #ifdef ENABLE_DISCORD_RPC
         // Discord RPC
@@ -721,8 +724,10 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
             });
         }
 
+        Startup::progress.SetStage(Startup::Stage::Modules);
         linker->Execute(args);
     }};
+
 
     window->InitTimers();
     while (window->IsOpen()) {
