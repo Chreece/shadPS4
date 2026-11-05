@@ -145,7 +145,7 @@ public:
     // Production GPU-buffer bridge for an ALREADY checkpointed complete guest
     // wave epoch. This cannot create wave ranks, packer seeds or shader state.
     // Callers must supply ranks from the real guest scheduler and CIK packer
-    // values from verified dedicated-state initialization (never raw GDS RAM).
+    // values from a synchronized CIK GDS snapshot at the decoded address.
     // If capture/resolve/upload fails, no new host packer state is returned.
     // No guest dispatch currently calls this until real shader checkpoint and
     // continuation are implemented; the ordered-GDS SPIR-V guard stays active.
@@ -168,9 +168,8 @@ public:
         std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
 
-    // Explicit host-side dedicated CIK packer lifetime; no implicit seed.
-    // The verified initial state must be established by an independent real
-    // packer source before this can ever be invoked by guest dispatch.
+    // Explicit host counter state for one capture/resolve/resume handoff.
+    // Reset and resnapshot GDS before each new dispatch.
     void EstablishVerifiedCikPackerState(
         u64 context_identity, std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> state,
         Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin origin);

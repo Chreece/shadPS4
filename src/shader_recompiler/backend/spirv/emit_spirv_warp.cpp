@@ -101,8 +101,14 @@ Id EmitReadLane(EmitContext& ctx, Id value, Id lane) {
     return ctx.OpGroupNonUniformBroadcast(ctx.U32[1], SubgroupScope(ctx), value, lane);
 }
 
-Id EmitWriteLane(EmitContext& ctx, Id value, Id write_value, u32 lane) {
-    return ctx.u32_zero_value;
+Id EmitWriteLane(EmitContext& ctx, Id value, Id write_value, Id lane) {
+    const Id lane_id =
+        ctx.hw_stage == HwStage::Compute
+            ? ctx.OpBitwiseAnd(ctx.U32[1],
+                               EmitGetAttributeU32(ctx, IR::Attribute::LocalInvocationIndex, 0),
+                               ctx.ConstU32(63u))
+            : EmitLaneId(ctx);
+    return ctx.OpSelect(ctx.U32[1], ctx.OpIEqual(ctx.U1[1], lane_id, lane), write_value, value);
 }
 
 Id EmitBallot(EmitContext& ctx, Id bit) {
@@ -117,9 +123,17 @@ Id EmitBallotFindLsb(EmitContext& ctx, Id mask) {
 }
 
 Id EmitInverseBallot(EmitContext& ctx, Id mask) {
-    const Id value{ctx.OpCompositeConstruct(ctx.U32[4], ctx.OpBitcast(ctx.U32[2], mask),
-                                            ctx.u32_zero_value, ctx.u32_zero_value)};
-    return ctx.OpGroupNonUniformInverseBallot(ctx.U1[1], SubgroupScope(ctx), value);
+    const Id lane = EmitLaneId(ctx);
+    const Id words = ctx.OpBitcast(ctx.U32[2], mask);
+    const Id low = ctx.OpCompositeExtract(ctx.U32[1], words, 0);
+    const Id high = ctx.OpCompositeExtract(ctx.U32[1], words, 1);
+    const Id word =
+        ctx.OpSelect(ctx.U32[1], ctx.OpULessThan(ctx.U1[1], lane, ctx.ConstU32(32u)), low, high);
+    const Id shift = ctx.OpBitwiseAnd(ctx.U32[1], lane, ctx.ConstU32(31u));
+    const Id bit = ctx.OpBitwiseAnd(ctx.U32[1], ctx.OpShiftRightLogical(ctx.U32[1], word, shift),
+                                    ctx.u32_one_value);
+    return ctx.OpLogicalAnd(ctx.U1[1], ctx.OpULessThan(ctx.U1[1], lane, ctx.ConstU32(64u)),
+                            ctx.OpINotEqual(ctx.U1[1], bit, ctx.u32_zero_value));
 }
 
 Id EmitGroupAny(EmitContext& ctx, Id bit) {
