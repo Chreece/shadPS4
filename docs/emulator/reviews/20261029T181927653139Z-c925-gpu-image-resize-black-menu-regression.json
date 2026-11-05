@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "reviewed_on": "2026-10-29",
+  "game": "Ghost of Tsushima CUSA11456",
+  "universal_diary_entry": "C925 GPU image resize candidate #5303 completed build, suffered severe black-menu regression with untriggered path and altered Vulkan validation",
+  "artifact": "got-c925-gpu-image-resize-20261029T181927653139Z.tar.gz",
+  "candidate": {
+    "elf_sha256": "1019ab33fb45338039f39b2bad44f627cd2a72ade92a73bc1117d73752c39b7a",
+    "source_change": "GPU image reuse with compatible layout/resize preserving subrect via new Runtime::CopyCompatibleRegion",
+    "upstream": "https://github.com/shadps4-emu/shadPS4/pull/5303",
+    "build": "PASS",
+    "native_game_seconds": 118.491,
+    "no_input": true
+  },
+  "observed": {
+    "screenshot_menu_40_55_85_112": "All captured at 1920x1080, each ~9KB, near-black with only FPS overlay and faint spinner",
+    "baseline_comparison": "Previous visible menu screenshot ~1.3–1.4MB with fog, text and black foreground silhouettes",
+    "gpu_image_resize_preserved_event_count": 0,
+    "indexed_material_zero_record_rejections": 7,
+    "unflattened_SHARP_warnings": 223,
+    "Vulkan_validation_core": true,
+    "Vulkan_validation_sync": true,
+    "Vulkan_validation_gpu": false,
+    "Vulkan_sync_hazard_write_after_present_events": 10,
+    "Vram_available_bytes": 8685735936,
+    "Ollama_action": "NONE_ALREADY_SUFFICIENT",
+    "unexpected_layer_config": "Earlier visually working menu runs had all four Vulkan validation flags disabled. This trial forcibly enabled core/sync validation, confounding source A/B.",
+    "source_restore": "RESTORED_VERIFIED (4 files)",
+    "objects_restore": "RESTORED_VERIFIED (2 objects)",
+    "ELF_restore": "RESTORED_VERIFIED"
+  },
+  "analysis": "The new ResizeCompatibleImage code path was not logged as executing; there is no direct evidence it produced the blank frame. Validator sync hazards are real diagnostics, but their causal contribution to the blank result is not proven. The candidate had different Vulkan validation settings from the prior working control. The new code may be correct even if no scene has yet exercised it.",
+  "disposition": "QUARANTINE_RUNTIME_REGRESSION; RETAIN_ISOLATED_SOURCE_AND_ELF_CANDIDATE; PRESERVE_PROVEN_BASELINE_AND_GENERIC_FIXES; NO_PROMOTION; NOT_DISCARD_SOLELY_FOR_NO_VISUAL_CHANGE",
+  "next_test": {
+    "runner_commit": "833ed27ad82e52f928daba183c788ca4826eec41",
+    "runner_path": "tools/development/c925_gpu_image_resize/verify_matched_vulkan_ab.py",
+    "method": "No rebuild: verify both ELF SHA256; baseline and candidate replayed with two independently copied profiles restored to identical originally disabled validation settings; capture four frames each, 8 GiB/Ollama guard; fail closed on missing baseline frames; archive and local diary",
+    "decision": "If proven build visible and candidate blank with matched settings, isolate code regression; if both visible, earlier differing validation setting or run state implicated, not conclusive. No promotion unless visual nonregression is proved."
+  },
+  "policy": "Keep genuine semantic corrections, tests and candidates regardless of immediate visual improvement; do not promote a build causing black-screen regression; reject only the regressed combination while recording every experiment."
+}

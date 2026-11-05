@@ -1,0 +1,279 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T07:21:33.275933+00:00",
+  "pr": 140,
+  "source_commit": "b6e225c5cbd13700b91b230009d3149d14477a9e",
+  "source_tree": "11e18f55e498edf08cbbf74b93f1cdb81b9fc704",
+  "base_commit": "55a838837773d1f9dac3314c049ff468be733c8b",
+  "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "decision": "KEEP_DRAFT_NATIVE_GPU_AND_CROSS_TITLE_ACCEPTANCE_PENDING",
+  "input_archive": {
+    "name": "universal-two-games-20261104T063942Z-1438233.tar.gz",
+    "sha256": "65dab0633e5a2c6b7905a6e132820709f2acbdc2ec7c5d878ece41013521a19d",
+    "library_file_id": "libfile_a040dd7377e081918631d9fc4838c9c6"
+  },
+  "native_build": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261104T063943Z-1438247",
+    "timestamp_utc": "2026-11-04T06:53:47.545062+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "COMPLETE_BUILD_ONLY",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0,
+    "requested_commit": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+    "source_commit": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+    "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T063943Z-1438247.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-1d2db851f430/build/shadps4",
+    "binary_sha256": "2640193aec83b8d0539c887bb5986b26756e55e88c151cae294179eaef061542",
+    "complete_build_log_review": {
+      "sha256": "9cd60df61d9af3843c18d4fbd1fc54fba2e795a17e94a4ae032da0b919a6a957",
+      "bytes": 364663,
+      "lines": 3293,
+      "errors": 0,
+      "warnings": 116,
+      "categories": {
+        "maybe-uninitialized": 2,
+        "array-bounds=": 1,
+        "deprecated-declarations": 1,
+        "stringop-overflow=": 25,
+        "unused-function": 76,
+        "multichar": 6,
+        "stringop-overread": 2,
+        "free-nonheap-object": 2,
+        "unused-result": 1
+      },
+      "review": "No compilation/link error. Prior font constexpr correction is present in requested native revision. Warning contexts were reviewed, including upstream glslang/protobuf/library templates, NP OnlineId length bound (separate term already checked), unused functions and ignored ObtainBuffer result. No warning is established as the GPU-loss cause; warnings are not claimed resolved."
+    },
+    "source_provenance_limit": "source-commits.txt and native build/launch records agree on source/upstream/binary. retained-source-2.tar.gz is historical Oct29 DS source, NOT this candidate; it was not used to assert current source byte identity."
+  },
+  "native_game": {
+    "record_id": "universal-graphics-20261104T065347Z-1580038",
+    "source_commit": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+    "binary_sha256": "2640193aec83b8d0539c887bb5986b26756e55e88c151cae294179eaef061542",
+    "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "runner_sha256": "3dc7b64a23c10a55ee4e6fb580e4a92e94ef53bded15db08dfb75247128dbfa0",
+    "observer_sha256": "316df1e2ac4bd5c0a3609eefb7238f843730abb183bccb0af3539876dff35eaf",
+    "tested_games": [
+      "CUSA11456"
+    ],
+    "skipped_games": [
+      "CUSA34384"
+    ],
+    "result": "GPU_CONTEXT_LOST",
+    "elapsed_seconds": 63.272,
+    "exit_code": -11,
+    "owned_child_terminated": true,
+    "graphics": "8s emulator loading screen; 25s visible PlayStation intro montage. No menu/gameplay acceptance.",
+    "audio": "NOT_OBSERVED",
+    "fps": "30 FPS / 33.3ms overlay in 25s screenshot; no sustained/same-scene performance measurement.",
+    "screenshots": {
+      "frame-025s.png": "8d9325e9c70079285920d2978ad646ad6b6d75f9ea9c3e9da92c0b89d8246159",
+      "frame-008s.png": "0017082d89f81352d2959edad3f8b3fd4a4a06b12a1d1362ca6506cee46c1a27"
+    },
+    "diagnostics": {
+      "console_lines": 6985,
+      "warning_lines": 423,
+      "error_lines": 1339,
+      "gpu_work_entries": 113,
+      "gpu_work_bytes": 16901,
+      "gpu_work_truncated": false,
+      "gpu_work_overwritten": 155544,
+      "validation_layer_active": true,
+      "validation_message_ids": {},
+      "gpu_memory_fault_reports": 0,
+      "graphics_event_sampled_max_counts": {
+        "enabled": 1,
+        "buffer-readback": 1024,
+        "image-readback": 8,
+        "image-read-demand": 8,
+        "conditional-exec": 8,
+        "image-buffer-write": 64,
+        "draw-preparation-flush": 2,
+        "gpu-wait": 16,
+        "copy-layers": 6
+      }
+    },
+    "automatic_coherence_enabled": true,
+    "vram_free_before": 5230948352,
+    "vram_free_at_launch": 25633165312,
+    "ollama_restore_leases": [
+      {
+        "endpoint": "http://172.23.0.2:11434",
+        "model": "qwen3.8-greek:latest",
+        "context_length": 16384,
+        "expires_at": "2319-02-14T06:35:13.521232+00:00",
+        "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+        "size_vram": 17361985862,
+        "status": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+      }
+    ],
+    "ordered_gds_capture_requested": false,
+    "first_wait_window": "GRAPHICS_WORK_BEGIN reason=wait-timeout semaphore=0x5580bbc4f858 completed=3727 requested=3729 recorded=155093 overwritten=153045",
+    "first_wait_missing_binary_hashes": [],
+    "spirv_modules_validated": 50,
+    "spirv_validation": "PASS Vulkan1.3, structural only"
+  },
+  "visual_comparison": {
+    "previous_archive": "universal-two-games-20261103T200615Z-1152079.tar.gz",
+    "previous_archive_sha256": "9626f81a3c1d9cbf68fc04d166a3c0c65c6b9200753db048c02949463f3d78fe",
+    "previous_source": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+    "previous_binary": "feb99d2319fa9fa108e5de474579efe0aed74f1df65c096facc66973451b23fd",
+    "previous_identical_8s_and_25s_sha256": "a7d2a841f19d01a9864db20f5e7afe8acfd97869f3c172b0f4f3300e960be8f4",
+    "observation": "Previous 25s image is an emulator loading screen; current 25s image contains visible intro footage. Both were visually reviewed.",
+    "causality": "Not proven to be caused by PR138. The corrected shader is first captured in pending recorded work at 39.752s; earlier dispatch history is incomplete. No restored menu or gameplay claim."
+  },
+  "pending_work_review": {
+    "windows": [
+      {
+        "completed": 3727,
+        "requested": 3729,
+        "recorded_at_ms": 39752,
+        "contents": "Uploads/detiles, compute745c455a/e1fb67ac, fullscreen draws, two CPU readbacks; later timeline observation advances."
+      },
+      {
+        "completed": 3790,
+        "requested": 3791,
+        "recorded_at_ms": 50356,
+        "contents": "Fullscreen draws, image upload/detile, compute030ec076 and readbacks; later timeline observation advances."
+      },
+      {
+        "completed": 3791,
+        "requested": 3792,
+        "recorded_at_ms": 60454,
+        "contents": "Dispatches030ec076,8a690ff9,59302a6e,e64d44b6,1bf86811,684aca30,62ffd078,bd2dcc80; subsequent device loss."
+      }
+    ],
+    "limit": "CPU recording order and counter observations do not identify a guilty shader or establish successful device execution/recovery. Global history overwritten155544. No semantic change was made to speculative stream-ring, preparation-allocation or sparse-bind paths."
+  },
+  "prior_reduction_present": {
+    "gcn_sha256": "9e99e8f767f3f43a18e921b01d7222b3b1d2f30c94c6c4b735f3709b9fe63e0b",
+    "native_spirv_sha256": "01bfe693a12d990688d1587162143764cb0a00951854842fcd967e1f0452c43e",
+    "native_spirv_bytes": 155316,
+    "fixed_broadcasts_remaining": 0,
+    "shuffle_count": 134,
+    "guarded_reduction_shuffles": 128
+  },
+  "generic_finding": {
+    "instruction": "DS_SWIZZLE_B32",
+    "old_behavior": "Compute QuadBroadcast/Shuffle/ShuffleXor directly read a host invocation that may be inactive. SPIR-V does not define that result; GCN swizzle requires zero for invalid/inactive source lanes.",
+    "fix": "Ballot active invocations; extract requested source bit; use current active invocation as safe fallback source; select zero when original source is absent. Apply to compute instructions automatically.",
+    "scope": "Compute shader stage, all DS quad/bitmask swizzle encodings, no title/hash/vendor/config selection. All current producers of the three changed IR operations are DS_SWIZZLE_B32.",
+    "graphics_stage_limit": "Fragment and other graphics stage lowering preserved because helper participation/quad rules require separate handling.",
+    "cache_version": {
+      "from": 24,
+      "to": 25
+    },
+    "crash_cause_proven": false,
+    "references": [
+      "https://gpuopen.com/learn/amd-gcn-assembly-cross-lane-operations/",
+      "https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html",
+      "https://docs.vulkan.org/spec/latest/chapters/shaders.html#shaders-helper-invocations"
+    ]
+  },
+  "local_failed_attempts": [
+    {
+      "kind": "PRODUCTION_COMPILE",
+      "result": "FAIL_THEN_FIXED",
+      "log": "nov4b-build.log",
+      "cause": "Pinned sirit has no OpGroupNonUniformBallotBitExtract method. Replaced with supported vector extraction and bit-field extraction. Full -k0 build found one error; shader-info/cache objects compiled."
+    },
+    {
+      "kind": "FIXTURE_COMPILE",
+      "result": "FAIL_THEN_FIXED",
+      "cause": "Signed literal chose variadic ConstU32 overload, triggering size>=2 assertion; use unsigned literals."
+    },
+    {
+      "kind": "HOMEBREW_ASSEMBLY",
+      "result": "FAIL_THEN_FIXED",
+      "log": "nov4b-homebrew-assembly.log",
+      "cause": "LLVM expects idxen offset:N glc modifier order."
+    }
+  ],
+  "local_validation": {
+    "full_build": "PASS isolated Clang18 Release incremental full-target link, no constexpr suppression",
+    "build_log": "nov4b-build-committed.log",
+    "binary_sha256": "44d6d3a3674e140677f521a98541a70f20106266cabf9186f3dc00c6f532f367",
+    "actual_binary_cli_help": "PASS",
+    "host_limit": "Local SDL dummy/offscreen video and disk/dummy audio backends; build/help proof only, not native display/audio or Vulkan execution.",
+    "production_frontend_encodings": 65536,
+    "lane_index_checks": 4194304,
+    "capability_cases": 12,
+    "production_spirv_modules": 18,
+    "spirv_validation": "PASS Vulkan1.3",
+    "emitted_spirv_cpu_lane_results": 179988,
+    "safe_active_source_checks": 179988,
+    "missing_source_zero_checks": 61944,
+    "subgroup_widths": [
+      32,
+      64
+    ],
+    "prior_reduction_frontend_replay": "2380 instructions,115 blocks,exactly one min+one OR on64; no replacement on32",
+    "retained_matcher_checks": 1408,
+    "retained_matcher_sanitizers": "ASan+UBSan PASS, unchanged pass implementation",
+    "repository_tests_added": false,
+    "gpu_run": false
+  },
+  "homebrew": {
+    "file": "ds-swizzle-openorbis-20261104.zip",
+    "sha256": "ba1337215a6102c72170ca6eb7acf40771f1eed1d14beff82c0fc116337017c2",
+    "library_file_id": "libfile_b7e1cf21e5148191b2b8102289972dcb",
+    "exec_masks": 72,
+    "swizzle_encodings": 16,
+    "lane_results": 73728,
+    "assembly": "PASS gfx700",
+    "host_c_syntax": "PASS -Wall -Wextra -Werror",
+    "sdk_link": "UNVERIFIED",
+    "hardware_execution": "UNVERIFIED",
+    "contains_game_code": false
+  },
+  "host_validation_artifact": {
+    "file": "compute-swizzle-validation-20261104.zip",
+    "sha256": "6e4bf50fc513a85169ae365d05bebcf2c07cf92d533876ef044151001fbd8723",
+    "library_file_id": "libfile_afe047bc9a3c8191afd75a5895585b7c",
+    "files": 64,
+    "contains_game_code": false
+  },
+  "onepaste": {
+    "source_pin": "b6e225c5cbd13700b91b230009d3149d14477a9e",
+    "runner_pin": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "script_sha256": "7b75caf948b24555eeb642b2f4df72e9cb02c475cd9d532fd455f6add451f77c",
+    "checks": [
+      "bash syntax",
+      "correct checksum handoff",
+      "corrupt checksum blocks launch",
+      "download failure blocks launch",
+      "spaces in temporary path and cleanup"
+    ],
+    "result": "PASS_NETWORK_AND_NATIVE_LAUNCH_BOUNDARIES_MOCKED_GPU_NOT_RUN"
+  },
+  "preservation": {
+    "prior_journal_rows": 466,
+    "prior_journal_sha256": "ae0c95f06c97aa257fa62d5c8d95d8cb8dc07ee45b1eb57599637982d35729d4",
+    "changed_source_files": {
+      "src/shader_recompiler/backend/spirv/emit_spirv_warp.cpp": "1921968cd0f83acec27e4cf0a7ab1a51d379246d4186baa192a526496a2a3782",
+      "src/shader_recompiler/ir/passes/shader_info_collection_pass.cpp": "70ded5a5b41ad0649a0bae208ac01179af8e388b7fe6e4b83d55642cc67b401d",
+      "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp": "74e0d549aa3ad1c3f41a2ff5ff7ff5635298351bec5b024d4ea626e6ba9561bb"
+    },
+    "latest_upstream_and_previous_candidate_are_ancestors": true,
+    "recursive_submodules_pinned": 54,
+    "native_runner_changed": false,
+    "protected_binaries_saves_services_touched": false
+  },
+  "limits": [
+    "New correction is not native-tested; the parent still loses GPU context.",
+    "No menu/gameplay/audio or sustained FPS acceptance. GoW skipped after GPU loss.",
+    "General EXEC widening/resurrection and subgroup32 full-wave reductions remain unfinished.",
+    "Fragment/graphics-stage swizzle semantics remain outside this correction.",
+    "DS dedicated seed and actual guest re-entry remain unfinished; no fallback counter enabled.",
+    "Performance overhead and cross-title behavior remain unmeasured."
+  ],
+  "next_step": "Build immutable source on checked latest upstream; GoT first, then GoW only after confirmed safe exit. Same binary/global behavior, 118s TERM+2s KILL,8GiB VRAM and exact model leases. Stop later games/restoration on GPU loss or unconfirmed exit. Compare screenshots,pending work and current shader output; do not promote main without native/cross-title acceptance."
+}

@@ -7,7 +7,6 @@
 
 #include "common/adaptive_mutex.h"
 #include "common/types.h"
-#include "core/emulator_settings.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/page_manager.h"
 
@@ -26,8 +25,7 @@ using LockType = std::mutex;
 class RegionManager {
 public:
     explicit RegionManager(PageManager* tracker_, VAddr cpu_addr_)
-        : tracker{tracker_}, cpu_addr{cpu_addr_},
-          readbacks_mode{EmulatorSettings.GetReadbacksMode()} {
+        : tracker{tracker_}, cpu_addr{cpu_addr_} {
         cpu.Fill(true);
         gpu.Fill(false);
     }
@@ -309,7 +307,7 @@ private:
             } else if (state_op == StateOp::Clear) {
                 return PageOp::Track;
             }
-        } else if (type == Type::GPU && readbacks_mode == GpuReadbacksMode::Precise) {
+        } else if constexpr (type == Type::GPU) {
             if (state_op == StateOp::Set) {
                 return PageOp::Track;
             } else if (state_op == StateOp::Clear) {
@@ -331,7 +329,6 @@ private:
 
     PageManager* tracker;
     VAddr cpu_addr{};
-    u32 readbacks_mode;
     RegionBits cpu;
     RegionBits gpu;
     LockType mutex;

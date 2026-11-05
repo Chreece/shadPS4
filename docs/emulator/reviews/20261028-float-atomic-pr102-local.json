@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-float-atomic-type-and-control-pr102-local-20261028",
+  "recorded_on": "2026-10-28",
+  "record_type": "CONFIRMED_INVALID_SHADER_SOURCE_CORRECTION_LOCAL_TESTS_NATIVE_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "pr": 102,
+  "pr_state": "DRAFT_UNMERGED",
+  "prior_review": "20261028T175021642972Z-spirv-offline.json",
+  "source_package_commit": "10e3e084e15b887e457c2899b66b932a1fe08fd6",
+  "source_base_commit": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "upstream_main_checked_not_integrated": "b6f0c58dba9ee75b93477703032ae4f1e0de8f1c",
+  "confirmed_defects": [
+    "Actual SPIR-V module694f5639... uses a u32 ImageTexelPointer with float/R32f image. All three real validator modes reject it.",
+    "Emulated image and buffer float min/max source emits both integer atomic alternatives before OpSelect, so both memory side effects execute. The actual failing module contains two such pairs.",
+    "Normal floating ImageWrite shares the original image descriptor. Correct repair must preserve the float view and supply a distinct UINT atomic alias, not relabel every use."
+  ],
+  "actual_source_change": "Four-file exact C925 adapter: separate is_atomic_float_emulated resource identity with R32_UINT GetSharp interpretation only for emulated atomic accesses; preserve normal float descriptors in dedup; checked supported Format32; real branch/merge/Phi around sign alternatives for image and buffer float min/max; native-feature paths unchanged; shader metadata and binary versions advanced together. GetSharp feeds both generated SPIR-V and actual Vulkan image-view binding. No address/layout/backing-value substitution, shader/title gates, fake bounds, skipped operations, removed sample offsets or forced GPU features.",
+  "semantics_limit": "Preserves inherited integer sign-order implementation and old-value return. Non-NaN ordering, infinities, bits and single side effect tested. Does not claim a new guest NaN policy, full Vulkan aliasing/runtime acceptance or causal repair of the freeze.",
+  "offset_qualification": "Three other modules only fail the Vulkan Offset rule. Native log enables maintenance8 extension; original audit omitted allow-offset-texture-operand. New runner preserves strict diagnostics and separately validates feature-aware mode, and captures actual native feature-chain source. Do not call these confirmed renderer defects without device-feature qualification.",
+  "local_tests": {
+    "actual_extracted_cpp_helpers_gcc": "PASS449562 checks, C++20 O2 Wall Wextra Werror pedantic",
+    "actual_extracted_cpp_helpers_clang": "PASS449562 checks, same flags",
+    "clang_address_undefined_sanitizers": "PASS449562 checks",
+    "python_source_assembly_and_mocked_runner": "18/18 PASS in0.213s, ResourceWarning treated as error",
+    "python_scope": "Actual source transformation and Git reverse/forward byte parity; changed/repeated source refusal; actual module's two atomic pairs, unchanged float write and separate UINT alias, Phi predecessor sets, wrong-sign refusal. Host success/build/game/validator orchestration tests are explicitly MOCKED, including no-write validation failure, source+ELF rollback, model restoration and rejected regenerated output.",
+    "full_corrected_reference_spirv_validation": "NOT_RUN_LOCALLY_TOOL_UNAVAILABLE",
+    "native_emulator_compile": "NOT_RUN",
+    "gpu_run": "NOT_RUN",
+    "initial_failures_and_review_corrections": [
+      "Source adapter first found two matching GetSharp anchors and refused; scoped to PatchImageSharp before source writes.",
+      "Offline reference fixture initially expected one observed atomic pair; actual module has two. Corrected to transform all matched pairs and tested both.",
+      "Early offline-reference whole-image UINT relabelling was rejected on source review because the module has a normal float write. Final reference creates a separate alias, matching the production resource split. No runtime module was modified or installed.",
+      "Model environment could not fetch or execute SPIRV-Tools; no corrected-reference validator pass was fabricated. Already-audited host tools are required before source mutation/build."
+    ],
+    "published_byte_parity": "All five Python Git blobs returned by GitHub match independently computed local blob hashes."
+  },
+  "package_sha256": {
+    "apply_float_atomic.py": "8aa8ad16f5fcef8465549690ec88dcac1109ca82a86a647eec21f67dc0aad99a",
+    "test_float_atomic.py": "40577046bc5c1891f80673a253753334f6dd15c5594b553a7cefcb2a3e7affe1",
+    "validate_atomic_fixture.py": "9a2989af4dd8636bd82b905a5cc45170109850ffc209e2b96f7406efd6d8d02d",
+    "run_float_atomic.py": "81cb16ff5786ffd5c7bea929a50980633765b1b132159fb06fc56a3a573c0fff",
+    "test_pipeline.py": "cfcc3996605fc5349e288219ec7491a4bd8b14e4933a4df952c2bc0784b34ac9"
+  },
+  "host_delivery": "One-paste pinned scripts and existing two immutable runtime/headroom helpers. Verify current PR100 ELF9f0f6c9f... and all retained/accepted source hashes. Actual assembler+validator must pass an offline reference before C++ mutation; never install reference in shader cache. Checkpoint old ELF, apply4-file source fix, run available compiler contract tests, incremental Ninja with live output/heartbeat; rollback after test/build failure. Only then one private-profile no-input118+2s menu run under8GiB guard. Capture fresh actual shader modules, validate them independently, preserve feature-qualified diagnostics and pixel signatures. Original files, protected binaries, SSH, Sunshine/X11 and ES-DE remain untouched.",
+  "pr100_status": "KEEP_ACTUAL_GUARDED_READ_CAPABILITY; ITS_MODULE_PASSES_ALL_THREE_REAL_VALIDATOR_MODES",
+  "decision": "KEEP_EVIDENCED_ATOMIC_DEFECT_AND_DRAFT_CORRECTION; REQUIRE_REAL_REFERENCE_VALIDATION_AND_NATIVE_NEW_OUTPUT_BEFORE_PROMOTION",
+  "game_effect": "NO_NEW_GRAPHICS_RUN_OR_RECOVERY_CLAIM",
+  "next_test": "Run the pinned validator-gated native correction. Confirm original floating write remains valid, actual generated atomic image and pointer types agree, only one atomic branch is executed, and presentation advances. Any additional validation/build/runtime failure remains part of this same journal.",
+  "main_merge_sha": null,
+  "raw_game_shader_data_published": false
+}
