@@ -66,8 +66,20 @@ Id EmitQuadBroadcast(EmitContext& ctx, Id value, Id index) {
     return ctx.OpGroupNonUniformQuadBroadcast(ctx.U32[1], SubgroupScope(ctx), value, index);
 }
 
-Id EmitReadFirstLane(EmitContext& ctx, Id value) {
-    return ctx.OpGroupNonUniformBroadcastFirst(ctx.U32[1], SubgroupScope(ctx), value);
+Id EmitReadFirstLane(EmitContext& ctx, Id value, Id exec) {
+    const Id scope = SubgroupScope(ctx);
+    if (exec.value == ctx.true_value.value) {
+        return ctx.OpGroupNonUniformBroadcastFirst(ctx.U32[1], scope, value);
+    }
+    const Id active = ctx.OpGroupNonUniformBallot(ctx.U32[4], scope, exec);
+    const Id zero = ctx.ConstantComposite(ctx.U32[4], ctx.u32_zero_value, ctx.u32_zero_value,
+                                          ctx.u32_zero_value, ctx.u32_zero_value);
+    const Id empty = ctx.OpAll(ctx.U1[1], ctx.OpIEqual(ctx.U1[4], active, zero));
+    const Id low = ctx.OpCompositeExtract(ctx.U32[1], active, 0);
+    const Id first_word = ctx.OpSelect(ctx.U32[1], empty, ctx.ConstU32(1u), low);
+    const Id mask = ctx.OpCompositeInsert(ctx.U32[4], first_word, active, 0);
+    const Id first = ctx.OpGroupNonUniformBallotFindLSB(ctx.U32[1], scope, mask);
+    return ctx.OpGroupNonUniformShuffle(ctx.U32[1], scope, value, first);
 }
 
 Id EmitShuffle(EmitContext& ctx, Id value, Id index) {
