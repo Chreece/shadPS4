@@ -61,6 +61,7 @@ static bool IgnoresExecMask(const GcnInst& inst) {
     case Opcode::V_READLANE_B32:
     case Opcode::V_WRITELANE_B32:
     case Opcode::V_READFIRSTLANE_B32:
+    case Opcode::DS_ORDERED_COUNT:
         return true;
     default:
         break;
@@ -164,7 +165,8 @@ void CFG::SplitDivergenceScopes() {
         // An open scope instruction is an instruction that modifies EXEC
         // but also saves the previous value to restore later. This indicates
         // we are entering a scope.
-        return inst.opcode == Opcode::S_AND_SAVEEXEC_B64 ||
+        return inst.opcode == Opcode::DS_ORDERED_COUNT ||
+               inst.opcode == Opcode::S_AND_SAVEEXEC_B64 ||
                // While this instruction does not save EXEC it is often used paired
                // with SAVEEXEC to mask the threads that didn't pass the condition
                // of initial branch.
@@ -175,7 +177,8 @@ void CFG::SplitDivergenceScopes() {
         // Closing an EXEC scope can be either a branch instruction
         // (typical case when S_AND_SAVEEXEC_B64 is right before a branch)
         // or by a move instruction to EXEC that restores the backup.
-        return (inst.opcode == Opcode::S_MOV_B64 && inst.dst[0].field == OperandField::ExecLo) ||
+        return inst.opcode == Opcode::DS_ORDERED_COUNT ||
+               (inst.opcode == Opcode::S_MOV_B64 && inst.dst[0].field == OperandField::ExecLo) ||
                // Sometimes compiler might insert instructions between the SAVEEXEC and the branch.
                // Those instructions need to be wrapped in the condition as well so allow branch
                // as end scope instruction.

@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "time_utc": "2026-10-29T20:04:52.516195Z",
+  "scope": "UNIVERSAL_SHADPS4",
+  "game": "Ghost of Tsushima CUSA11456",
+  "experiment": "C925 backing-complete + compute metadata-clear safety and GPU clear-value synchronization",
+  "archive": "got-c925-menu-compute-coherence-20261029T200452516195Z.tar.gz",
+  "result": "BUILD_PASS_MENU_118S_NO_MATERIAL_VISUAL_GAIN",
+  "build": "PASS",
+  "runtime": {
+    "seconds": 118.401,
+    "time_limit_reached": true,
+    "exit_code": 0,
+    "input": "NONE",
+    "vulkan_device_loss": 0,
+    "validation_sync_hazards": 0,
+    "base_elf_restored": true
+  },
+  "candidate_elf_sha256": "c74a03824a01ac7457583f3142244caecd4875ac569181433b158f0821147e70",
+  "events": {
+    "meta_clear_multi_output_preserved": 22,
+    "compute_image_clear_source_gpu_sync": 0,
+    "compute_image_clear_applied": 0,
+    "backing_write_complete_verified": 22,
+    "gpu_descriptor_table_cpu_coherence": 48,
+    "indexed_zero_record_material_rejects": 7,
+    "unflattened_sharp_warnings": 317
+  },
+  "graphics": "Menu visible but black katana silhouette and missing pale grass/infill remain. No comparable positive recovery.",
+  "source_restore": "memory.cpp, buffer_cache.cpp, vk_rasterizer.cpp and compiled object and ELF all RESTORED_VERIFIED",
+  "ollama": "Conditional unload/restoration preserved prior model/context",
+  "analysis": "Remaining four compute material-source shaders 04950cf6, 55d17c16, 52b6e003, 5c4c2b6f show GPU-dependent selector and ReadConstBuffer SHARP chains. The actual captured SRT walker disassembly begins with mov rdi,[rdi] and reads the root SRT. There is no proof the zero-length V# header represents valid nonzero records. Do not guess counts or override bounds.",
+  "next_candidate": {
+    "ref": "28aa6786846ec5260d0447a67dd02cdd1a111f6c",
+    "path": "tools/development/c925_compute_srt_root/coherent_root.py",
+    "method": "Stack backing and metadata corrections and read back only mapped GPU-dirty compute SGPR0 SRT root pointer and pointee before GetComputePipeline specialization; do not synthesize guest headers. 3-object reversible build, 8GiB VRAM, no-input menu test, restore source/object/ELF."
+  },
+  "disposition": "KEEP_SOURCE_CORRECTNESS_CANDIDATE_ISOLATED_NOT_PROMOTED; CONTINUE_TARGETED_MATERIAL_SHADER_ROOT_PROVENANCE; NO_RENDERING_FIX_CLAIMED"
+}

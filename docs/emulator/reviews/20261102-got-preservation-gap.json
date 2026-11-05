@@ -1,0 +1,166 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-got-preservation-gap-20261102",
+  "recorded_at": "2026-11-02T16:31:37.118684+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "tested_source": "92c1a01e8627544bfa9fbe8c6bf6d8fc6d69e4d5",
+  "upstream_verified": "e25f2d34070548bab5249c80b3922a7acac73fe4",
+  "current_native_records": [
+    {
+      "source_commit": "92c1a01e8627544bfa9fbe8c6bf6d8fc6d69e4d5",
+      "binary_sha256": "721e6c06d447dce4b3a23a57efc966b649013d00ef03fcd6070084b46e5d1599",
+      "result": "ORDERED_GDS_FIRST_PASS_CAPTURED_CONTINUATION_PENDING",
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "record_id": "universal-graphics-20261102T161521Z-2334913-reviewed",
+      "schema_version": 2,
+      "recorded_at": "2026-11-02T16:31:37.118557+00:00",
+      "record_type": "REVIEWED_USER_NATIVE_ARCHIVE",
+      "scope": "UNIVERSAL_SHADPS4",
+      "archive": "universal-two-games-20261102T160055Z-2215863.tar.gz",
+      "archive_sha256": "6f19705a4193213d8ee4e40a1e3b5e64a71e0b72d7fa2fffd2ce9c94297a1e15",
+      "native": {
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "elapsed_seconds": 9.732,
+        "exit_code": -11,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "gpu_failure": null,
+        "screenshots": [
+          "frame-008s.png"
+        ],
+        "srt_rejections": {
+          "Phi": 3906,
+          "GetAttributeU32": 2
+        },
+        "owned_child_terminated": true,
+        "gpu_memory_fault_reports": 0
+      },
+      "visual": "GoW capture stop; no gameplay acceptance.",
+      "decision": "REJECT_AS_GAMEPLAY_RECOVERY_KEEP_ISOLATED"
+    },
+    {
+      "source_commit": "92c1a01e8627544bfa9fbe8c6bf6d8fc6d69e4d5",
+      "binary_sha256": "721e6c06d447dce4b3a23a57efc966b649013d00ef03fcd6070084b46e5d1599",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "profile_policy": "isolated saves; global config; no custom title configs, patches, cheats or old shader cache",
+      "record_id": "universal-graphics-20261102T161534Z-2336510-reviewed",
+      "schema_version": 2,
+      "recorded_at": "2026-11-02T16:31:37.118646+00:00",
+      "record_type": "REVIEWED_USER_NATIVE_ARCHIVE",
+      "scope": "UNIVERSAL_SHADPS4",
+      "archive": "universal-two-games-20261102T160055Z-2215863.tar.gz",
+      "archive_sha256": "6f19705a4193213d8ee4e40a1e3b5e64a71e0b72d7fa2fffd2ce9c94297a1e15",
+      "native": {
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "elapsed_seconds": 41.901,
+        "exit_code": -9,
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "srt_rejections": {
+          "Phi": 72,
+          "GetAttributeU32": 29
+        },
+        "owned_child_terminated": true,
+        "gpu_memory_fault_reports": 0
+      },
+      "visual": "GoT: black guest area, 29 FPS overlay at 25s; GoW: capture stop, continuation unproven.",
+      "decision": "REJECT_AS_GAMEPLAY_RECOVERY_KEEP_ISOLATED"
+    },
+    {
+      "source_commit": "92c1a01e8627544bfa9fbe8c6bf6d8fc6d69e4d5",
+      "binary_sha256": "721e6c06d447dce4b3a23a57efc966b649013d00ef03fcd6070084b46e5d1599",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "upstream_commit": "e25f2d34070548bab5249c80b3922a7acac73fe4",
+      "record_id": "universal-upstream-20261102T160055Z-2215874-reviewed",
+      "schema_version": 2,
+      "recorded_at": "2026-11-02T16:31:37.118678+00:00",
+      "record_type": "REVIEWED_USER_NATIVE_ARCHIVE",
+      "scope": "UNIVERSAL_SHADPS4",
+      "archive": "universal-two-games-20261102T160055Z-2215863.tar.gz",
+      "archive_sha256": "6f19705a4193213d8ee4e40a1e3b5e64a71e0b72d7fa2fffd2ce9c94297a1e15",
+      "decision": "RETAIN_BUILD_EVIDENCE_NO_GRAPHICS_PROMOTION"
+    }
+  ],
+  "historical_visual_positive": {
+    "archive": "c925-integrated-gpu-20261027-195934.tar.gz",
+    "archive_sha256": "86062ce1cb572c191b45dfe1e2e914c49c0efcea964e276d3a9f4cec4420debc",
+    "binary_sha256": "395682a478f04e4f4a5a2da89488e90fe54ccf502dc23cbecf716a7adeac4e8b",
+    "source_base": "c925523b49ef39434024b16b2b014d120471ee1a",
+    "source_base_is_not_complete_modified_source_identity": true,
+    "screenshots_reviewed": {
+      "menu-40.png": "181ad9f7b86a50ae9a38f6e1664810600252d6f1c34873752361a761918cebbf",
+      "menu-85.png": "f88e691b722efa722f4e66f6cdfb27e772ef7d0ee2348621ebf9d7885c05a8d8"
+    },
+    "visual": "40s readable Continue/New Game/Load Game/Options menu, 24 FPS; 85s smoke/fire/water partial in-game scene, 6 FPS, major terrain/character geometry absent. Genuine partial rendering progress; not full compatibility.",
+    "runtime_seconds": 118,
+    "device_lost": false,
+    "typed_descriptor_entries": {
+      "Color2D": 27612,
+      "Color3D": 35,
+      "Cube": 4
+    },
+    "descriptor_binding_is_not_proof_of_sampling": true
+  },
+  "confirmed_integration_gap": {
+    "record": "docs/emulator/reviews/20261031-universal-upstream-integration.json",
+    "excluded": [
+      "Experimental mixed image descriptor tables with no graphics proof",
+      "Unpublished retained C925-only production changes until exact source captured"
+    ],
+    "correction": "The blanket no-graphics-proof wording does not describe the October 27 historical renderer: that archive proves a visible menu and partial world. Later experimental mixed-type branches remain unverified. The integration did not preserve all earlier rendering capability.",
+    "source_evidence": {
+      "historical": {
+        "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": "afbce4084a993892a0cae1d48f994436eaf102f896f1c9970bf264559ff8ce34",
+        "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": "0d390169a2fbec0cc9117cf9a97a959a356756da9f8a80051a08f579b8134d24",
+        "src/shader_recompiler/ir/passes/indexed_sample_eligibility.h": "40b27dab45cf2fd4d3b5d000bfd811c6e6bcfe0cda3a60770981b20f4e8fb90d"
+      },
+      "current": {
+        "src/shader_recompiler/ir/passes/resource_discover_pass.cpp": "569145141727f29586e0ea6e09f3e3bbbdaa6c5864168070a8ff75c81da1a834",
+        "src/shader_recompiler/ir/passes/resource_patching_pass.cpp": "f89cb8f8054d2f3a6d0affc08ef88d556f85abd3cd667db9718d386eb12caf78",
+        "src/shader_recompiler/ir/passes/indexed_sample_eligibility.h": null
+      },
+      "difference": "Historical discovery/patching includes indexed texture selectors, table SHARPs and indexed/uniform sampler routing. Current ImageResource has only a static SharpFetch and mip fallback; current DefineImagesAndSamplers declares no guest-indexed texture/sampler table. Individual 3D/cube image support is not the missing feature; mixed GPU-selected table routing is."
+    }
+  },
+  "current_vs_previous_native": {
+    "previous_source": "48d0a918248faf89f7a2731d564f1ce97e270456",
+    "previous_gpu_loss_seconds": 41.413,
+    "current_gpu_loss_seconds": 41.901,
+    "raw_and_spirv_files_byte_identical": 32,
+    "spirv_modules_byte_identical": 15,
+    "ir_files_identical_after_removing_only_leading_host_pointer": 48,
+    "interpretation": "Latest comparator correction did not change these captured GoT shaders or recover the prior menu. Captures do not contain every pipeline, so no whole-game equivalence claim."
+  },
+  "other_differences": {
+    "gpu_and_driver": "Both historical and current logs: RX 7900 XTX / RADV 25.0.7",
+    "historical_readbacks_log": "readbacksMode: 2 (automatic demand coherence; legacy option ignored)",
+    "current_readbacks_log": "readbacksMode: 0",
+    "readbackLinearImages": "false in both logs",
+    "interpretation": "Source/coherence/profile parity is not established. Do not guess that toggling a setting fixes the reset."
+  },
+  "limits": [
+    "Exact GPU command causing context loss and first bad commit are not isolated.",
+    "Historical C925 base is not fetchable from the fork API; old archives recovered here contain only selected source files.",
+    "Current host C925 source is not automatically the source of the protected historical ELF.",
+    "No historical binary replay, emulator patch, new native build or new GPU run performed in this review."
+  ],
+  "validation": {
+    "captured_spirv_vulkan_1_3": {
+      "pass": 31,
+      "fail": 0,
+      "meaning": "structural validation, not rendering correctness"
+    },
+    "source_collector": [
+      "Python syntax PASS",
+      "ordinary Git source capture PASS",
+      "linked worktree plus new untracked and deleted historical headers PASS",
+      "symlink exclusion fails closed PASS",
+      "source status unchanged and canonical journal appended in all fixtures"
+    ]
+  },
+  "decision": "BLOCK_GRAPHICS_PROMOTION_RESTORE_PROVEN_RENDERING_CAPABILITY_BEFORE_ANOTHER_UNCHANGED_GPU_REPLAY",
+  "next_step": "Capture all shader/video source and HEAD/C925 versions, including untracked headers, hash protected positive binaries, compare with recovered October 27 hashes. Port indexed image/sampler selection and coherence deliberately onto current upstream; preserve original GPU selectors and typed routing. Do not use title/shader conditionals or guessed descriptors."
+}

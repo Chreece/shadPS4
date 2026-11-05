@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "record_id": "got-c925-fragment-draw-trace-20261029T133528290334Z-reviewed",
+  "recorded_on": "2026-10-29",
+  "record_type": "NATIVE_INSTRUMENTATION_COMPILE_FAILURE_WITH_VERIFIED_ROLLBACK",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "game_id": "CUSA11456",
+  "context_games": [
+    "CUSA11456",
+    "CUSA34384"
+  ],
+  "tested_games": [],
+  "archive": "got-c925-fragment-draw-trace-20261029T133528290334Z.tar.gz",
+  "archive_sha256": "1678551d1f8b0a9846a741dbc97caab9fecfef312ae529628c505f529df172f5",
+  "source_revision": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "native_candidate": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+  "error": "vk_rasterizer.cpp:336:34: ‘regs’ was not declared in this scope",
+  "exact_injected_line": "RecordFragmentDraw(pipeline, regs, true, is_indexed, max_count);",
+  "failure_classification": "PR114 diagnostic instrumentation compile-time scope error in Rasterizer::DrawIndirect, not a failure of the native game renderer, shader compilation or gameplay graphics.",
+  "build": "Single original vk_rasterizer.cpp.o compilation FAILED 1; command extracted from existing Ninja graph without invoking CMake; no final linker and no game launch.",
+  "preflight": "The earlier Ninja regeneration false refusal is corrected. Logs contain direct compiler and linker plans, but only the compiler was executed. Compiler reports one unresolved regs symbol, not pipeline/shader errors.",
+  "new_graphics": "NONE_MENU_NOT_RUN",
+  "screenshot_count": 0,
+  "restoration": {
+    "source": "RESTORED_VERIFIED",
+    "object": "RESTORED_VERIFIED",
+    "elf": "RESTORED_VERIFIED",
+    "protected_other_elf_unchanged": true,
+    "source_sha256_after": "ebed2441ceda3d6b3e6a6ebe1afe7469ec35f9d8a99c3b7f0feb1a3fb533b4a0",
+    "object_sha256_after": "201ca853815ceda82dea3e33857158167d2f9438dd658723cc3f90f83ea18cd0",
+    "elf_sha256_after": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec"
+  },
+  "corrective_change": {
+    "pr": 114,
+    "branch": "diagnostics/c925-menu-fragment-focus-20261029",
+    "head_commit": "576f51dedecdd18a0cc24811fe501d6c87a5f3b1",
+    "source": "tools/development/c925_menu_fragment_focus/apply_draw_probe.py",
+    "source_sha256": "0b2865e43b9eddf7d80e8656cf1c49362215ac7f722392ab5e4b6c22784ee4ce",
+    "source_blob": "d10e728b2b445d161f65764f97603a1cb6f07948",
+    "test": "tools/development/c925_menu_fragment_focus/test_draw_probe.py",
+    "test_sha256": "a27a5e92600de3e32543516af686816fc8aa983caf085e2cb184aab4f9c40c47",
+    "test_blob": "1cb06fad26b925b6e71dd2259727af6dbfb4756b",
+    "runner_sha256": "049bb4863d20af7da11460367bf786375b3ba7b37738f57f7fe325dad5fadf7a",
+    "runner_blob": "16338ea6e78ac7269172a2a291eb6e1ba32c6628",
+    "exact_fix": "RecordFragmentDraw(pipeline, liverpool->regs, true, is_indexed, max_count);",
+    "tests": "GCC and Clang actual generated helper plus both direct and indirect draw CALL SITES PASS, using exact SHA-pinned C925 rasterizer source. Python py_compile pass. Ninja regenerated-build-tree toy and source/object/ELF restore tests pass. No full on-user-host native compilation or game run for changed code claimed."
+  },
+  "decision": "REJECT_FAILED_DIAGNOSTIC_PATCH_KEEP_ALL_PRIOR_PRODUCTION_FIXES; RETRY_THIS_SINGLE_SCOPE_CORRECTION",
+  "next": "Fetch only SHA-pinned PR114 updated Python tool/test files, run preflight with both call sites under GCC/Clang, perform one reversible native temporary build and no-input menu-only 118+2s test; preserve previous PR109 ELF and original saves. Distinguish actual fragment draws from mere shader compilation/binding; choose menu sword/grass material fix based on observed draw/mask results.",
+  "journal_ledger": "docs/emulator/TRIALS.jsonl",
+  "no_duplicate_shader_workaround": true
+}
