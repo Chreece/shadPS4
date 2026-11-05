@@ -493,7 +493,8 @@ void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
                                offset0 | (offset1 << 8u));
     const IR::U32 old_value =
         ir.OrderedGdsCount(ir.GetM0(), source_value, exec_mask, control, site_pc);
-    SetDst(inst.dst[0], old_value);
+    const auto destination = IR::VectorReg(inst.dst[0].code);
+    ir.SetVectorReg(destination, ir.Select(ir.GetExec(), old_value, ir.GetVectorReg(destination)));
 }
 
 void Translator::DS_CONSUME(const GcnInst& inst) {
