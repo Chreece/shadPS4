@@ -85,7 +85,7 @@ private:
     vk::Device device;
     Semaphore* work_semaphore;
     u32 descriptor_heap_count;
-    std::span<const vk::DescriptorPoolSize> pool_sizes;
+    std::vector<vk::DescriptorPoolSize> pool_sizes;
     vk::DescriptorPool curr_pool;
     std::vector<vk::DescriptorPoolSize> curr_pool_sizes;
     u32 curr_pool_max_sets{};
