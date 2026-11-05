@@ -477,14 +477,26 @@
     {
       "id": "image-float-atomic-fallback",
       "subsystem": "shader-recompiler",
-      "status": "BUILD_AND_PRODUCTION_COMPILER_PASS_NATIVE_PENDING",
+      "status": "PR126_PRIOR_NATIVE_VALIDATION_GATE_CLEARED_NEXT_FAILURE",
       "related_prs": [
         126
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "PR125 GoT Vulkan sampled-type failure at25.206s; PR125 GoW GPU context loss at27.663s. PR126 has no native game evidence.",
+      "observed_game_effects": "GoT compiled prior 79ab8f30 shader without sampled-type failure, then reached integer-sampler validation. Atomic hardware semantics and visual recovery remain pending. GoW skipped.",
       "negative_result_or_prohibition": "Do not infer game recovery from shader validation or numeric interpreter. No game/hash/vendor conditions. PS4 special-value rules unproven; no guessed NaN handling.",
-      "next_test": "Build exact published PR126 source, GoT first and GoW second with core/synchronization validation and shader/DS capture, each <=120s, no input. Stop remaining runs on GPU failure. No promotion absent native recovery."
+      "next_test": "Retain PR126 in the PR127 candidate; repeat GoT then GoW with validation and shader/DS capture after the sampler correction. No atomic hardware or native visual recovery claim."
+    },
+    {
+      "id": "integer-texture-sampler-pairing",
+      "subsystem": "renderer-and-shader-recompiler",
+      "status": "BUILD_AND_PRODUCTION_CHECKS_PASS_NATIVE_PENDING",
+      "related_prs": [
+        127
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "PR126 GoT reaches integer-sampler draw validation failure; no menu/video. Stop unconfirmed; GoW skipped. PR127 has no native game result.",
+      "negative_result_or_prohibition": "No title/hash/vendor cases. Do not equate legal integer filtering with solved interpolation of scaled/converted float formats. Do not claim an OS-uninterruptible process was killed.",
+      "next_test": "Build exact PR127 source; GoT first then GoW, validation and DS capture, <=120s each, no automatic input. Existing-game/display preflight must pass. Stop remaining tests after GPU failure or unconfirmed owned stop."
     }
   ]
 }
