@@ -1,0 +1,48 @@
+{
+  "schema_version": 2,
+  "scope": "UNIVERSAL_SHADPS4",
+  "utc": "2026-10-29T19:47:33.066277Z",
+  "game": "Ghost of Tsushima CUSA11456",
+  "evidence": "got-c925-backing-complete-20261029T194733066277Z.tar.gz",
+  "experiment": "Complete physical coverage for GPU readback writebacks plus retaining GPU-dirty ranges on failed writeback",
+  "build": "PASS",
+  "runtime": {
+    "seconds": 118.6,
+    "time_limit_reached": true,
+    "exit_code": 0,
+    "free_vram_before_bytes": 8558878720,
+    "free_vram_at_launch_bytes": 20545982464,
+    "ollama_model": "qwen3.8-greek:latest",
+    "ollama_context_restored": 16384,
+    "ollama_restore": "RESTORED_VERIFIED"
+  },
+  "source_and_binary": {
+    "candidate_elf_sha256": "a1925e03dc4483b7c529568b0d4d5e3e61c9d329cf1143288157f4419b63ba7a",
+    "source_sha256": {
+      "memory": "595f4a1b00b6d26dc76dba740e7946c9976ff5bed6e8c65deb9774cf6ec7f9e9",
+      "buffer": "175deb96189e79471f200dffd253389f524f63d090655f689546b903440e3c37"
+    },
+    "baseline_elf_sha256": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+    "restore_all": "RESTORED_VERIFIED"
+  },
+  "events": {
+    "BackingWriteCompleteVerified": 23,
+    "BackingWriteIncomplete": 0,
+    "BackingReadbackDirtyRetained": 0,
+    "GpuDescriptorTableCpuCoherence": 48,
+    "INDEXED_MATERIAL_BIND_REJECT": 7,
+    "Sharp_source_unflattened": 749,
+    "GraphicsPipeline_minmax_blend_unsupported": 21,
+    "StencilReferenceExactMerged": 9
+  },
+  "graphics": {
+    "menu_40": "Visible five options and black katana over clouds; no full shader fills",
+    "menu_55": "Visible menu and black katana",
+    "gameplay_85": "Manual user Continue after menu; fire, sparks, silhouettes, some background details",
+    "gameplay_112": "Manual user in-game; mostly dark/incomplete surfaces, some additional visual elements reported by user",
+    "note": "Do not compare gameplay 85/112 with baseline menu screenshots or infer emulator frozen from static menu."
+  },
+  "interpretation": "Source correctness fix ran real single-segment physical writebacks; none required error/partial handling, so root visual fix not proven. User reports possible additional drawn scene elements after manually entering gameplay; preserve as provisional observation, do not assert controlled same-scene causality.",
+  "disposition": "KEEP_AS_ISOLATED_CORRECTNESS_CANDIDATE, STACK_SAFELY_FOR_NEXT_TEST; PROVEN_BASELINE_RESTORED",
+  "next_scope": "Resolve missing GoT menu fill graphics with a general compute metadata/image clear correctness correction; no game-ID/shader-hash special cases or fabricated material lengths."
+}

@@ -57,6 +57,7 @@ struct ImageInfo {
     s32 SliceOf(const ImageInfo& info, s32 mip) const;
 
     bool IsCompatible(const ImageInfo& info) const;
+    bool CanExpandColor1DToColor2DLayers(const ImageInfo& cached) const;
     void UpdateSize() noexcept;
 
     struct {

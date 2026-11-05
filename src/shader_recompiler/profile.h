@@ -14,6 +14,12 @@ struct Profile {
     u32 supported_spirv{0x00010000};
     u32 subgroup_size{};
     u32 sparse_page_shift{};
+    u64 bda_page_count{};
+    u32 max_guest_indexed_image_entries{};
+    u32 max_guest_mixed_indexed_image_entries{};
+    u32 max_guest_indexed_sampler_entries{};
+    bool supports_sampled_image_nonuniform_indexing{};
+    bool supports_sampler_array_nonuniform_indexing{};
     bool support_int8{};
     bool support_int16{};
     bool support_int64{};

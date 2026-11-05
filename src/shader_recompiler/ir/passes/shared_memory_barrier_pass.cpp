@@ -4,18 +4,32 @@
 #include <unordered_set>
 #include "shader_recompiler/ir/breadth_first_search.h"
 #include "shader_recompiler/ir/ir_emitter.h"
+#include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
 namespace Shader::Optimization {
 
-static bool IsLoadShared(const IR::Inst& inst) {
-    return inst.GetOpcode() == IR::Opcode::LoadSharedU16 ||
-           inst.GetOpcode() == IR::Opcode::LoadSharedU32 ||
-           inst.GetOpcode() == IR::Opcode::LoadSharedU64;
+static bool IsPersistentLdsAccess(const IR::Inst& inst, const Info& info) {
+    if (!info.ordered_gds_persistent_lds || !IsBufferInstruction(inst)) {
+        return false;
+    }
+    const IR::Value resource = inst.Arg(0);
+    return resource.IsImmediate() && resource.U32() < info.buffers.size() &&
+           info.buffers[resource.U32()].buffer_type == BufferType::SharedMemory;
 }
 
-static bool IsWriteShared(const IR::Inst& inst) {
+static bool IsLoadShared(const IR::Inst& inst, const Info& info) {
+    return inst.GetOpcode() == IR::Opcode::LoadSharedU16 ||
+           inst.GetOpcode() == IR::Opcode::LoadSharedU32 ||
+           inst.GetOpcode() == IR::Opcode::LoadSharedU64 ||
+           (IsPersistentLdsAccess(inst, info) && !IsBufferStore(inst));
+}
+
+static bool IsWriteShared(const IR::Inst& inst, const Info& info) {
+    if (IsPersistentLdsAccess(inst, info) && IsBufferStore(inst)) {
+        return true;
+    }
     const IR::Opcode opcode = inst.GetOpcode();
     if (opcode >= IR::Opcode::SharedAtomicIAdd32 && opcode <= IR::Opcode::SharedAtomicCmpSwap64) {
         return !inst.Flags<bool>();
@@ -25,7 +39,7 @@ static bool IsWriteShared(const IR::Inst& inst) {
 }
 
 // Inserts barriers when a shared memory write and read occur in the same basic block.
-static void EmitBarrierInBlock(IR::Block* block, bool subgroup = false) {
+static void EmitBarrierInBlock(IR::Block* block, const Info& info, bool subgroup = false) {
     const auto emit_barrier = [subgroup](IR::IREmitter& ir) {
         if (subgroup) {
             ir.SubgroupBarrier();
@@ -40,7 +54,7 @@ static void EmitBarrierInBlock(IR::Block* block, bool subgroup = false) {
     };
     BarrierAction action{};
     for (IR::Inst& inst : block->Instructions()) {
-        if (IsLoadShared(inst)) {
+        if (IsLoadShared(inst, info)) {
             if (action == BarrierAction::BarrierOnRead) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
                 emit_barrier(ir);
@@ -48,7 +62,7 @@ static void EmitBarrierInBlock(IR::Block* block, bool subgroup = false) {
             action = BarrierAction::BarrierOnWrite;
             continue;
         }
-        if (IsWriteShared(inst)) {
+        if (IsWriteShared(inst, info)) {
             if (action == BarrierAction::BarrierOnWrite) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
                 emit_barrier(ir);
@@ -141,10 +155,10 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
     if (threadgroup_size != GcnSubgroupSize || !profile.needs_lds_barriers) {
         // GCN waves can use shared memory between invocations without explicit barriers because
         // they run in lockstep. Host compilers can reorder these accesses, so keep their order
-        // with subgroup memory barriers.
+        // with subgroup control barriers.
         for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
             if (node.type == IR::AbstractSyntaxNode::Type::Block) {
-                EmitBarrierInBlock(node.data.block, true);
+                EmitBarrierInBlock(node.data.block, program.info, true);
             }
         }
         return;
@@ -179,7 +193,7 @@ void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_in
             continue;
         }
         if (node.type == Type::Block && divergence_depth == 0) {
-            EmitBarrierInBlock(node.data.block);
+            EmitBarrierInBlock(node.data.block, program.info);
         }
     }
 }

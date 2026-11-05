@@ -242,6 +242,7 @@ constexpr NumberFormat RemapNumberFormat(const NumberFormat format, const DataFo
     case NumberFormat::SnormNz:
         return NumberFormat::Sint;
     case NumberFormat::Ubnorm:
+    case NumberFormat::UbnormNz:
         return NumberFormat::Unorm;
     case NumberFormat::Float:
         if (data_format == DataFormat::Format8) {
@@ -346,6 +347,7 @@ constexpr NumberConversion MapNumberConversion(const NumberFormat num_fmt,
     case NumberFormat::Sscaled:
         return NumberConversion::SintToSscaled;
     case NumberFormat::Ubnorm:
+    case NumberFormat::UbnormNz:
         return NumberConversion::UnormToUbnorm;
     case NumberFormat::SnormNz: {
         switch (data_fmt) {
