@@ -1825,12 +1825,16 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
             if (vsharp.base_address == 0 || vsharp.GetSize() == 0) {
                 buffer_infos.emplace_back(VK_NULL_HANDLE, 0, VK_WHOLE_SIZE);
             } else {
-                const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
-                if (size != vsharp.GetSize()) {
+                const u64 requested_size = std::min<u64>(vsharp.GetSize(), desc.accessed_size);
+                const u64 size = memory->ClampRangeSize(vsharp.base_address, requested_size);
+                if (size != requested_size) {
                     LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              vsharp.GetSize(), size, stage.pgm_hash);
+                              requested_size, size, stage.pgm_hash);
                 }
                 VideoCore::ObtainBufferFlags flags = {};
+                if (requested_size != vsharp.GetSize()) {
+                    flags |= VideoCore::ObtainBufferFlags::IgnoreStreamBuffer;
+                }
                 if (desc.is_written) {
                     flags |= VideoCore::ObtainBufferFlags::IsWritten;
                 }
