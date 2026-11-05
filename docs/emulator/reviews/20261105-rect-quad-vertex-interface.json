@@ -1,0 +1,453 @@
+{
+  "schema_version": 2,
+  "record_id": "rect-interface-20261105-review",
+  "timestamp_utc": "2026-11-05T17:51:10.911403+00:00",
+  "source_commit": "a7210a604e4197091b18d778cdb1f40da5dbc455",
+  "source_tree": "29596cc9437673977df69d1da302006078c47c12",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "pr": 164,
+  "depends_on_pr": 163,
+  "archive": {
+    "filename": "universal-two-games-20261105T171158Z-2768829.tar.gz",
+    "sha256": "b39c10371ed1bbf655f310a4247ae6fb66f8b05af82296fe46ff7807e790beba",
+    "library_file_id": "libfile_84f396a1fc548191b82191bb7512c671"
+  },
+  "native": [
+    {
+      "game": "CUSA11456",
+      "ds_completion_entries_in_excerpt": 0,
+      "ds_completion_samples": [],
+      "ds_rejections_in_excerpt": 0,
+      "native": {
+        "binary_sha256": "1d696a405c0d1bd6b8d91ce23f2140fec64cb6391fa5fc74ddfd63f1573392da",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -9,
+        "owned_child_pid": 2889373,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 119.814,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 9943,
+        "warning_lines": 589,
+        "error_lines": 1531,
+        "gpu_work_entries": 0,
+        "gpu_work_bytes": 0,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 0,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "buffer-readback": 2048,
+          "image-readback": 128,
+          "image-read-demand": 64,
+          "conditional-exec": 8,
+          "image-buffer-write": 64,
+          "draw-preparation-flush": 16,
+          "copy-layers": 32
+        },
+        "graphics_diagnostics_bytes": 8896,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1343786,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 4,
+        "srt_source_blocks": {
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1,
+          "5507461:5507461": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "source_commit": "e2b34e7198f6e26bbdf740e2811e114408bd3db1",
+      "visual_review": "PlayStation intro at 25s; black at 110s; no recovered menu/gameplay"
+    },
+    {
+      "game": "CUSA34384",
+      "ds_completion_entries_in_excerpt": 31,
+      "ds_completion_samples": [
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=7\u001b[m",
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=11\u001b[m",
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=13\u001b[m",
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=6\u001b[m",
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=6\u001b[m",
+        "\u001b[0;37m[Render.Vulkan] <Info> (shadPS4:GpuComm) vk_rasterizer.cpp:677 ExecuteOrderedGdsDispatch: Ordered GDS dispatch completed: phases=2, waves=6\u001b[m"
+      ],
+      "ds_rejections_in_excerpt": 0,
+      "native": {
+        "binary_sha256": "1d696a405c0d1bd6b8d91ce23f2140fec64cb6391fa5fc74ddfd63f1573392da",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 2879572,
+        "first_validation_failure": "[Render.Vulkan] <Error> (shadPS4:GpuComm) vk_platform.cpp:55 DebugUtilsCallback: VUID-RuntimeSpirv-OpEntryPoint-08743: vkCreateGraphicsPipelines(): pCreateInfos[0] (SPIR-V Interface) VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT declared input at Location 1 Component 0 but it is not an Output declared in VK_SHADER_STAGE_VERTEX_BIT.\n",
+        "exit_reason": "VULKAN_VALIDATION_FAILED",
+        "elapsed_seconds": 80.332,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 17055,
+        "warning_lines": 1015,
+        "error_lines": 3284,
+        "gpu_work_entries": 2048,
+        "gpu_work_bytes": 303636,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 145143,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "image-readback": 512,
+          "image-read-demand": 256,
+          "image-buffer-write": 256,
+          "buffer-readback": 256,
+          "draw-preparation-flush": 2,
+          "copy-layers": 5
+        },
+        "graphics_diagnostics_bytes": 6573,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 2474006,
+        "console_excerpt_complete": false,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 73,
+        "srt_source_blocks": {
+          "4203462:4203462": 1,
+          "4203463:4203463": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201304:4201304": 1,
+          "4201314:4201314": 1,
+          "4201305:4201305": 1,
+          "4201306:4201306": 1,
+          "4203480:4203480": 1,
+          "4203483:4203483": 1,
+          "4203481:4203481": 1,
+          "4203482:4203482": 1,
+          "4205661:4205661": 1,
+          "4205662:4205662": 1,
+          "4205663:4205663": 1,
+          "4205664:4205664": 1,
+          "4205665:4205665": 1,
+          "4205666:4205666": 1,
+          "4201288:4201288": 1,
+          "4201298:4201298": 1,
+          "4201289:4201289": 1,
+          "4201290:4201290": 1,
+          "4203464:4203464": 1,
+          "4203490:4203490": 1,
+          "4201296:4201296": 1,
+          "4201299:4201299": 1,
+          "4201297:4201297": 1,
+          "4203472:4203472": 1,
+          "4203473:4203473": 1,
+          "4203474:4203474": 1,
+          "4203484:4203484": 1,
+          "4201313:4201313": 1,
+          "4203489:4203489": 1,
+          "4201291:4201291": 1,
+          "4203488:4203488": 1,
+          "4201292:4201292": 1,
+          "4203475:4203475": 1,
+          "4201308:4201308": 1,
+          "4201317:4201317": 1,
+          "4203465:4203465": 1,
+          "4201309:4201309": 1,
+          "4203485:4203485": 1,
+          "4201301:4201301": 1,
+          "4203492:4203492": 1,
+          "4201300:4201300": 1,
+          "4203477:4203477": 1,
+          "4203476:4203476": 1,
+          "4201307:4201307": 1,
+          "4201319:4201319": 1,
+          "4205603:4205603": 1,
+          "4205629:4205629": 1,
+          "4205630:4205630": 1,
+          "4205631:4205631": 1,
+          "4719383:4719383": 1,
+          "4203495:4203495": 1,
+          "4201315:4201315": 1,
+          "4201327:4201327": 1,
+          "4201316:4201316": 1,
+          "4201318:4201318": 1,
+          "4203491:4203491": 1,
+          "4203502:4203502": 1,
+          "4203494:4203494": 1,
+          "4201326:4201326": 1,
+          "4201311:4201311": 1,
+          "4201328:4201328": 1,
+          "4201325:4201325": 1,
+          "4203487:4203487": 1,
+          "4203499:4203499": 1,
+          "4203512:4203512": 1,
+          "4203513:4203513": 1,
+          "4203500:4203500": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {
+          "VUID-RuntimeSpirv-OpEntryPoint-08743": 4
+        },
+        "validation_log_bytes": 1623,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "source_commit": "e2b34e7198f6e26bbdf740e2811e114408bd3db1",
+      "visual_review": "Loading game overlay at 25s; no menu/video/gameplay acceptance"
+    }
+  ],
+  "root_defect": {
+    "observed": "After 31 completed ordered-GDS dispatches, GoW is stopped by the observer at VUID-RuntimeSpirv-OpEntryPoint-08743 for TCS locations 1 and 2 absent from VS outputs. No native HS/LS guest shaders occur in the saved GoW console tail.",
+    "mechanism": "Auxiliary rectangle/quad stages declared all non-default FS register mappings, even if no matching VS export existed. Pipeline 0x30e6b0159002bae9 is near the first validation event; exact shader identity was not recovered.",
+    "correction": "Use actual VS stores metadata for both helper stages, including sparse parameter locations and emulated clip-distance offset. Increment serialized pipeline key version 3 to 4 to regenerate embedded auxiliary SPIR-V.",
+    "game_specific": false
+  },
+  "validation": {
+    "baseline": "Both original rectangle and quad pipelines reproduce two 08743 interface errors; invalid pipelines are not drawn.",
+    "spirv": [
+      {
+        "file": "fixed/high/pass.tese.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/high/quad.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/high/rect.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/clip/pass.tese.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/clip/quad.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/clip/rect.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/sparse/pass.tese.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/sparse/quad.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/sparse/rect.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/empty/pass.tese.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/empty/quad.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/empty/rect.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/one/pass.tese.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/one/quad.tesc.spv",
+        "exit": 0,
+        "error": ""
+      },
+      {
+        "file": "fixed/one/rect.tesc.spv",
+        "exit": 0,
+        "error": ""
+      }
+    ],
+    "render": [
+      {
+        "mode": "baseline",
+        "case": "one",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nvalidation_errors=2 interface_errors=2 bad_pixels=0 mode=baseline-no-draw\n"
+      },
+      {
+        "mode": "baseline",
+        "case": "one",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nvalidation_errors=2 interface_errors=2 bad_pixels=0 mode=baseline-no-draw\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "one",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "one",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "sparse",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "sparse",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "high",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "high",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "empty",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "empty",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "clip",
+        "kind": "rect",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      },
+      {
+        "mode": "fixed",
+        "case": "clip",
+        "kind": "quad",
+        "exit": 0,
+        "stdout": "device=llvmpipe (LLVM 19.1.7, 256 bits)\nfirst_pixel=64,128,191,255\nvalidation_errors=0 interface_errors=0 bad_pixels=0 mode=fixed-render\n"
+      }
+    ],
+    "driver": "Lavapipe/llvmpipe LLVM 19.1.7, CPU software Vulkan",
+    "render_case_count": 10,
+    "checked_pixels": 640,
+    "routing": "Unused exported locations carry distinct colors; selected output must retain expected RGBA.",
+    "clip_scope": "Tests remapped user locations; does not claim end-to-end native clipping coverage.",
+    "full_build": "PASS published source embedded",
+    "binary_sha256": "7df771119388614c298a0ec9e9e974d4f6a8b190b6d721665faa3cb5ac6e1ec6",
+    "cpu": "PASS established universal CPU regressions",
+    "cli": "PASS three existing user-directory cases",
+    "homebrew": {
+      "shaders": 3,
+      "assembly": "PASS LLVM19 Bonaire",
+      "host_c": "PASS C11 -Wall -Wextra -Werror",
+      "sdk_link": "NOT_RUN",
+      "ps4_execution": "NOT_RUN",
+      "hardware_register_and_surface_review": "PENDING"
+    },
+    "handoff": "PASS normal, bad checksum, failed download boundaries with stubs; no games launched",
+    "rejected_attempts": [
+      "Initial standalone Vulkan harness link failed because only libvulkan.so.1 is installed; corrected link and reran all cases.",
+      "CLI --version is not supported; no successful version check is claimed. Published SHA verified in binary bytes.",
+      "Initial file inspections used wrong Vulkan-Headers capitalization and nonexistent wave_probe/Makefile; corrected paths."
+    ]
+  },
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/tess-interface-evidence-20261105/rect-quad-interface-evidence-20261105.zip",
+    "sha256": "4085c14736698a4c41daf1b54b326febee59ab4f05dbbf3d19fd0f2f36d7c107",
+    "bytes": 402068,
+    "files": 95,
+    "library_file_id": "libfile_b210663f78a481918eae88a0abe916c0",
+    "url": "https://chatgpt.com/library?file_id=libfile_b210663f78a481918eae88a0abe916c0&account_id=personal"
+  },
+  "next_run": {
+    "source_commit": "a7210a604e4197091b18d778cdb1f40da5dbc455",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "capture_requested": false,
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=a7210a604e4197091b18d778cdb1f40da5dbc455\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "protections": "Unchanged 118s TERM + 2s KILL, >=8GiB free VRAM, conditional model lease restoration, stop/defer on GPU failure/live child, no automatic input."
+  },
+  "decision": {
+    "ds_native": "OBSERVED_PROGRESS_31_COMPLETE_DISPATCHES_ZERO_REJECTIONS",
+    "new_graphics_fix": "IMPLEMENTED_AND_LOCAL_RENDER_PASS_NATIVE_PENDING",
+    "got_recovery": "NOT_OBSERVED",
+    "main_changed": false,
+    "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "reason": "A native DS milestone is not acceptance of the retained stack or GoT recovery. Keep the graphics correction and DS stack reviewable pending native retest."
+  }
+}
