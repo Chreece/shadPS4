@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
+# SPDX-License-Identifier: GPL-2.0-or-later
+name: NGS2 focused tests
+on:
+  push:
+    paths:
+      - 'src/core/libraries/ngs2/**'
+      - 'src/core/memory*'
+      - 'src/common/atrac9_lock.h'
+      - 'src/core/libraries/ajm/ajm_at9.cpp'
+      - 'externals/LibAtrac9'
+      - 'cmake/LibAtrac9.cmake'
+      - 'tests/ngs2_hle/**'
+      - '.github/workflows/ngs2-hle.yml'
+  pull_request:
+    paths:
+      - 'src/core/libraries/ngs2/**'
+      - 'src/core/memory*'
+      - 'src/common/atrac9_lock.h'
+      - 'src/core/libraries/ajm/ajm_at9.cpp'
+      - 'externals/LibAtrac9'
+      - 'cmake/LibAtrac9.cmake'
+      - 'tests/ngs2_hle/**'
+      - '.github/workflows/ngs2-hle.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: g++
+            c_compiler: gcc
+            mode: Debug
+            sanitizers: 'OFF'
+          - compiler: g++
+            c_compiler: gcc
+            mode: Release
+            sanitizers: 'OFF'
+          - compiler: clang++
+            c_compiler: clang
+            mode: Debug
+            sanitizers: 'ON'
+    steps:
+      - uses: actions/checkout@v6
+      - name: Initialize pinned ATRAC9 decoder
+        run: git submodule update --init externals/LibAtrac9
+      - name: Configure
+        run: cmake -S tests/ngs2_hle -B build-ngs2 -DCMAKE_C_COMPILER=${{ matrix.c_compiler }} -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=${{ matrix.mode }} -DNGS2_SANITIZERS=${{ matrix.sanitizers }}
+      - name: Build
+        run: cmake --build build-ngs2 --parallel 4
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: halt_on_error=1
+        run: ctest --test-dir build-ngs2 --output-on-failure

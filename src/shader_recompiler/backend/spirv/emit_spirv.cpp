@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <array>
 #include <mutex>
 #include <span>
 #include <type_traits>
@@ -8,11 +10,15 @@
 #include <vector>
 #include <magic_enum/magic_enum.hpp>
 
+#include <unordered_set>
 #include "common/assert.h"
 #include "common/func_traits.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
 #include "shader_recompiler/backend/spirv/emit_spirv_instructions.h"
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
+#include "shader_recompiler/frontend/ordered_gds_word_layout.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/program.h"
@@ -154,6 +160,136 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
     }
 }
 
+// The original guest shader may terminate at S_ENDPGM without ever
+// executing DS_ORDERED_COUNT. Each *completed wave* must contribute a
+// canonical bypass record; otherwise host readback mistakes a legitimate
+// terminal wave for a lost or stale checkpoint.
+//
+// Called only from original structured GCN Return paths. Ordered sites
+// terminate earlier in EmitOrderedGdsCount and NEVER reach this writer.
+// No guest order, counter seed, synthetic resumed register, or replay is
+// generated. This source path is still diagnostic until a real producer/
+// consumer dispatch scheduler is implemented.
+Id CompleteWave64(EmitContext& ctx) {
+    const Id active = ctx.OpGroupNonUniformBallot(
+        ctx.U32[4], ctx.ConstU32(static_cast<u32>(spv::Scope::Subgroup)), ctx.true_value);
+    return ctx.OpLogicalAnd(ctx.U1[1],
+                            ctx.OpIEqual(ctx.U1[1], ctx.OpCompositeExtract(ctx.U32[1], active, 0),
+                                         ctx.ConstU32(~u32{0})),
+                            ctx.OpIEqual(ctx.U1[1], ctx.OpCompositeExtract(ctx.U32[1], active, 1),
+                                         ctx.ConstU32(~u32{0})));
+}
+
+void EmitOrderedGdsTerminalBypass(EmitContext& ctx) {
+    namespace Gds = Shader::Gcn::OrderedGds;
+    ASSERT_MSG(ctx.ordered_gds_capture_pass && ctx.hw_stage == HwStage::Compute &&
+                   ctx.has_ordered_gds_capture_binding && ctx.has_ordered_gds_auth_binding &&
+                   ctx.info.loads.Get(IR::Attribute::WorkgroupIndex) &&
+                   ctx.info.loads.Get(IR::Attribute::LocalInvocationIndex) &&
+                   Sirit::ValidId(ctx.workgroup_index_id) &&
+                   Sirit::ValidId(ctx.local_invocation_index),
+               "GDS terminal bypass needs the original GCN capture identities");
+    const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
+    const u64 threads = u64(local[0]) * local[1] * local[2];
+    ASSERT_MSG(
+        threads >= Gds::GcnWaveLanes && threads <= 1024 && threads % Gds::GcnWaveLanes == 0 &&
+            ctx.info.shared_memory_scratch_size == 0 &&
+            (ctx.runtime_info.hw.cs.shared_memory_size == 0 || ctx.info.ordered_gds_persistent_lds),
+        "GDS terminal bypass requires complete and preserved guest waves");
+
+    const auto& packet = ctx.buffers.at(ctx.ordered_gds_capture_index);
+    const auto& auth = ctx.buffers.at(ctx.ordered_gds_auth_index);
+    ASSERT_MSG(packet.buffer_type == BufferType::OrderedGdsCapture &&
+                   auth.buffer_type == BufferType::OrderedGdsEpochAuth,
+               "GDS terminal packet and host authorization buffers swapped");
+    const auto [packet_storage, packet_pointer_type] = packet.Alias(EmitContext::PointerType::U32);
+    const auto [auth_storage, auth_pointer_type] = auth.Alias(EmitContext::PointerType::U32);
+    ASSERT_MSG(Sirit::ValidId(packet_storage) && Sirit::ValidId(auth_storage),
+               "GDS terminal capture missing GPU descriptor storage");
+
+    const Id local_index = ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index);
+    const Id complete_wave = CompleteWave64(ctx);
+    const Id lane = ctx.OpUMod(ctx.U32[1], local_index, ctx.ConstU32(Gds::GcnWaveLanes));
+    const Id wave_in_group = ctx.OpUDiv(ctx.U32[1], local_index, ctx.ConstU32(Gds::GcnWaveLanes));
+    const Id physical_slot = ctx.OpIAdd(ctx.U32[1],
+                                        ctx.OpIMul(ctx.U32[1], ctx.workgroup_index_id,
+                                                   ctx.ConstU32(u32(threads / Gds::GcnWaveLanes))),
+                                        wave_in_group);
+    // Exactly one physical invocation owns the 16-byte aligned packet header.
+    // Never permit 64 lanes to race over the same 16-DWORD packet.
+    const Id lane_zero = ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value);
+    const Id write_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(lane_zero, write_label, merge_label);
+    ctx.AddLabel(write_label);
+
+    const Id auth_base =
+        ctx.OpIMul(ctx.U32[1], physical_slot, ctx.ConstU32(Gds::GcnEpochAuthDwords));
+    const auto load_auth = [&](u32 word) {
+        const Id index = ctx.OpIAdd(ctx.U32[1], auth_base, ctx.ConstU32(word));
+        return ctx.OpLoad(ctx.U32[1], ctx.OpAccessChain(auth_pointer_type, auth_storage,
+                                                        ctx.u32_zero_value, index));
+    };
+    const Id tag = load_auth(0);
+    const Id epoch = load_auth(1);
+    const Id source_slot = load_auth(2);
+    const Id wave_slots = load_auth(3);
+    const Id token_lo = load_auth(4);
+    const Id token_hi = load_auth(5);
+    const Id flags = load_auth(6);
+    const Id reserved = load_auth(7);
+
+    const Id declared_slots_valid = ctx.OpLogicalAnd(
+        ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], wave_slots, ctx.u32_zero_value),
+        ctx.OpULessThanEqual(ctx.U1[1], wave_slots, ctx.ConstU32(Gds::GcnEpochAuthMaximumWaves)));
+    const Id slot_valid =
+        ctx.OpLogicalAnd(ctx.U1[1], ctx.OpIEqual(ctx.U1[1], physical_slot, source_slot),
+                         ctx.OpULessThan(ctx.U1[1], physical_slot, wave_slots));
+    const Id source_valid = ctx.OpLogicalAnd(
+        ctx.U1[1], ctx.OpIEqual(ctx.U1[1], tag, ctx.ConstU32(Gds::GcnEpochAuthTag)),
+        ctx.OpIEqual(ctx.U1[1], flags, ctx.ConstU32(Gds::GcnEpochAuthFlags)));
+    const Id epoch_valid =
+        ctx.OpLogicalAnd(ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value),
+                         ctx.OpIEqual(ctx.U1[1], reserved, ctx.u32_zero_value));
+    const Id token_valid =
+        ctx.OpLogicalOr(ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], token_lo, ctx.u32_zero_value),
+                        ctx.OpINotEqual(ctx.U1[1], token_hi, ctx.u32_zero_value));
+    const Id authority_valid = ctx.OpLogicalAnd(
+        ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], declared_slots_valid, slot_valid),
+        ctx.OpLogicalAnd(ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], source_valid, epoch_valid),
+                         token_valid));
+    const Id valid = ctx.OpLogicalAnd(ctx.U1[1], authority_valid, complete_wave);
+
+    // Bypass does not consume DS, return a VDST, or need a GPU continuation
+    // token. The host validates this exact canonical packet and separately
+    // authenticates the original per-slot epoch record. All other fields
+    // are zero; 0xffffffff marks the absence of any site and active lane.
+    const Id valid_tag =
+        ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(Gds::CapturePacketTag), ctx.u32_zero_value);
+    const Id valid_epoch = ctx.OpSelect(ctx.U32[1], valid, epoch, ctx.u32_zero_value);
+    const Id valid_flags =
+        ctx.OpSelect(ctx.U32[1], valid, ctx.ConstU32(Gds::CaptureBypassFlags), ctx.u32_zero_value);
+    const std::array<Id, Gds::GpuCapturePacketDwords> words{
+        valid_tag,          valid_epoch,        ctx.ConstU32(Gds::NoActiveLane),
+        ctx.u32_zero_value, physical_slot,      ctx.u32_zero_value,
+        ctx.u32_zero_value, ctx.u32_zero_value, ctx.ConstU32(Gds::NoActiveLane),
+        ctx.u32_zero_value, ctx.u32_zero_value, ctx.u32_zero_value,
+        valid_flags,        ctx.u32_zero_value, ctx.u32_zero_value,
+        ctx.u32_zero_value,
+    };
+    const Id packet_base =
+        ctx.OpIMul(ctx.U32[1], physical_slot, ctx.ConstU32(Gds::GpuCapturePacketDwords));
+    for (u32 word = 0; word < words.size(); ++word) {
+        const Id index = ctx.OpIAdd(ctx.U32[1], packet_base, ctx.ConstU32(word));
+        const Id ptr =
+            ctx.OpAccessChain(packet_pointer_type, packet_storage, ctx.u32_zero_value, index);
+        ctx.OpStore(ptr, words[word]);
+    }
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+}
+
 void Traverse(EmitContext& ctx, const IR::Program& program) {
     IR::Block* current_block{};
     for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
@@ -206,6 +342,11 @@ void Traverse(EmitContext& ctx, const IR::Program& program) {
             break;
         }
         case IR::AbstractSyntaxNode::Type::Return:
+            if (ctx.ordered_gds_capture_pass) {
+                // Only the ORIGINAL decoded GCN terminal path reaches this.
+                // An ordered wave has already returned at the DS opcode.
+                EmitOrderedGdsTerminalBypass(ctx);
+            }
             ctx.OpReturn();
             break;
         case IR::AbstractSyntaxNode::Type::Unreachable:
@@ -307,7 +448,8 @@ void SetupCapabilities(const Info& info, const Profile& profile, const RuntimeIn
     if (info.uses_group_shuffle) {
         ctx.AddCapability(spv::Capability::GroupNonUniformShuffle);
     }
-    if (info.uses_group_ballot || info.loads.Get(IR::Attribute::SubgroupLtMask)) {
+    if (info.uses_group_ballot || info.uses_ordered_gds ||
+        info.loads.Get(IR::Attribute::SubgroupLtMask)) {
         ctx.AddCapability(spv::Capability::GroupNonUniformBallot);
     }
     if (info.uses_shader_clock) {
@@ -668,15 +810,74 @@ void PatchPhiNodes(const IR::Program& program, EmitContext& ctx) {
 }
 } // Anonymous namespace
 
-std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
-                           const IR::Program& program, Bindings& binding) {
+// Both shader compilation modes share the identical REAL GCN translation,
+// resource bindings, structurized CFG, SSA and SPIR-V capabilities. The
+// mode switch affects ONLY how an actual DS_ORDERED_COUNT terminates a
+// capture dispatch. Normal guest execution is never allowed to use it.
+static std::vector<u32> EmitSPIRVWithCaptureMode(const Profile& profile,
+                                                 const RuntimeInfo& runtime_info,
+                                                 const IR::Program& program, Bindings& binding,
+                                                 bool capture_only) {
     EmitContext ctx{profile, runtime_info, program.info, binding};
+    ctx.ordered_gds_capture_pass = capture_only;
     const Id main{DefineMain(ctx, program)};
     DefineEntryPoint(program.info, runtime_info, ctx, main);
     SetupCapabilities(program.info, profile, runtime_info, ctx);
     SetupFloatMode(ctx, profile, runtime_info, main);
     PatchPhiNodes(program, ctx);
     return ctx.Assemble();
+}
+
+std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
+                           const IR::Program& program, Bindings& binding) {
+    // Normal guest execution MUST remain blocked until the dedicated CIK
+    // packer seed, complete-wave handling and true GPU continuation exist.
+    ASSERT_MSG(!program.info.uses_ordered_gds,
+               "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
+               "SPIR-V atomic lowering");
+    return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, false);
+}
+
+std::vector<u32> EmitSPIRVOrderedGdsCapturePass(const Profile& profile,
+                                                const RuntimeInfo& runtime_info,
+                                                const IR::Program& program, Bindings& binding) {
+    // Explicit FIRST PASS only: continue ORIGINAL guest shader until the
+    // ordered site, write the real live GPU checkpoint and immediately
+    // terminate the wave BEFORE any instruction that consumes the returned
+    // counter. This helper is intentionally not called by the gameplay
+    // pipeline or the normal EmitSPIRV path.
+    ASSERT_MSG(program.info.uses_ordered_gds && program.info.hw_stage == HwStage::Compute &&
+                   !program.info.ordered_gds_sites.empty(),
+               "GCN ordered capture pass requires decoded compute ordered sites");
+    ASSERT_MSG(profile.subgroup_size == 64 && program.info.shared_memory_scratch_size == 0,
+               "Ordered GDS checkpoint requires a complete host wave64 without ballot scratch");
+    std::vector<const IR::Block*> pending;
+    for (const IR::Block* block : program.blocks) {
+        bool after_capture = false;
+        for (const auto& inst : block->Instructions()) {
+            after_capture |= inst.GetOpcode() == IR::Opcode::OrderedGdsCount;
+            ASSERT_MSG(!after_capture || inst.GetOpcode() != IR::Opcode::Barrier,
+                       "Ordered GDS capture would strand a workgroup barrier");
+        }
+        if (after_capture) {
+            pending.insert(pending.end(), block->imm_successors.begin(),
+                           block->imm_successors.end());
+        }
+    }
+    std::unordered_set<const IR::Block*> visited;
+    while (!pending.empty()) {
+        const IR::Block* block = pending.back();
+        pending.pop_back();
+        if (!visited.insert(block).second) {
+            continue;
+        }
+        for (const auto& inst : block->Instructions()) {
+            ASSERT_MSG(inst.GetOpcode() != IR::Opcode::Barrier,
+                       "Ordered GDS capture would strand a workgroup barrier");
+        }
+        pending.insert(pending.end(), block->imm_successors.begin(), block->imm_successors.end());
+    }
+    return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, true);
 }
 
 Id EmitPhi(EmitContext& ctx, IR::Inst* inst) {
@@ -727,6 +928,185 @@ void EmitGetVccHi(EmitContext& ctx) {
 
 void EmitGetM0(EmitContext& ctx) {
     UNREACHABLE_MSG("Unreachable instruction");
+}
+
+void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank, u32 index,
+                                      Id guest_value, Id logical_slot, Id lane) {
+    // IR operands are taken from the actual guest shader SSA at the original
+    // ordered-GDS site. Bank 4 writes *packet* DWORDs, never register state.
+    // Both real GPU SSBOs are independent and must be owned by the dispatch.
+    // The global guest opcode execution gate remains active until the
+    // first-pass packet and second-pass GCN continuation are authenticated.
+    namespace Gds = Shader::Gcn::OrderedGds;
+    ASSERT_MSG(ctx.hw_stage == HwStage::Compute && ctx.has_ordered_gds_checkpoint_binding &&
+                   ctx.has_ordered_gds_capture_binding && ctx.has_ordered_gds_auth_binding,
+               "GCN capture requires independent checkpoint, packet and host-authority SSBOs");
+    ASSERT_MSG(std::ranges::any_of(ctx.info.ordered_gds_sites,
+                                   [site_pc](const auto& site) { return site.pc == site_pc; }),
+               "GCN checkpoint instruction site must come from decoded guest ISA");
+    const bool packet = bank == 4u;
+    const u32 vgprs = ctx.runtime_info.props.num_allocated_vgprs;
+    const auto relative = packet ? Gds::GpuCapturePacketDwordOffset(0, index)
+                                 : Gds::CheckpointRelativeDword(vgprs, bank, index, 0);
+    ASSERT_MSG(relative.has_value(), "Invalid GCN register or packet DWORD index");
+    const u32 stride = packet ? Gds::GpuCapturePacketDwords : Gds::CheckpointStrideDwords(vgprs);
+    const auto& buffer =
+        ctx.buffers.at(packet ? ctx.ordered_gds_capture_index : ctx.ordered_gds_checkpoint_index);
+    ASSERT_MSG(buffer.buffer_type ==
+                   (packet ? BufferType::OrderedGdsCapture : BufferType::OrderedGdsCheckpoint),
+               "GCN packet/register checkpoint SSBO resource type mismatch");
+    const auto [storage, pointer_type] = buffer.Alias(EmitContext::PointerType::U32);
+    ASSERT_MSG(Sirit::ValidId(storage) && Sirit::ValidId(guest_value),
+               "Missing live GCN packet/checkpoint SPIR-V SSBO or register value");
+
+    Id real_value = guest_value;
+    // A capture-only module may stamp packet/register validity ONLY when a
+    // trusted host-owned epoch record matches this exact physical wave slot.
+    // Invalid/missing authority must leave tags and flags at zero; normal
+    // guest shaders never reach this path while ordered GDS is unsupported.
+    const bool identity_dword = (packet && (index == 1u || index == 10u || index == 11u)) ||
+                                bank == u32(Gds::CheckpointRegisterBank::AuthenticatedIdentity);
+    const bool packet_stamp = packet && (index == 0u || index == 12u);
+    const bool checkpoint_stamp =
+        bank == u32(Gds::CheckpointRegisterBank::SiteMetadata) && (index == 0u || index == 8u);
+    if (identity_dword || packet_stamp || checkpoint_stamp) {
+        const auto& auth = ctx.buffers.at(ctx.ordered_gds_auth_index);
+        ASSERT_MSG(auth.buffer_type == BufferType::OrderedGdsEpochAuth,
+                   "GCN wave token source is not the host authority SSBO");
+        const auto [auth_storage, auth_pointer_type] = auth.Alias(EmitContext::PointerType::U32);
+        ASSERT_MSG(Sirit::ValidId(auth_storage), "missing verified GPU epoch/token binding");
+        const Id auth_base =
+            ctx.OpIMul(ctx.U32[1], logical_slot, ctx.ConstU32(Gds::GcnEpochAuthDwords));
+        const auto load_auth = [&](u32 word) {
+            const Id offset = ctx.OpIAdd(ctx.U32[1], auth_base, ctx.ConstU32(word));
+            const Id pointer =
+                ctx.OpAccessChain(auth_pointer_type, auth_storage, ctx.u32_zero_value, offset);
+            return ctx.OpLoad(ctx.U32[1], pointer);
+        };
+        const Id tag = load_auth(0);
+        const Id epoch = load_auth(1);
+        const Id actual_slot = load_auth(2);
+        const Id wave_slots = load_auth(3);
+        const Id lo = load_auth(4);
+        const Id hi = load_auth(5);
+        const Id flags = load_auth(6);
+        const Id reserved = load_auth(7);
+        const Id correct_tag = ctx.OpIEqual(ctx.U1[1], tag, ctx.ConstU32(Gds::GcnEpochAuthTag));
+        const Id correct_slot = ctx.OpIEqual(ctx.U1[1], actual_slot, logical_slot);
+        const Id correct_flags =
+            ctx.OpIEqual(ctx.U1[1], flags, ctx.ConstU32(Gds::GcnEpochAuthFlags));
+        const Id epoch_nonzero = ctx.OpINotEqual(ctx.U1[1], epoch, ctx.u32_zero_value);
+        const Id token_nonzero =
+            ctx.OpLogicalOr(ctx.U1[1], ctx.OpINotEqual(ctx.U1[1], lo, ctx.u32_zero_value),
+                            ctx.OpINotEqual(ctx.U1[1], hi, ctx.u32_zero_value));
+        const Id slot_in_range = ctx.OpULessThan(ctx.U1[1], logical_slot, wave_slots);
+        const Id bounded_waves = ctx.OpULessThanEqual(ctx.U1[1], wave_slots,
+                                                      ctx.ConstU32(Gds::GcnEpochAuthMaximumWaves));
+        const Id reserved_zero = ctx.OpIEqual(ctx.U1[1], reserved, ctx.u32_zero_value);
+        const Id valid0 = ctx.OpLogicalAnd(ctx.U1[1], correct_tag, correct_slot);
+        const Id valid1 = ctx.OpLogicalAnd(ctx.U1[1], correct_flags, epoch_nonzero);
+        const Id valid2 = ctx.OpLogicalAnd(ctx.U1[1], slot_in_range, bounded_waves);
+        const Id valid3 = ctx.OpLogicalAnd(ctx.U1[1], token_nonzero, reserved_zero);
+        const Id valid = ctx.OpLogicalAnd(ctx.U1[1], ctx.OpLogicalAnd(ctx.U1[1], valid0, valid1),
+                                          ctx.OpLogicalAnd(ctx.U1[1], valid2, valid3));
+        if (packet_stamp || checkpoint_stamp) {
+            // Original guest LDS must either be absent or be lowered in
+            // its entirety into the separately bound, persistent per-group
+            // GPU SSBO. A transient Vulkan Workgroup allocation can NOT
+            // survive the first-pass return and is never stamped valid.
+            const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
+            const u64 threads = u64(local[0]) * local[1] * local[2];
+            const bool zero_guest_lds = ctx.runtime_info.hw.cs.shared_memory_size == 0;
+            const bool persistent_guest_lds = ctx.info.ordered_gds_persistent_lds &&
+                                              ctx.runtime_info.hw.cs.shared_memory_size != 0;
+            const bool complete_wave64_lds_ready =
+                ctx.ordered_gds_capture_pass && (zero_guest_lds || persistent_guest_lds) &&
+                ctx.info.shared_memory_scratch_size == 0 && threads >= Gds::GcnWaveLanes &&
+                threads <= 1024u && threads % Gds::GcnWaveLanes == 0;
+            const u32 valid_stamp =
+                packet_stamp ? (index == 0u ? Gds::CapturePacketTag : Gds::CaptureFlags)
+                             : (index == 0u ? Gds::GcnCheckpointTag : Gds::GcnCheckpointFlags);
+            const Id full_wave = CompleteWave64(ctx);
+            // No valid stamp for unpreserved LDS or partial guest waves.
+            // Actual counter resolution and guest shader re-entry remain
+            // separate, fail-closed operations.
+            real_value =
+                complete_wave64_lds_ready
+                    ? ctx.OpSelect(ctx.U32[1], ctx.OpLogicalAnd(ctx.U1[1], valid, full_wave),
+                                   ctx.ConstU32(valid_stamp), ctx.u32_zero_value)
+                    : ctx.u32_zero_value;
+        } else {
+            const u32 authority_word = packet ? (index == 1u    ? 1u
+                                                 : index == 10u ? 4u
+                                                                : 5u)
+                                              : (index == 0u   ? 1u
+                                                 : index == 1u ? 4u
+                                                               : 5u);
+            const Id value = authority_word == 1u ? epoch : authority_word == 4u ? lo : hi;
+            real_value = ctx.OpSelect(ctx.U32[1], valid, value, ctx.u32_zero_value);
+        }
+    }
+
+    const Id wave_offset = ctx.OpIMul(ctx.U32[1], logical_slot, ctx.ConstU32(stride));
+    Id dword_offset = ctx.OpIAdd(ctx.U32[1], wave_offset, ctx.ConstU32(*relative));
+    const bool vector_register = bank == u32(Gds::CheckpointRegisterBank::Vector);
+    if (vector_register) {
+        // Every invocation writes only its actual guest VGPR lane.
+        dword_offset = ctx.OpIAdd(ctx.U32[1], dword_offset, lane);
+    }
+    const Id pointer{ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, dword_offset)};
+    if (vector_register) {
+        ctx.OpStore(pointer, real_value);
+        return;
+    }
+    // Packet/header/SGPR words are wave-wide: only guest lane zero writes.
+    // This is a physical slot for storage, not a guest creation rank.
+    const Id first_lane = ctx.OpIEqual(ctx.U1[1], lane, ctx.u32_zero_value);
+    const Id write_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(first_lane, write_label, merge_label);
+    ctx.AddLabel(write_label);
+    ctx.OpStore(pointer, real_value);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+}
+
+Id EmitOrderedGdsCount(EmitContext& ctx, Id, Id, Id /*guest_exec_mask*/, u32 encoded_control,
+                       u32 site_pc) {
+    if (ctx.ordered_gds_capture_pass) {
+        // The REAL guest GCN checkpoint and 16-DWORD packet were emitted
+        // immediately BEFORE this IR operation at the original decoded
+        // DS_ORDERED_COUNT site. The first pass must not execute this guest
+        // instruction with a guessed host counter or proceed to any
+        // instruction that depends on its old value.
+        ASSERT_MSG(ctx.hw_stage == HwStage::Compute && ctx.has_ordered_gds_checkpoint_binding &&
+                       ctx.has_ordered_gds_capture_binding && ctx.has_ordered_gds_auth_binding &&
+                       std::ranges::any_of(ctx.info.ordered_gds_sites,
+                                           [site_pc, encoded_control](const auto& site) {
+                                               return site.pc == site_pc &&
+                                                      site.encoded_control == encoded_control;
+                                           }),
+                   "capture-pass stop requires original decoded guest GCN site");
+        // An undefined SSA ID exists ONLY for code in the UNREACHABLE
+        // continuation of the compiler's original structured CFG. It is
+        // never an executed counter result, cannot reach guest memory and
+        // must NEVER be reused in a resumed dispatch. The real old result
+        // is materialized into decoded VDST by the authenticated host
+        // resolver, then requires a separate second-pass guest shader.
+        const Id never_executed_guest_result = ctx.OpUndef(ctx.U32[1]);
+        ctx.OpReturn();
+        // Sirit still needs an open block to emit later syntactic IR and
+        // preserve the original structurized labels/phi bookkeeping. This
+        // block has NO predecessor: the capture wave already returned.
+        ctx.AddLabel();
+        return never_executed_guest_result;
+    }
+    // The normal shader compiler MUST NEVER replace the ordered operation
+    // with a host atomic, an arbitrary value or a partial capture result.
+    UNREACHABLE_MSG("Cannot emit ordered GDS count (guest site PC={:#x}, control={:#x}) "
+                    "without a verified wave-creation-order GDS scheduler",
+                    site_pc, encoded_control);
 }
 
 void EmitSetScc(EmitContext& ctx) {

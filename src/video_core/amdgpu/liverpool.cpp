@@ -16,7 +16,10 @@
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
+#include "video_core/amdgpu/pm4_register_write.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderdoc.h"
+#include "video_core/renderer_vulkan/vk_occlusion_query.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace AmdGpu {
@@ -68,6 +71,8 @@ static std::span<const u32> NextPacket(std::span<const u32> span, size_t offset)
 
 Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkersEnabled()} {
     num_counter_pairs = Libraries::Kernel::sceKernelIsNeoMode() ? 16 : 8;
+    VideoCore::GraphicsDiagnostics::Emit(VideoCore::GraphicsDiagnostics::Event::Startup,
+                                        "counter-pairs=%u", num_counter_pairs);
     process_thread = std::jthread{std::bind_front(&Liverpool::Process, this)};
 }
 
@@ -431,18 +436,13 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
             }
             case PM4ItOpcode::SetShReg: {
                 const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
-                const auto set_size = (count - 1) * sizeof(u32);
-
-                if (set_data->reg_offset >= 0x200 &&
-                    set_data->reg_offset <= (0x200 + sizeof(ComputeProgram) / 4)) {
-                    ASSERT(set_size <= sizeof(ComputeProgram));
-                    auto* addr = reinterpret_cast<u32*>(&mapped_queues[GfxQueueId].cs_state) +
-                                 (set_data->reg_offset - 0x200);
-                    std::memcpy(addr, header + 2, set_size);
-                } else {
-                    std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                                header + 2, set_size);
-                }
+                const bool written = PM4::WriteShaderRegisters(
+                    regs.reg_array,
+                    {reinterpret_cast<u32*>(&mapped_queues[GfxQueueId].cs_state),
+                     sizeof(ComputeProgram) / sizeof(u32)},
+                    Regs::ShRegWordOffset, 0x200u, set_data->reg_offset,
+                    {reinterpret_cast<const u32*>(header + 2), count - 1u});
+                ASSERT_MSG(written, "SET_SH_REG packet exceeds register storage");
                 break;
             }
             case PM4ItOpcode::SetUconfigReg: {
@@ -452,6 +452,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
                 break;
             }
             case PM4ItOpcode::SetPredication: {
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::Predication, "packet-count=%u", count);
                 LOG_WARNING(Render, "Unimplemented IT_SET_PREDICATION");
                 break;
             }
@@ -706,11 +708,30 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
                     // TODO: handle proper synchronization, for now signal that update is done
                     // immediately
                     regs.cp_strmout_cntl.offset_update_done = 1;
+                } else if (event->event_type.Value() == EventType::PixelPipeStatControl) {
+                    if (rasterizer && header->type3.count.Value() >= 2) {
+                        rasterizer->GetOcclusionQuery().Control(
+                            event->address[0], event->address[1], regs.depth_count_control);
+                    }
+                } else if (event->event_type.Value() == EventType::PixelPipeStatReset) {
+                    if (rasterizer) {
+                        rasterizer->GetOcclusionQuery().Reset();
+                    }
                 } else if (event->event_index.Value() == EventIndex::ZpassDone) {
                     if (event->event_type.Value() == EventType::PixelPipeStatDump) {
+                        if (rasterizer) {
+                            rasterizer->GetOcclusionQuery().Dump(event->Address<VAddr>(),
+                                                                num_counter_pairs);
+                            break;
+                        }
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
+                        VideoCore::GraphicsDiagnostics::Emit(
+                            VideoCore::GraphicsDiagnostics::Event::PixelPipe,
+                            "address=%llx counter=%llu pairs=%u",
+                            static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(results)),
+                            static_cast<unsigned long long>(pixel_counter), num_counter_pairs);
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             *results = pixel_counter | OcclusionCounterValidMask;
                         }
@@ -852,6 +873,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
                     vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
                     break;
                 }
+                if (rasterizer && !wait_reg_mem->Test(regs.reg_array)) {
+                    rasterizer->SubmitPendingQueries();
+                }
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     YIELD_GFX();
                 }
@@ -945,6 +969,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb) {
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
                 }
                 const auto skip = *cond_exec->Address() == false;
+                VideoCore::GraphicsDiagnostics::Emit(
+                    VideoCore::GraphicsDiagnostics::Event::ConditionalExec,
+                    "skip=%u exec-count=%u", static_cast<unsigned>(skip),
+                    cond_exec->exec_count.Value());
                 if (skip) {
                     dcb = NextPacket(dcb,
                                      header->type3.NumWords() + 1 + cond_exec->exec_count.Value());
@@ -1114,18 +1142,13 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::SetShReg: {
             const auto* set_data = reinterpret_cast<const PM4CmdSetData*>(header);
-            const auto set_size = (header->type3.NumWords() - 1) * sizeof(u32);
-
-            if (set_data->reg_offset >= 0x200 &&
-                set_data->reg_offset <= (0x200 + sizeof(ComputeProgram) / 4)) {
-                ASSERT(set_size <= sizeof(ComputeProgram));
-                auto* addr = reinterpret_cast<u32*>(&mapped_queues[vqid + 1].cs_state) +
-                             (set_data->reg_offset - 0x200);
-                std::memcpy(addr, header + 2, set_size);
-            } else {
-                std::memcpy(&regs.reg_array[Regs::ShRegWordOffset + set_data->reg_offset],
-                            header + 2, set_size);
-            }
+            const bool written = PM4::WriteShaderRegisters(
+                regs.reg_array,
+                {reinterpret_cast<u32*>(&mapped_queues[vqid + 1].cs_state),
+                 sizeof(ComputeProgram) / sizeof(u32)},
+                Regs::ShRegWordOffset, 0x200u, set_data->reg_offset,
+                {reinterpret_cast<const u32*>(header + 2), header->type3.NumWords() - 1u});
+            ASSERT_MSG(written, "SET_SH_REG packet exceeds register storage");
             break;
         }
         case PM4ItOpcode::SetQueueReg: {

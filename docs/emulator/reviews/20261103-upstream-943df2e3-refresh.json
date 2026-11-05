@@ -1,0 +1,279 @@
+{
+  "native_review": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261103T102914Z-1335485-review",
+    "timestamp_utc": "2026-11-03T11:11:10.958781+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 127,
+    "followup_pull_request": 128,
+    "archive": "universal-two-games-20261103T102913Z-1335474.tar.gz",
+    "archive_bytes": 4376336,
+    "archive_sha256": "a0e09e9efd4cc42991da6e0a2844ac04347ba8d28b524d6ae12ad6b69907e80e",
+    "source_commit": "c8f7cc0a1cbd198db3ec14494a6a52af5ebe9d03",
+    "upstream_main_checked": "943df2e33f65033dbd89c015e10c35375d4a4246",
+    "result": "BLOCKED_UPSTREAM_ADVANCED_BEFORE_BUILD_OR_GAME_LAUNCH",
+    "game_launched": false,
+    "tested_games": [],
+    "context_games": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "main_changed": false,
+    "native_record": {
+      "schema_version": 2,
+      "record_id": "universal-upstream-20261103T102914Z-1335485",
+      "timestamp_utc": "2026-11-03T10:29:21.944975+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "stage": "NEW_UPSTREAM_REQUIRES_INTEGRATION",
+      "result": "BLOCKED_UPSTREAM_ADVANCED",
+      "exit_code": 3,
+      "requested_commit": "c8f7cc0a1cbd198db3ec14494a6a52af5ebe9d03",
+      "source_commit": "c8f7cc0a1cbd198db3ec14494a6a52af5ebe9d03",
+      "upstream_commit": "943df2e33f65033dbd89c015e10c35375d4a4246",
+      "game_launched": false,
+      "graphics_verified": false,
+      "installed_binary_changed": false,
+      "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261103T102914Z-1335485.tar.gz",
+      "decision": "REINTEGRATE_LATEST_UPSTREAM_BEFORE_BUILD"
+    },
+    "interpretation": "The build runner stopped at upstream ancestry validation. Neither GoT nor GoW launched; no new screenshots, audio, shader validation, DS capture or crash evidence exists. PR127 integer samplers remain untested on the native GPU.",
+    "decision": "REBASE_RETAINED_PATCHES_ON_CURRENT_UPSTREAM_THEN_BUILD_AND_CAPTURE"
+  },
+  "integration_review": {
+    "schema_version": 2,
+    "record_id": "upstream-refresh-943df2e3-20261103",
+    "timestamp_utc": "2026-11-03T11:11:10.958781+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 128,
+    "previous_pull_request": 127,
+    "previous_upstream": "8729018155e54f305b6bc7576f850e756ffdd13c",
+    "upstream_main_checked": "943df2e33f65033dbd89c015e10c35375d4a4246",
+    "previous_candidate": "c8f7cc0a1cbd198db3ec14494a6a52af5ebe9d03",
+    "local_code_commit": "b12d9f023c6897ab685ea828670da4983e1a79e1",
+    "published_code_commit": "6cb85ab7b36f2caba658dbdf4d8349cd0c63ffa7",
+    "verified_code_tree": "cb3224bb28280afa9b08eac44e5b4a6d12f27042",
+    "result": "UPSTREAM_REBASE_BUILD_CPU_STARTUP_PASS_NATIVE_PENDING",
+    "game_launched": false,
+    "tested_games": [],
+    "graphics_verified": false,
+    "main_changed": false,
+    "retained_commits": 16,
+    "unchanged_replayed_patches": 15,
+    "conflict_count": 1,
+    "conflict_resolution": "The retained implementation moved sceUserServiceGetUserColor into a separate translation unit. Carry the upstream 0-based color mapping, player-index fallback and NOT_LOGGED_IN result into that unit while retaining safe null checks. Its function body exactly equals upstream after resolving the UserManagement macro. Existing fixture expectations were updated; no new test files were added.",
+    "upstream_changes": [
+      {
+        "sha": "deb331cd",
+        "summary": "JPEG color-space enumeration, component metadata, required decode mode and packed decode dimensions."
+      },
+      {
+        "sha": "943df2e3",
+        "summary": "User-color 1..4 to 0..3 mapping, bounded player-index fallback and missing-user guard."
+      }
+    ],
+    "preservation": {
+      "prior_journal_rows": 419,
+      "prior_journal_bytes": 870929,
+      "prior_journal_sha256": "e6c4cc92893dfa9f4c920febbb01fabf4c7c0f2d5ae8e5a3dc439183638cba28",
+      "renderer_shader_ds_files": "BYTE_IDENTICAL_TO_PR127",
+      "runners": "BYTE_IDENTICAL_TO_PR127",
+      "old_branches_and_prs": "PRESERVED",
+      "rebase_method": "git rebase --onto, retaining all 16 commit messages and one-to-one lineage; no merge of upstream into the feature branch"
+    },
+    "validation": {
+      "build_exit_code": 0,
+      "cpu_exit_code": 0,
+      "cli_exit_code": 0,
+      "build": "PASS_GCC14_RELEASE_340_TARGET_STEPS",
+      "existing_cpu_suite": "PASS",
+      "actual_binary_cli_cases": 3,
+      "native_gpu": "NOT_RUN",
+      "binary_sha256": "d5fcb188c3ebbdb9117c901be3b6e957bd6f59392069b7e8a2968e8395c2b0c7",
+      "local_code_commit": "b12d9f023c6897ab685ea828670da4983e1a79e1",
+      "pinned_submodules": 54,
+      "upstream_jpeg_files": "BYTE_IDENTICAL",
+      "upstream_user_color_body": "EXACT_AFTER_MACRO_RESOLUTION",
+      "prior_graphics_and_runner_files": "BYTE_IDENTICAL_TO_PR127",
+      "logs": {
+        "/tmp/nov3d-build.log": "fab739085ada4bbfd1ee7de5084dec48d737bd037470dfe715483546d3b73bed",
+        "/tmp/nov3d-cpu.log": "7ad7a32e63d3943387890d953e56ba6306e0fc5e3d985c3d5521e17c24abc225",
+        "/tmp/nov3d-cli.log": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "/tmp/nov3d-range-diff.txt": "c2df3890bc01cb431f1967a6d14f07d393d5c29e6864f7c5000f3e2681a91446",
+        "/tmp/nov3d-submodules.txt": "c1ae2fa03152ac88f3dd45e57a5d7970450604e6a354b75f2b43e8faff1c96a1"
+      }
+    },
+    "decision": "RETAIN_DRAFT_NO_MAIN_PROMOTION_BEFORE_NATIVE_RECOVERY",
+    "limitations": [
+      "No native GPU run of the rebased integer-sampler candidate.",
+      "Last actual GoT: PR126 integer-sampler Vulkan failure, no menu/video, child stop unconfirmed.",
+      "Last actual GoW: PR125 GPU_CONTEXT_LOST; it was skipped in PR126 and this upload launched neither game.",
+      "DS ordered seed/re-entry and converted-format interpolation remain unresolved.",
+      "The existing OpenOrbis sampler probe still awaits SDK link and console execution."
+    ],
+    "next_test": "Build exact published revision; GoT then GoW with Vulkan diagnostics and DS capture, <=120s each, no automatic input. Require upstream ancestry, display, no pre-existing game process and >=8GiB free VRAM. Stop remaining tests after GPU failure or unconfirmed owned-process exit."
+  },
+  "commit_mapping": [
+    {
+      "old": "d840ff6a232508fdb2a5ae5d616664c081718b14",
+      "new": "9d29579a6e0bf5db34d893589d24db97a0d8e9c6",
+      "old_tree": "8c8dee3dd3e09367a9079b1091121c96c71ba491",
+      "new_tree": "fbadee3afc001d7ed526fd3d68b59c7ca9828a4d",
+      "message": "Rebase retained universal fixes and source evidence onto upstream 2183807e\n\nPreserves the exact integration and audit tree from PRs #118 and #119, with upstream libSceJpegDec #5607 integrated. Original reviewed commits remain available on their existing branches. Native game rendering is not promoted by this rebase.",
+      "published": "6ef7a805af97946ab972c532c1b433999d07fe16"
+    },
+    {
+      "old": "bc69bf71e8ebc4cd7be13ceedf73c54a74714924",
+      "new": "2a1c2c55632d8810b933aff9c8be419a72ee18d8",
+      "old_tree": "9ffe8b671c971844d6059784d950cc15a2ac9f8e",
+      "new_tree": "607fc8ee8905ec23400cbcdafdcb43fa9bdcaedd",
+      "message": "Restore generic indexed descriptor sampling from recovered source\n\nRecover exact descriptor masks, finite direct Phi sources, dynamic scalar buffer reads and GPU-indexed image/sampler arrays. Preserve retained ordered-GDS capture, bounded uniform stores, DMA synchronization and upstream changes. Use complete dimension-array capacities and exact Vulkan limits; recompile when table size changes. Reject unsupported numeric/dimension/conversion cases explicitly.\n\nLocal source tree 966ff989684d10b56054f0ac2c5d04f18cc51380 builds with GCC 14. Production resource discovery passes 12 checks; five backend shaders pass spirv-val for Vulkan 1.3. Native GoT/GoW graphics remain unverified.",
+      "published": "fb805cbacc6462bb68a222b6c3d4862c9ac0be20"
+    },
+    {
+      "old": "a0d903baef4f617f3282758e5aab385790a9c33a",
+      "new": "04ac15ea9d05315b84f94b29ac6317f28bed2cec",
+      "old_tree": "91fc51ba317a9ea10442aa058ae4d8cbbd64037f",
+      "new_tree": "c8ec61e39282ffc87a66ec650aede41eb094d609",
+      "message": "Journal recovered renderer lineage and native build validation\n\nVerify 678 captured source hashes and four exact historical file matches. Preserve protected binary identities and append all preparation/build/fixture outcomes. Native game graphics and DS continuation remain unverified; no main promotion.",
+      "published": "3e6ef4531976b04d76e893f976739239d922d572"
+    },
+    {
+      "old": "19bc2b4a3439ff733afecef9bd6f4328fbb378d6",
+      "new": "8b742f3699757e435975575782e71cf6ffaca8f1",
+      "old_tree": "55d4d0d040185e52f36432bbcd77eb52c94b0e29",
+      "new_tree": "378ae323de439b176dc59c97a12ab5b879a83e1e",
+      "message": "Restore descriptor dependencies and scalar contracts lost during integration",
+      "published": "2bcd35ceb5cb94be240e74f35fc2c1911ee9e349"
+    },
+    {
+      "old": "069aa63157d793b5b3fd8af4d23f0183e033106e",
+      "new": "07c1327da418acd8e2ca433c105524cdc250b3f5",
+      "old_tree": "86c07fd6e41a0ee555c09e77390221fe4631c35d",
+      "new_tree": "0b6ecdea0a6bd8eff09b8c81fcadaeb2eec00ca2",
+      "message": "Record PR120 native regressions and PR121 contract recovery evidence",
+      "published": "3dec31c7a4f3ff086db22040e050b0088046e511"
+    },
+    {
+      "old": "e2724d0109ba2ad120ca4c2618fc4abbea0c0402",
+      "new": "664285b9cebd173db688a30fa68bbc6d10e38a85",
+      "old_tree": "039200291994b851a92318cd3b7f438ae78292f0",
+      "new_tree": "3a88ba0a15763a2dc4f1e513cedb8aecb6d54a21",
+      "message": "Restore compatible texture layer growth and biased BC5 numeric conversion",
+      "published": "4d6faa16bbeda8ed3c3abe246aa624653cde7dfc"
+    },
+    {
+      "old": "f143745c549957682ffdbd0ee88204320c8df11b",
+      "new": "1a5203b1d5b7db6e71f09481f9b522f4f466e0ba",
+      "old_tree": "fce770ca878955c2f13c37a03cf154b5ace48c5c",
+      "new_tree": "4318221da091e6bd4fa50101630c841e9ec01f76",
+      "message": "Journal both PR121 crashes and reviewed texture contract restoration",
+      "published": "a7be30c2ec12b7d2f11a44595b5fe52419bd3c12"
+    },
+    {
+      "old": "9cc42172e6d14750d51ed368e15c3837d4b129c5",
+      "new": "5bdf2920f5dbcf0042797aabb87f606b955fbeb8",
+      "old_tree": "8c27011b2f80c0fbb919ae1d39ebec716eafcc6f",
+      "new_tree": "ac352deec12ed3c94f8f168412bebce3ed47e64a",
+      "message": "Support numeric image variants in indexed tables and restore bounded SH register writes",
+      "published": "a0e96cd6406476da3c617f6ce41b5dbec4265690"
+    },
+    {
+      "old": "8f7027e0f4ea939f22e799cbde3a803d4f699c9c",
+      "new": "f373c27129a4f29981a918c7aca06dc8f8c370e8",
+      "old_tree": "85ada248f0b859484ab7de08ccae0a3e07e12f5d",
+      "new_tree": "fbcc6689ac3928df7007ec1f9737ce941e9ba9bd",
+      "message": "Record PR122 native failures and indexed numeric candidate validation",
+      "published": "ba81f3ee9418579c934089c1c4f1a428a27538d5"
+    },
+    {
+      "old": "a27ae243a78284980b67b44406b6dba882afb104",
+      "new": "af25026f74114d876e0fd434586a742a81eb3431",
+      "old_tree": "c3ac6f4d6a45adacd7ad460bab3990e3d54534fb",
+      "new_tree": "636336545c42ad111151ab397492d6f099aed76b",
+      "message": "Capture runtime Vulkan validation with verified native binaries",
+      "published": "568b7a326dc19358126e2fe311dc5d3330822d7b"
+    },
+    {
+      "old": "53ab94fcea848becbd45255f0d7d530b1abc4592",
+      "new": "9969d77d35dc992ea8a0fe0a5a4bcfe7fb796295",
+      "old_tree": "02646d49d8684673f377c41455a6e974f9a42b3c",
+      "new_tree": "2e3ed3b6391e57493b718fdceb5ce59faee10a4c",
+      "message": "Record PR123 native GPU loss and validation capture checkpoint",
+      "published": "6ee90a181bfcabb9174af1787b4ad25661590377"
+    },
+    {
+      "old": "0ab509ebb3c72d4f21798891772685f1d9df9425",
+      "new": "564aec0f69292f2ddf74f773b30799a1cb4d907d",
+      "old_tree": "bf3f9204fe553b716d48f253b094e9b3d072273f",
+      "new_tree": "d7c259c112a78646246dae43ea26bd11905ad5fe",
+      "message": "Record upstream-blocked native attempt and preserved 87290181 refresh",
+      "published": "04d46ee7234fb28630510c966b01ea8886904a64"
+    },
+    {
+      "old": "a6ac8e9ef30e13f855fcb9cae33f4decfd9ae60c",
+      "new": "799bbfc0aac8f9dcfaaed170a6d4ad8d07e4321f",
+      "old_tree": "2bbfc462243e121228cdaf0be281573ceb4ddcbd",
+      "new_tree": "5031394f5ad795840ef229d2c09abe0e43c77eb1",
+      "message": "Fix integer-view fallback for float image atomics and retain validation shaders",
+      "published": "8722c612be6c169cb30cb949d786fc88a34542af"
+    },
+    {
+      "old": "bb85a9324e8d022df8e09b59ef5f6954f85b28d5",
+      "new": "cc9d548eb5ac269be15910a0c3dcb7fc3a7aef28",
+      "old_tree": "591c891902b9350be419520b80ab8fe96ea13645",
+      "new_tree": "3e420d23fae9b67089a5081080499fa74f1198d5",
+      "message": "Record PR125 native failures and PR126 atomic fallback evidence",
+      "published": "8aab1919bf6523e8f02cec48234478ba71633a3a"
+    },
+    {
+      "old": "dff5196262fb9e3873083ab095c18c2bc1e95aea",
+      "new": "63863729d1440bb6efad574aabfd3ee24a84d0c4",
+      "old_tree": "6b30379ba92cbcb5c13fae0e503d2d348a24c59f",
+      "new_tree": "f4efa5a7ca19d13a6b5f87916fa07100e7d8d726",
+      "message": "Separate integer texture samplers and bound observer shutdown",
+      "published": "4f311a9b76323f12c281e0ea1732777b2f1d70ae"
+    },
+    {
+      "old": "c8f7cc0a1cbd198db3ec14494a6a52af5ebe9d03",
+      "new": "b12d9f023c6897ab685ea828670da4983e1a79e1",
+      "old_tree": "eef4c61527fed2ac0b2642199900614c268f04bb",
+      "new_tree": "cb3224bb28280afa9b08eac44e5b4a6d12f27042",
+      "message": "diary: record PR126 sampler failure and PR127 validation evidence",
+      "published": "6cb85ab7b36f2caba658dbdf4d8349cd0c63ffa7"
+    }
+  ],
+  "code_difference_from_previous_candidate": [
+    {
+      "path": "src/core/libraries/jpeg/jpegdec.cpp",
+      "sha": "12cdcd5bd23b1deb3e0a583b9ba9ec7cfca8ac45",
+      "chars": 15277,
+      "mode": "100644"
+    },
+    {
+      "path": "src/core/libraries/jpeg/jpegdec.h",
+      "sha": "67a1460b49054b3b95b0d3a483d7cbabe57021a4",
+      "chars": 2994,
+      "mode": "100644"
+    },
+    {
+      "path": "src/core/libraries/system/userservice_user_color.cpp",
+      "sha": "32512a25893dc69045e5c1772d861676d9d33126",
+      "chars": 1231,
+      "mode": "100644"
+    },
+    {
+      "path": "tests/userservice/test_user_color.cpp",
+      "sha": "922d5ed9b1c8456efff7e6a66450e4fcba95e60b",
+      "chars": 2903,
+      "mode": "100644"
+    }
+  ],
+  "range_diff": " 1:  d840ff6a !  1:  9d29579a Rebase retained universal fixes and source evidence onto upstream 2183807e\n    @@ src/core/libraries/system/userservice.cpp: int PS4_SYSV_ABI sceUserServiceGetTra\n      }\n      \n     -s32 PS4_SYSV_ABI sceUserServiceGetUserColor(int user_id, OrbisUserServiceUserColor* color) {\n    --    // TODO fix me better\n     -    LOG_DEBUG(Lib_UserService, \"called user_id = {}\", user_id);\n     -    if (color == nullptr) {\n     -        LOG_ERROR(Lib_UserService, \"color is null\");\n     -        return ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT;\n     -    }\n    --    *color = (OrbisUserServiceUserColor)UserManagement.GetUserByID(user_id)->user_color;\n    +-    const auto* user = UserManagement.GetUserByID(user_id);\n    +-    if (user == nullptr) {\n    +-        LOG_ERROR(Lib_UserService, \"No user found for user_id = {}\", user_id);\n    +-        return ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN;\n    +-    }\n    +-    s32 color_idx = static_cast<s32>(user->user_color) - 1;\n    +-    if (color_idx < 0 || color_idx > 3) {\n    +-        color_idx = std::clamp(user->player_index - 1, 0, 3);\n    +-    }\n    +-    *color = static_cast<OrbisUserServiceUserColor>(color_idx);\n     -    return ORBIS_OK;\n     -}\n     -\n    @@ src/core/libraries/system/userservice_user_color.cpp (new)\n     +// SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project\n     +// SPDX-License-Identifier: GPL-2.0-or-later\n     +\n    ++#include <algorithm>\n     +#include \"common/logging/log.h\"\n     +#include \"core/libraries/system/userservice.h\"\n     +#include \"core/libraries/system/userservice_error.h\"\n    @@ src/core/libraries/system/userservice_user_color.cpp (new)\n     +\n     +s32 PS4_SYSV_ABI sceUserServiceGetUserColor(int user_id, OrbisUserServiceUserColor* color) {\n     +    LOG_DEBUG(Lib_UserService, \"called user_id = {}\", user_id);\n    -+    if (color == nullptr || user_id == ORBIS_USER_SERVICE_USER_ID_INVALID) {\n    ++    if (color == nullptr) {\n    ++        LOG_ERROR(Lib_UserService, \"color is null\");\n     +        return ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT;\n     +    }\n     +    const auto settings = UserSettingsImpl::GetInstance();\n     +    const auto* user = settings->GetUserManager().GetUserByID(user_id);\n     +    if (user == nullptr) {\n    -+        LOG_ERROR(Lib_UserService, \"User color requested for unknown user_id = {}\", user_id);\n    -+        return ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT;\n    ++        LOG_ERROR(Lib_UserService, \"No user found for user_id = {}\", user_id);\n    ++        return ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN;\n    ++    }\n    ++    s32 color_idx = static_cast<s32>(user->user_color) - 1;\n    ++    if (color_idx < 0 || color_idx > 3) {\n    ++        color_idx = std::clamp(user->player_index - 1, 0, 3);\n     +    }\n    -+    // Preserve the existing saved-colour mapping for valid users. A failed\n    -+    // lookup must leave the caller's output untouched, not dereference null.\n    -+    *color = static_cast<OrbisUserServiceUserColor>(user->user_color);\n    ++    *color = static_cast<OrbisUserServiceUserColor>(color_idx);\n     +    return ORBIS_OK;\n     +}\n     +\n    @@ tests/userservice/test_user_color.cpp (new)\n     +    using namespace Libraries::UserService;\n     +    constexpr auto sentinel = static_cast<OrbisUserServiceUserColor>(99);\n     +    auto color = sentinel;\n    -+    Check(sceUserServiceGetUserColor(9999, &color) == ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT,\n    ++    Check(sceUserServiceGetUserColor(9999, &color) == ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN,\n     +          \"Unknown user must return an error instead of dereferencing null\");\n     +    Check(color == sentinel, \"Failed lookup modified the output\");\n     +    Check(lookup_calls == 1 && requested_id == 9999, \"Wrong user lookup\");\n    @@ tests/userservice/test_user_color.cpp (new)\n     +    Check(sceUserServiceGetUserColor(1000, nullptr) == ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT,\n     +          \"Null output must be rejected\");\n     +    Check(sceUserServiceGetUserColor(ORBIS_USER_SERVICE_USER_ID_INVALID, &color) ==\n    -+              ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT,\n    ++              ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN,\n     +          \"Invalid user sentinel must be rejected\");\n    -+    Check(lookup_calls == 1 && color == sentinel, \"Invalid arguments reached the user store\");\n    ++    Check(lookup_calls == 2 && color == sentinel, \"Null output reached the user store\");\n     +\n     +    User user;\n     +    lookup_result = &user;\n     +    for (u32 saved_color = 0; saved_color <= 4; ++saved_color) {\n     +        user.user_color = saved_color;\n     +        Check(sceUserServiceGetUserColor(1000, &color) == ORBIS_OK, \"Valid user rejected\");\n    -+        Check(static_cast<u32>(color) == saved_color, \"Existing colour mapping changed\");\n    ++        Check(static_cast<u32>(color) == (saved_color ? saved_color - 1 : 0),\n    ++              \"Upstream zero-based colour mapping changed\");\n     +    }\n     +    lookup_result = nullptr;\n     +    color = sentinel;\n    -+    Check(sceUserServiceGetUserColor(1000, &color) == ORBIS_USER_SERVICE_ERROR_INVALID_ARGUMENT &&\n    ++    Check(sceUserServiceGetUserColor(1000, &color) == ORBIS_USER_SERVICE_ERROR_NOT_LOGGED_IN &&\n     +              color == sentinel,\n     +          \"A user removed since a successful query must fail safely\");\n    -+    std::cout << \"PASS: missing/removed users, invalid arguments and existing colours\\n\";\n    ++    std::cout << \"PASS: missing/removed users, invalid arguments and zero-based colours\\n\";\n     +}\n     \n      ## tools/development/c925_indirect_materials/README.md (new) ##\n 2:  bc69bf71 =  2:  2a1c2c55 Restore generic indexed descriptor sampling from recovered source\n 3:  a0d903ba =  3:  04ac15ea Journal recovered renderer lineage and native build validation\n 4:  19bc2b4a =  4:  8b742f36 Restore descriptor dependencies and scalar contracts lost during integration\n 5:  069aa631 =  5:  07c1327d Record PR120 native regressions and PR121 contract recovery evidence\n 6:  e2724d01 =  6:  664285b9 Restore compatible texture layer growth and biased BC5 numeric conversion\n 7:  f143745c =  7:  1a5203b1 Journal both PR121 crashes and reviewed texture contract restoration\n 8:  9cc42172 =  8:  5bdf2920 Support numeric image variants in indexed tables and restore bounded SH register writes\n 9:  8f7027e0 =  9:  f373c271 Record PR122 native failures and indexed numeric candidate validation\n10:  a27ae243 = 10:  af25026f Capture runtime Vulkan validation with verified native binaries\n11:  53ab94fc = 11:  9969d77d Record PR123 native GPU loss and validation capture checkpoint\n12:  0ab509eb = 12:  564aec0f Record upstream-blocked native attempt and preserved 87290181 refresh\n13:  a6ac8e9e = 13:  799bbfc0 Fix integer-view fallback for float image atomics and retain validation shaders\n14:  bb85a932 = 14:  cc9d548e Record PR125 native failures and PR126 atomic fallback evidence\n15:  dff51962 = 15:  63863729 Separate integer texture samplers and bound observer shutdown\n16:  c8f7cc0a = 16:  b12d9f02 diary: record PR126 sampler failure and PR127 validation evidence\n",
+  "primary_sources": [
+    "https://github.com/shadps4-emu/shadPS4/commit/deb331cd",
+    "https://github.com/shadps4-emu/shadPS4/commit/943df2e33f65033dbd89c015e10c35375d4a4246"
+  ],
+  "existing_hardware_probe": "https://chatgpt.com/library?file_id=libfile_e58d956be4d481918f4dcfbabd23dee5&account_id=personal"
+}

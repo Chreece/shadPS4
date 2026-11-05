@@ -1,0 +1,93 @@
+// Exact map/flush expressions are extracted from imgui_impl_vulkan.cpp.
+// The Device below models Vulkan's mapped-range rules, not driver execution.
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <limits>
+#include <string_view>
+using U64 = std::uint64_t;
+constexpr U64 VK_WHOLE_SIZE = std::numeric_limits<U64>::max();
+namespace vk {
+struct MemoryMapFlags {};
+struct MappedMemoryRange { U64 memory{}; U64 offset{}; U64 size{}; };
+}
+static void check(bool ok, const char* why) {
+    if (!ok) { std::fprintf(stderr, "IMGUI_MAP_TEST_FAIL=%s\n", why); std::exit(2); }
+}
+struct Device {
+    U64 allocation, atom;
+    std::array<U64, 3> mapped{};
+    unsigned errors{}, maps{}, flushes{};
+    bool observed_01389{};
+    void* mapMemory(U64 memory, U64 offset, U64 size, vk::MemoryMapFlags = {}) {
+        check(memory>0 && memory<mapped.size() && offset==0, "dedicated allocation at offset zero");
+        const U64 resolved = size==VK_WHOLE_SIZE ? allocation : size;
+        check(resolved>0 && resolved<=allocation && mapped[memory]==0, "mapping inside allocation and not already mapped");
+        mapped[memory]=resolved; ++maps; return nullptr;
+    }
+    void flush(vk::MappedMemoryRange r) {
+        check(r.memory>0 && r.memory<mapped.size() && mapped[r.memory]>0, "flush uses mapped memory");
+        ++flushes;
+        const U64 end = r.size==VK_WHOLE_SIZE ? mapped[r.memory] : r.offset+r.size;
+        if (r.offset%atom || end>mapped[r.memory] || end==0 || (end%atom && end!=allocation)) {
+            ++errors; observed_01389 |= r.size==VK_WHOLE_SIZE && end%atom && end!=allocation;
+        }
+    }
+};
+static void texture(Device& device, U64 size) {
+    (void)size;
+    struct { Device& device; } v{device};
+    struct { U64 upload_buffer_memory{1}; } info;
+    /* MAP_TEXTURE */
+    /* FLUSH_TEXTURE */
+}
+static void geometry(Device& device, U64 vertex_size, U64 index_size) {
+    (void)vertex_size; (void)index_size;
+    struct { Device& device; } v{device};
+    struct Buffer { U64 buffer_memory; };
+    struct { Buffer vertex{1}, index{2}; } frb;
+    /* MAP_VERTEX */
+    /* MAP_INDEX */
+    /* FLUSH_VERTEX */
+    /* FLUSH_INDEX */
+}
+static void atlas(Device& device, U64 upload_size) {
+    (void)upload_size;
+    struct { Device& device; } v{device};
+    struct { U64 memory{1}; } staging;
+    /* MAP_ATLAS */
+    /* FLUSH_ATLAS */
+}
+int main(int argc,char**argv) {
+    const bool baseline=argc==2 && std::string_view(argv[1])=="--baseline";
+    Device observed{1048576,64}; atlas(observed,15504);
+    check(observed.observed_01389==baseline, "observed 15504/64/1048576 validation violation");
+    if (!baseline) check(observed.mapped[1]==observed.allocation, "corrected atlas mapping reaches allocation end");
+    unsigned cases=0, rejected=0;
+    for(U64 atom:std::array<U64,7>{1,2,16,64,256,512,4096}) {
+        for(U64 bytes:std::array<U64,12>{1,16,63,64,65,255,256,257,15504,15552,65535,1048576}) {
+            for(unsigned path=0;path<3;++path) {
+                Device d{1048576,atom};
+                if(path==0)texture(d,bytes);
+                if(path==1)geometry(d,(bytes+255)/256*256,(bytes+255)/256*256);
+                if(path==2)atlas(d,bytes);
+                ++cases; rejected+=d.errors>0;
+                check(d.maps==(path==1?2u:1u) && d.flushes==d.maps, "no skipped mapping or flush");
+                if(!baseline) {
+                    check(d.errors==0,"all corrected ranges comply");
+                    for(unsigned m=1;m<=d.maps;++m)check(d.mapped[m]==d.allocation,"full dedicated mapping");
+                }
+            }
+        }
+    }
+    // An allocation's actual end is legal even when it is not atom aligned.
+    for(U64 bytes:std::array<U64,3>{1,63,15504}) {
+        Device d{bytes,64}; atlas(d,bytes); check(d.errors==0,"allocation-end exception"); ++cases;
+    }
+    check(!baseline || rejected>0,"baseline failure coverage");
+    std::printf("%s cases=%u rejected=%u observed_mapping_end=%llu NO_GPU_WORK\n",
+        baseline?"BASELINE_IMGUI_01389=REPRODUCED":"IMGUI_FULL_ALLOCATION_MAPPING=PASS",cases,rejected,
+        static_cast<unsigned long long>(observed.mapped[1]));
+}
