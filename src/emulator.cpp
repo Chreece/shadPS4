@@ -497,9 +497,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     LOG_INFO(Config, "Log type: {}", EmulatorSettings.GetLogType());
 #endif
     LOG_INFO(Config, "GPU isNullGpu: {}", EmulatorSettings.IsNullGPU());
-    LOG_INFO(Config, "GPU readbacksMode: {}", EmulatorSettings.GetReadbacksMode());
-    LOG_INFO(Config, "GPU readbackLinearImages: {}",
-             EmulatorSettings.IsReadbackLinearImagesEnabled());
+    LOG_INFO(Config, "GPU memory coherence: automatic (GPU writes / CPU access)");
     LOG_INFO(Config, "GPU directMemoryAccess: {}", EmulatorSettings.IsDirectMemoryAccessEnabled());
     LOG_INFO(Config, "GPU shouldDumpShaders: {}", EmulatorSettings.IsDumpShaders());
     LOG_INFO(Config, "GPU vblankFrequency: {}", EmulatorSettings.GetVblankFrequency());
