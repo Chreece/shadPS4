@@ -136,14 +136,22 @@ void Visit(Info& info, const IR::Inst& inst) {
         info.has_storage_images = true;
         break;
     case IR::Opcode::QuadBroadcast:
-        info.uses_group_quad = true;
+        if (info.hw_stage != HwStage::Compute) {
+            info.uses_group_quad = true;
+            break;
+        }
+        [[fallthrough]];
+    case IR::Opcode::Shuffle:
+    case IR::Opcode::ShuffleXor:
+        if (info.hw_stage == HwStage::Compute) {
+            info.uses_group_ballot = true;
+            info.uses_lane_id = true;
+        }
+        info.uses_group_shuffle = true;
         break;
     case IR::Opcode::GroupReduceUMin:
     case IR::Opcode::GroupReduceOr:
         info.uses_group_ballot = true;
-        [[fallthrough]];
-    case IR::Opcode::Shuffle:
-    case IR::Opcode::ShuffleXor:
         info.uses_group_shuffle = true;
         break;
     case IR::Opcode::ReadLane:
