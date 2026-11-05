@@ -2018,6 +2018,8 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
         image_descriptor_is_storage.push_back(image_desc.is_written);
     }
 
+    const u64 first_upload = runtime.ImageUploadCount();
+    u64 batch_upload = first_upload;
     // Second pass to re-bind images that were updated after binding
     for (u32 i = 0; i < num_images; ++i) {
         auto& [image_id, desc] = image_bindings[i];
@@ -2072,7 +2074,23 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
             image_infos.emplace_back(VK_NULL_HANDLE, *image_view.image_view,
                                      image.backing->state.layout);
         }
+
+        constexpr u64 UploadsPerSession = 1024;
+        const u64 uploads = runtime.ImageUploadCount();
+        if (uploads - batch_upload >= UploadsPerSession) {
+            runtime.FlushBarriers();
+            scheduler.BeginSession();
+            scheduler.RecordWork(
+                "kind=texture-upload-session shader=%llx images=%u/%u uploads=%llu",
+                static_cast<unsigned long long>(stage.pgm_hash), i + 1, num_images,
+                static_cast<unsigned long long>(uploads - first_upload));
+            batch_upload = uploads;
+        }
     }
+    scheduler.RecordWork(
+        "kind=texture-bind-finish shader=%llx images=%u uploads=%llu",
+        static_cast<unsigned long long>(stage.pgm_hash), num_images,
+        static_cast<unsigned long long>(runtime.ImageUploadCount() - first_upload));
 
     u32 image_info_idx = first_image_idx;
     u32 image_binding_idx = 0;
