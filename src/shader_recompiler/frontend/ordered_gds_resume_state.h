@@ -16,7 +16,7 @@ namespace Shader::Gcn::OrderedGds {
 // Convert an already-authenticated PRE-DS live GPU checkpoint into the
 // POST-DS register state the eventual second-pass GCN shader must restore.
 // The old counter is the actual verified host packer result, NOT a guess
-// from raw GDS RAM, an unordered GPU atomic, or Vulkan arrival order.
+// from an unsynchronized GDS copy, unordered GPU atomic, or Vulkan arrival order.
 //
 // This helper never modifies the captured source or inactive guest lanes.
 // It patches only the independently decoded VDST in all EXEC-active lanes;
@@ -26,7 +26,7 @@ namespace Shader::Gcn::OrderedGds {
 //
 // Caller MUST have authenticated every capture against the host scheduler
 // token table and derived all GpuResumePacket.previous values from a
-// verified dedicated CIK ordered counter seed. The validation here checks
+// verified CIK ordered counter seed from synchronized GDS. The validation here checks
 // complete checkpoint/response identity, not the external seed provenance.
 // This does NOT itself launch or implement the guest continuation shader.
 [[nodiscard]] inline std::vector<std::byte> MaterializeGcnPostOrderedCountState(

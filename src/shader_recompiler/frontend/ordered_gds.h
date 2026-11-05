@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -13,6 +14,8 @@
 #include <span>
 #include <stdexcept>
 #include <vector>
+
+#include "shader_recompiler/frontend/ordered_gds_storage_layout.h"
 
 // This implements an *offline / host-batch reference executor*, not a Vulkan shader
 // backend. A Vulkan dispatch cannot safely wait for lower-numbered workgroups:
@@ -56,9 +59,24 @@ inline std::optional<Descriptor> DecodeInstruction(u64 word) {
 }
 
 struct CounterKey {
-    u32 ordered_base; // Logical M0 ordered counter base, NOT proven raw GDS RAM offset.
-    u32 index;        // Decoded OFFSET0[7:2]; packer selection is ISA-dependent.
-    auto operator<=>(const CounterKey&) const = default;
+    u32 ordered_base;
+    u32 index;
+
+    [[nodiscard]] u32 ByteOffset() const {
+        if ((ordered_base & 3u) || index > 63u ||
+            u64(ordered_base) + u64(index) * GdsDwordBytes > GdsPhysicalBytes - GdsDwordBytes) {
+            throw std::invalid_argument("CIK ordered GDS address outside dword storage");
+        }
+        return ordered_base + index * GdsDwordBytes;
+    }
+
+    auto operator<=>(const CounterKey& other) const {
+        return ByteOffset() <=> other.ByteOffset();
+    }
+
+    bool operator==(const CounterKey& other) const {
+        return ByteOffset() == other.ByteOffset();
+    }
 };
 
 // The ordered operation consumes the captured ADDR operand, independently of
@@ -101,7 +119,11 @@ struct Result {
 
 class CompleteBatch {
 public:
-    explicit CompleteBatch(std::map<CounterKey, u32> initial) : counters_(std::move(initial)) {}
+    explicit CompleteBatch(std::map<CounterKey, u32> initial) : counters_(std::move(initial)) {
+        for (const auto& [key, value] : counters_) {
+            (void)key.ByteOffset();
+        }
+    }
 
     // Transactional: any unsupported operation or missing wave/counter refuses
     // the entire request; input counter state remains unmodified.
@@ -174,11 +196,10 @@ public:
         return out;
     }
 
-    // A genuine scheduler must produce these two numbers, never static SGPR
-    // source-register names. The ordered counter base ignores the bottom 2
-    // bits as prescribed by the GDS ISA. This is *not* a guest-memory address.
     [[nodiscard]] static CounterKey KeyFromM0(u32 runtime_m0, u32 counter_index) {
-        return CounterKey{(runtime_m0 >> 16u) & ~u32{3}, counter_index};
+        const CounterKey key{(runtime_m0 >> 16u) & ~u32{3}, counter_index};
+        (void)key.ByteOffset();
+        return key;
     }
 
     const std::map<CounterKey, u32>& Counters() const noexcept {
