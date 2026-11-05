@@ -161,7 +161,33 @@ void SharedMemoryToStoragePass(IR::Program& program, const RuntimeInfo& runtime_
             const IR::U32 handle = ir.Imm32(binding);
             const IR::U32 offset = ir.IMul(ir.GetAttributeU32(IR::Attribute::WorkgroupIndex),
                                            ir.Imm32(shared_memory_size));
-            const IR::U32 address = ir.IAdd(IR::U32{inst.Arg(0)}, offset);
+            const IR::U32 byte_address = ir.IAdd(IR::U32{inst.Arg(0)}, offset);
+            u32 address_shift = 2;
+            switch (inst.GetOpcode()) {
+            case IR::Opcode::LoadSharedU16:
+            case IR::Opcode::WriteSharedU16:
+                address_shift = 1;
+                break;
+            case IR::Opcode::LoadSharedU64:
+            case IR::Opcode::WriteSharedU64:
+            case IR::Opcode::SharedAtomicIAdd64:
+            case IR::Opcode::SharedAtomicISub64:
+            case IR::Opcode::SharedAtomicSMin64:
+            case IR::Opcode::SharedAtomicUMin64:
+            case IR::Opcode::SharedAtomicSMax64:
+            case IR::Opcode::SharedAtomicUMax64:
+            case IR::Opcode::SharedAtomicInc64:
+            case IR::Opcode::SharedAtomicDec64:
+            case IR::Opcode::SharedAtomicAnd64:
+            case IR::Opcode::SharedAtomicOr64:
+            case IR::Opcode::SharedAtomicXor64:
+            case IR::Opcode::SharedAtomicCmpSwap64:
+                address_shift = 3;
+                break;
+            default:
+                break;
+            }
+            const IR::U32 address = ir.ShiftRightLogical(byte_address, ir.Imm32(address_shift));
             switch (inst.GetOpcode()) {
             case IR::Opcode::SharedAtomicFMin32:
                 inst.ReplaceUsesWithAndRemove(
