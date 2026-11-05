@@ -553,15 +553,28 @@
     {
       "id": "vulkan-wait-pool-progress-and-live-worker-preflight",
       "subsystem": "renderer-vulkan-and-native-observer",
-      "status": "BUILD_HOST_PASS_NATIVE_PENDING",
+      "status": "HOST_PASS_NATIVE_GOW_LOADING_STOP_UNCONFIRMED",
       "related_prs": [
         133
       ],
       "main_merge_sha": null,
-      "observed_game_effects": "No native test of PR133. Parent PR132 GoW loading/stall; GoT skipped. Correct Vulkan error propagation, remaining descriptor accounting and live-thread detection reproduced on host.",
+      "observed_game_effects": "PR133 native7fb734fc: GoW loading at110s, no confirmed exit at120s; GoT skipped. No exact descriptor fallback logged. GPU wait/validation diagnostics were accidentally disabled by the supplied command; no recovery acceptance.",
       "negative_result_or_prohibition": "No forced GPU completion, total-wait watchdog, per-title/vendor switch, service reset or claimed game recovery.",
-      "next_test": "Pinned common source GoW then GoT only if safe, <=120s each, no automatic input or settings changes. Before building, refuse any remaining live/unreadable emulator worker and archive evidence. Keep >=8GiB VRAM/conditional Ollama unload, upstream freshness check, and stop remaining games after GPU failure or unconfirmed exit.",
+      "next_test": "Reuse the verified7fb734fc binary with PR134 mandatory diagnostics; GoT first, then GoW if safe.",
       "review_file": "docs/emulator/reviews/20261103-pr132-native-gpu-wait-and-pool.json"
+    },
+    {
+      "id": "required-native-graphics-diagnostics",
+      "subsystem": "native-observer",
+      "status": "HOST_VERIFIED_NATIVE_CAPTURE_PENDING",
+      "related_prs": [
+        134
+      ],
+      "main_merge_sha": null,
+      "observed_game_effects": "Collector-only fix. Parent native run omitted graphics/Vulkan diagnostics and stalled; no emulator correctness change.",
+      "negative_result_or_prohibition": "Do not claim graphics recovery or infer successful waits from missing diagnostic output.",
+      "next_test": "Reuse7fb734fc source/binary with the corrected runner; GoT first, then GoW only if safe.",
+      "review_file": "docs/emulator/reviews/20261103-pr133-native-required-diagnostics.json"
     }
   ]
 }
