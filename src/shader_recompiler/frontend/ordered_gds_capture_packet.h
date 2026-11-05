@@ -141,7 +141,7 @@ public:
         std::vector<bool> seen_rank(total, false);
         for (const auto& packet : captures) {
             if (packet.tag != CapturePacketTag || packet.epoch != expected_epoch ||
-                packet.flags != CaptureFlags || !packet.site_pc || packet.logical_slot >= total ||
+                packet.flags != CaptureFlags || packet.logical_slot >= total ||
                 rank_by_slot[packet.logical_slot] != InvalidCreationRank) {
                 return std::nullopt;
             }

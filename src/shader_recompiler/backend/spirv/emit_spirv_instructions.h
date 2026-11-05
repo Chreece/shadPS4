@@ -19,6 +19,9 @@ namespace Shader::Backend::SPIRV {
 using Sirit::Id;
 
 class EmitContext;
+Id EmitOrderedGdsResumeSite(EmitContext& ctx);
+Id EmitOrderedGdsLoadState(EmitContext& ctx, IR::Inst* inst, u32 offset);
+void EmitOrderedGdsStoreState(EmitContext& ctx, IR::Inst* inst, u32 offset, Id value);
 
 // Microinstruction emitters
 Id EmitPhi(EmitContext& ctx, IR::Inst* inst);
