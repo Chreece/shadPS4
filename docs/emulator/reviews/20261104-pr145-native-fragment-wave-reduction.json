@@ -1,0 +1,646 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T17:07:33.845008+00:00",
+  "request_id": "fc60c252-7688-46c6-9889-a17909bf2b4a",
+  "source_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+  "source_tree": "175f291c49c4532ff108cf5ef1c59b04137eb33a",
+  "upstream_commit": "6999be18c67e84a7ebe6a654dc4c6616528d0229",
+  "isolated_fix_commit": "e27311c7e272f400bc838232cef20801f84cc391",
+  "prs": [
+    146,
+    147
+  ],
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "native_evidence": {
+    "archive": {
+      "file": "universal-two-games-20261104T162521Z-1330280.tar.gz",
+      "library_file_id": "libfile_f8abcf3f60308191a4da8c205b39eb54",
+      "sha256": "2cd41a7fda96e7b71dcca5fcd1251f0363dcafb6efd2fa9bc60001eaffcb2451",
+      "size_bytes": 11811376
+    },
+    "source_commit": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+    "upstream_commit": "1d8c741c31da757929ded01556ea0f150ebbe9d7",
+    "binary_sha256": "5caf394ef1462e5a198285bf19e761ac870eaf199567b62cf2b0f104d8457c94",
+    "build": {
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "complete_log_reviewed": true,
+      "lines": 3280,
+      "warnings": 115,
+      "errors": 0,
+      "warning_multiset_identical_to_preceding_native_build": true,
+      "warnings_resolved": false
+    },
+    "games": {
+      "gow": {
+        "record_id": "universal-graphics-20261104T163951Z-1465882",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "elapsed_seconds": 25.377,
+        "exit_code": -11,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "reviewed_result": "ORDERED_GDS_ASSERTION_BEFORE_GAME_VIDEO",
+        "gpu_failure": null,
+        "owned_child_terminated": true,
+        "screenshots": [
+          {
+            "file": "frame-008s.png",
+            "sha256": "becb440647b789996a0beb5e1583983cbbbc21ef0d2ec13019f9b9e6153e80fe",
+            "review": "Loading splash; no game video"
+          }
+        ],
+        "graphics": "LOADING_ONLY",
+        "audio": "NOT_VERIFIED",
+        "fps": "60 FPS loading overlay only",
+        "console_lines": 12153,
+        "console_bytes": 1761395,
+        "complete_console_excerpt": true,
+        "warning_lines": 527,
+        "error_lines": 2325,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "gpu_memory_fault_reports": 0,
+        "configured_readbacks_mode": 0,
+        "automatic_coherence": true,
+        "ordered_gds_capture_requested": false,
+        "stop_remaining_tests": false,
+        "vram_free_before": 5177290752,
+        "vram_free_at_launch": 25599729664,
+        "ollama_restore_leases": [
+          {
+            "endpoint": "http://172.23.0.2:11434",
+            "model": "qwen3.8-greek:latest",
+            "context_length": 16384,
+            "expires_at": "2319-02-14T16:25:27.167788+00:00",
+            "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+            "size_vram": 17361985862,
+            "status": "RESTORED",
+            "restored_size_vram": 17315848518
+          }
+        ]
+      },
+      "got": {
+        "record_id": "universal-graphics-20261104T164039Z-1472051",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "elapsed_seconds": 62.136,
+        "exit_code": -11,
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "reviewed_result": "INTRO_VISIBLE_THEN_GPU_CONTEXT_LOST",
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "owned_child_terminated": true,
+        "screenshots": [
+          {
+            "file": "frame-008s.png",
+            "sha256": "1b22f2d68c826bf22d945905b25ccdfe9db5cd323f5d0b1a89791765f20cf5dd",
+            "review": "Loading splash; no game video"
+          },
+          {
+            "file": "frame-025s.png",
+            "sha256": "7bd50e7b29bf5e6dccbbd09898eb87e91b20bf088e0a5d74a6d90a696077a488",
+            "review": "Visible intro footage; no menu/gameplay acceptance"
+          }
+        ],
+        "graphics": "INTRO_ONLY; MENU/GAMEPLAY_UNVERIFIED",
+        "audio": "NOT_VERIFIED",
+        "fps": "30 FPS intro overlay only; sustained performance unverified",
+        "console_lines": 6879,
+        "console_bytes": 938129,
+        "complete_console_excerpt": true,
+        "warning_lines": 421,
+        "error_lines": 1324,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "gpu_memory_fault_reports": 0,
+        "configured_readbacks_mode": 0,
+        "automatic_coherence": true,
+        "ordered_gds_capture_requested": false,
+        "stop_remaining_tests": true,
+        "vram_free_before": 5947047936,
+        "vram_free_at_launch": 25597583360,
+        "ollama_restore_leases": [
+          {
+            "endpoint": "http://172.23.0.2:11434",
+            "model": "qwen3.8-greek:latest",
+            "context_length": 16384,
+            "expires_at": "2319-02-14T16:25:39.521358+00:00",
+            "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+            "size_vram": 17315848518,
+            "status": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+          }
+        ]
+      }
+    },
+    "gpu_trace": {
+      "records": 42,
+      "overwritten": 152343,
+      "first_pending_completed": 3700,
+      "first_pending_requested": 3702,
+      "later_completed": 3763,
+      "final_requested": 3764,
+      "final_pending_fragment_shader": "8d32401e",
+      "guilty_operation_proven": false,
+      "interpretation": "Counter advancement prevents attributing the final failure solely to the first pending window. No precise per-instruction GPU fault attribution."
+    }
+  },
+  "defect": {
+    "old_behavior": "The exact EXEC-widened, identity-masked five-XOR reduction reads fixed lanes31/63. Fragment subgroups can lack those lanes, giving undefined values and allowing scalar-loop nonprogress. The existing compute-only recognizer also did not prove masks held in an adjacent S_AND_B64 SGPR pair.",
+    "correction": "Recognize a mask formed by immediately preceding S_AND_B64 with EXEC (allowing only NOP/WAITCNT gaps) and the matching CNDMASK operand after S_ORN2_SAVEEXEC to VCC. Enable existing exact min/OR reduction folding for fragment shaders at subgroup64. Other stages, widths and unmatched sequences keep their prior lowering.",
+    "files": 3,
+    "insertions": 16,
+    "deletions": 3,
+    "cache_isolated": 28,
+    "cache_final": 29,
+    "selectors_added": [],
+    "scope_limit": "No general register resurrection or complete guest wave64 implementation for subgroup32. No game runtime fix claimed from host/compiler evidence."
+  },
+  "validation": {
+    "source_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+    "tree": "175f291c49c4532ff108cf5ef1c59b04137eb33a",
+    "upstream_commit": "6999be18c67e84a7ebe6a654dc4c6616528d0229",
+    "isolated_fix_commit": "e27311c7e272f400bc838232cef20801f84cc391",
+    "prs": [
+      146,
+      147
+    ],
+    "host_binary_sha256": "d72549798e8f3e1115c009db93ffa639883356068f40e03d35b09dbc9c7856bd",
+    "source_files": 3,
+    "source_insertions": 16,
+    "source_deletions": 3,
+    "final_shader_cache": 29,
+    "source_fix_cache": 28,
+    "full_build": "PASS final6targets including decoder/cache/revision and link",
+    "startup_cases": 3,
+    "cpu_suite": "PASS on isolated source; covered sources unchanged by decoder/cache-only rebase",
+    "marker_checks": 2496,
+    "matcher_asan_ubsan_checks": 1664,
+    "captured_spirv_valid": {
+      "gow": 38,
+      "got": 41
+    },
+    "pipeline_spirv_valid": 16,
+    "negative_byte_identical_pairs": 6,
+    "homebrew_spirv_valid": 6,
+    "final_homebrew_byte_identical": 6,
+    "direct_fragment_spirv_valid": 1,
+    "reduction_semantics": {
+      "coverage_masks": 2181,
+      "helper_participation_modes": 2,
+      "reference_reductions": 8724,
+      "empty_predicate_reductions": 632,
+      "active_shuffle_source_checks": 1378688,
+      "loop_projections": 128,
+      "old_allowed_undefined_zero_nonprogress": 128,
+      "new_loop_nonprogress": 0,
+      "new_loop_iterations": 1919,
+      "gpu_execution": false,
+      "scope": "CPU interpretation of production-emitted fragment SPIR-V. Helper participation included/excluded; selected mask is a subset of coverage. Loop projection is a counterexample, not the full game shader or proof of its GPU hang cause."
+    },
+    "captured_fragment_replay": {
+      "instructions": 1028,
+      "blocks": 63,
+      "old_matches": 0,
+      "new_matches_wave64": 1,
+      "new_matches_wave32": 0
+    },
+    "retained_compute_replay": {
+      "instructions": 2380,
+      "blocks": 115,
+      "wave64_min": 1,
+      "wave64_or": 1,
+      "wave32_matches": 0
+    },
+    "retained_readfirst_replay": {
+      "instructions": 339,
+      "blocks": 40,
+      "reads": 26,
+      "dynamic_exec": 7,
+      "loop_phi_exec": 6,
+      "profiles": [
+        32,
+        64
+      ]
+    },
+    "rebase": {
+      "commits_preserved": 48,
+      "all_published_trees_match": true,
+      "cache_conflicts": [
+        {
+          "old": "8b03e3c64fc6caff337b693a80674d49c0c4e3a9",
+          "old_version": 17,
+          "new_version": 18
+        },
+        {
+          "old": "f82fbf1d7bf7bef4d9b46237b05bb1c2740939c4",
+          "old_version": 18,
+          "new_version": 19
+        },
+        {
+          "old": "b0a4c6187f85dd18081d3cabfe86e1b4ed7b5b3d",
+          "old_version": 19,
+          "new_version": 20
+        }
+      ],
+      "final_cache_29_reason": "Later original cache bumps converged to28; final additional commit invalidates isolated version28 shaders after upstream decoder change."
+    },
+    "failed_attempts": [
+      {
+        "attempt": "source patch",
+        "result": "REJECTED_CONTEXT",
+        "detail": "Initial atomic patch expected cache declaration without static/u suffix; no files changed. Exact declaration corrected. Cache-only build was not counted as source-fix validation."
+      },
+      {
+        "attempt": "marker fixture",
+        "result": "SEGFAULT_CORRECTED",
+        "detail": "Mutated operand fields to ScalarGPR without replacing EXEC/VCC numeric codes, creating invalid SGPR indexes. Valid independent field/code mutations pass2496 checks."
+      },
+      {
+        "attempt": "sanitized fixture launch",
+        "result": "BINARY_NOT_YET_AVAILABLE",
+        "detail": "Attempted before asynchronous compile completed. Waited for successful compile, then1664 ASan/UBSan checks passed."
+      },
+      {
+        "attempt": "pipeline fixture link",
+        "result": "FAIL_LINK_CORRECTED",
+        "detail": "Inferred IAdd U32U64 type lacked BitCast specialization. Explicit IR::U32 in fixture fixes linking; production unchanged."
+      },
+      {
+        "attempt": "direct fragment backend fixture",
+        "result": "FAIL_SPIRV_VALIDATION_CORRECTED",
+        "detail": "Authored integer fragment input lacked Flat decoration (VUID-StandaloneSpirv-Flat-04744). Added decoration; production full pipeline modules already validated."
+      },
+      {
+        "attempt": "final retained shader replay",
+        "result": "FAIL_MINIMAL_ENVIRONMENT_CORRECTED",
+        "detail": "Discarding inherited environment including HOME caused exit-11 in both old and new replay executables. Adding HOME makes both pass; final retained replay uses inherited environment. No source regression inferred."
+      }
+    ],
+    "limits": [
+      "No GPU device or game execution in this environment; host/compiler proof does not establish game recovery.",
+      "GoW remains stopped by DS_ORDERED_COUNT; authentic counter initialization and guest continuation are incomplete.",
+      "Subgroup32 and unrelated stages/patterns retain prior behavior; complete guest wave64 emulation on subgroup32 remains unresolved.",
+      "Homebrew is a compute instruction probe, not fragment coverage/helper hardware validation; OpenOrbis SDK link and PS4 run are unverified.",
+      "The final stalled GoT submission contains the defective fragment program, but operation-level runtime fault attribution remains unproven."
+    ]
+  },
+  "artifacts": [
+    {
+      "file": "masked-reduction-openorbis-20261104.zip",
+      "library_file_id": "libfile_d2c4abaed1a4819199aaf8f65915e050",
+      "sha256": "4cd54b4b7565a1054c6808df187d1bf98342d34a04b783313e74b208ec25a0a4",
+      "size_bytes": 5637
+    },
+    {
+      "file": "masked-reduction-host-validation-20261104.zip",
+      "library_file_id": "libfile_0f4f7bd0ab688191966cf68576f6c96f",
+      "sha256": "0e68ce5f9d9812804c6753505a934b19846fc595f193ad618884569d5dfb3b99",
+      "size_bytes": 103176
+    }
+  ],
+  "rebase": {
+    "upstream": "6999be18c67e84a7ebe6a654dc4c6616528d0229",
+    "upstream_change": "SDWA VOPC scalar compare destination must populate dst[1], with cache invalidation",
+    "retained_commits": 48,
+    "all_published_trees_match": true,
+    "mapping": [
+      {
+        "old": "8b03e3c64fc6caff337b693a80674d49c0c4e3a9",
+        "local": "6dcc82d592e1eab2970c3f977bbbc010daf53e55",
+        "published": "ab4bf037190d67bdb7f54f045d29d73003b34261",
+        "tree": "cf16fbb28cde91206f24710f0837fb6661498d6a"
+      },
+      {
+        "old": "f82fbf1d7bf7bef4d9b46237b05bb1c2740939c4",
+        "local": "a8ef6f791a2aaaafccaa01bd1f774eab5ab2cb46",
+        "published": "36a3e746c2d3afc7d73454fbde5e026d8eb655a3",
+        "tree": "d12d6e5ac7b7f36cdf0520542289f4d54a627a99"
+      },
+      {
+        "old": "8bab3d9a6e57578285793f1fb247c5549ca8c600",
+        "local": "7ab73917a02dd0ccc3fe7340e25da45c749d86dd",
+        "published": "2476b72cd423fe3ae3897db343dd67237ab188d3",
+        "tree": "2988e6e9e63991ec855036df9d559cb631394c1e"
+      },
+      {
+        "old": "b0a4c6187f85dd18081d3cabfe86e1b4ed7b5b3d",
+        "local": "39eab9fe718222e80d67217f3f4edb1978feb487",
+        "published": "8839a04839b6c23d15e152982d8f7881461f30e8",
+        "tree": "a0545c01900daeb6cfaee21f45f989b2dfd4b078"
+      },
+      {
+        "old": "dd064f4533195112ac92790a6273f4a1d778978f",
+        "local": "fbca53947e78877ad082a1bf8aad0b3a9fc15740",
+        "published": "b07f160b6a3bc547dfb34dc3f6cf65a9d1f5ce7a",
+        "tree": "85db92516e7884a9ecb9cc2699cadb019eb2b9c7"
+      },
+      {
+        "old": "a37f45539d36f8a91fd593d1357b3b061496d244",
+        "local": "e8850415d5fa448d4a3ece788e3f794e96aa1b6b",
+        "published": "144a29f646c2805617e6d72ede041b50d11a0607",
+        "tree": "ff10b666b4a587458bbb0f97c2a3ed7f71950880"
+      },
+      {
+        "old": "a7b5b21ec2454c9527ed9d775372a550ecfa85e0",
+        "local": "bce0eb2dd959eaf93b29cfb0f01aa58cad7eeb45",
+        "published": "da3ff90e1c83501bc949339fab150a0afc1d21eb",
+        "tree": "d91e30ecd91cdafb8314e829cd6d9cfe13f29343"
+      },
+      {
+        "old": "8fa8b80d1be15282de796b3777d854f900947389",
+        "local": "fbe3dcd4eaca896690c654276b273d3874eedf1a",
+        "published": "1f134372aa48eb50a4e4f64cd3614247bc0f5198",
+        "tree": "78a077bad97cbc265d1478178f12b098e0849821"
+      },
+      {
+        "old": "be42ffdc4f3c92185d079d069aeee8ba597f1d30",
+        "local": "a93016f6032369badca902328eedfc4c6102fe54",
+        "published": "e7c23b9d8f5a17acde63a6a429d3ac021ffec6b8",
+        "tree": "f2948f7267149cf48329fff4cb88702909e62b37"
+      },
+      {
+        "old": "ec7b389561f547a50903424269cea45684d6594f",
+        "local": "b8858dbe6d56140cd2f4d8791ce9ffb123754ab8",
+        "published": "d6e679d593b02eba0ad6713bd6f0a3fd46402c83",
+        "tree": "6293c78fbdac7ffda3826ba011ac1c444e379caa"
+      },
+      {
+        "old": "7161a8e408140674be353157dfcd61d1aca79726",
+        "local": "e23e6a78d41434ce9fa72573250d962acad5d9ed",
+        "published": "a28d5ad361f41640f179ba2d37d204361ef62e3c",
+        "tree": "ff0d24f453f69ba8e4ea5779153a6baad47c0462"
+      },
+      {
+        "old": "3d4c6b38bcc8b57ed125e2752bd19b49013c8ab7",
+        "local": "acd28f211891dd31ae24802c58b28ce9b9fb884d",
+        "published": "4699bffcdabb41b2e7b538177e12fac257676c52",
+        "tree": "2158b7ea3015652c7367764291b9c48b6689ff82"
+      },
+      {
+        "old": "705b6109928178fe72417f530f4f611a31613388",
+        "local": "9b9bb6e1b4ab1a33a327c9f90bfb7a4b93022ea5",
+        "published": "98777dbf40081e54f65e161899c853941d70d2bb",
+        "tree": "a52cf8e1c3e194e4f23a825645b2c5c152c0133d"
+      },
+      {
+        "old": "8a70fe62550508d8995c4d30ee3a649084d7ae57",
+        "local": "64e2104dfe1a3d06918bb209f0c389b7758abfca",
+        "published": "e962b557f1cd36ee0f1e75e6dc04efd899e1381c",
+        "tree": "b6ce03ba51c1adc17f2b84e6b8e255ac0d69d7ee"
+      },
+      {
+        "old": "efd121c26d802b3a2a20def981abbc480cbbecaa",
+        "local": "f3c55ee103158dcb6f762e7b493efcb1a04442fa",
+        "published": "4dc875d4a1770bb3202345d66510a3257f78ae9d",
+        "tree": "e1bcaebad5f473f307b3f6b1255101dad514ac10"
+      },
+      {
+        "old": "b60a4ac304c32efa9ad71176fdc3282858f448db",
+        "local": "5b63d12b7c518f16fdf66e043393cac5b345cc99",
+        "published": "926391dd892cd1d295aef2eed1217c9e70c9ac03",
+        "tree": "bbf1664f694c5a9a66b901a123dea35ef9a4684b"
+      },
+      {
+        "old": "cf474b4b26bd05f8598d64a9b6817d6c069f460b",
+        "local": "490283851eaa2c21702167ad870480eae0e73a68",
+        "published": "ebb044550327b7d8eeab979bb4f885439f85b718",
+        "tree": "97115eb5041068bf134899d04873251bfb843ba3"
+      },
+      {
+        "old": "843264eb0ba0fd988abe74c9dad45c01e213602c",
+        "local": "b2a2d5e6bfa0392f5e8f64e5f3216228170184e7",
+        "published": "0ec9b3471ea2ec25cbcb7b46873a5353ab61b023",
+        "tree": "abe11a76f7a19fa6b6a026cdf89d527bff8cf882"
+      },
+      {
+        "old": "1a98cf67ef64ba3a5b39ad04625014d3fb571bf5",
+        "local": "ec38fc05488037c13c46c39ae9e9d3ce9fe8d2b8",
+        "published": "f667829bf9cf5c5be58a41ead9ae35cc68359a09",
+        "tree": "c0a1f5afcf4059d1ec9384690013067b82a79f2a"
+      },
+      {
+        "old": "6fb201e24d8ad6691b55e2bec47e2e141c06a959",
+        "local": "81357c05e894c61e43149b80ff69f32068b1cfdc",
+        "published": "f17b96cc02bb474457331e9a3c580f04e52e0456",
+        "tree": "20020e92433c457fead038921eec2355a056c5d8"
+      },
+      {
+        "old": "896c41984f3ecca3a4261f2fc46218faa4daf3e9",
+        "local": "7f255be3134ab34b362dc98223d7faa81e2de3a8",
+        "published": "a6bf9f550644091271b02243cedd23281c53f2ad",
+        "tree": "88792b34025ccbcdb0aa298248774c77e5b64fc1"
+      },
+      {
+        "old": "0743a6d85f4e4eb08058be8a71ff4f5f1faaacc6",
+        "local": "1ff2ad938e52fc5e12ade2d7f7d771dbe02cfcb6",
+        "published": "d38d630dcb963cd90874077e2bb7ec79954539a0",
+        "tree": "4546ba8d3cf7c40ba4c30a141dda289bec3cf964"
+      },
+      {
+        "old": "063f02854cff75d7353229560e3cd1795eae67e8",
+        "local": "cf6019df11adeb06ca732a6d429fe5d2224f5fae",
+        "published": "689d8dbb3d91c8d39f39708c52d4a19b1d298c7f",
+        "tree": "05466ff6d1d93ef05e60e3f50e00f35fd8e894fb"
+      },
+      {
+        "old": "b2619480e87688e2b1879faa0e191d13ba286202",
+        "local": "be6507488ad52332ad235b8d588e50bfc9314e66",
+        "published": "fd7371d4ce1c0d9107ab6bd6a6f537abf1130498",
+        "tree": "c42bf65534ff4a02fd26452e406da32f3f60be6f"
+      },
+      {
+        "old": "9f5d0ce9d2e90ea37467e9dbb227a3b1b31c4ebe",
+        "local": "fa6f364e96f444163bb492ac6c0b515092103a4d",
+        "published": "526372e099e6a5a2e75062c66fd033b93caaf9f6",
+        "tree": "2c21c52646136f37e388ffd6fa64e03cb650307c"
+      },
+      {
+        "old": "ff40cee1bb7159bebb8109097280606ba463db8d",
+        "local": "462b93307b9abb304222c11324113652f4d8daa1",
+        "published": "33967e1ce67518a11620cc4914f71b9198f4731e",
+        "tree": "3ca59d77c6ac91830b6d8b93da9d38bbc43583a8"
+      },
+      {
+        "old": "dbfd4b01a6ef64ae3a04b9870b5129afb633e4e4",
+        "local": "be5a0d3be7f365bbbec792c2d6e3c65a0f8e883e",
+        "published": "a69355dfcf1b7a1ae4c0559d8bb1be1b3e078173",
+        "tree": "76dd4a1f06e1ab5d0766af8003dbf167f9f1c979"
+      },
+      {
+        "old": "b31f0659e99c430ab5b262d1781ea90acdfb2727",
+        "local": "8766321576836bb7824f827b39359e6f272884f9",
+        "published": "47fc65e7d3b60c3a233320b9b89475f41e2743a3",
+        "tree": "39c43662f40b5cf63ec51908d9b504577bb0313d"
+      },
+      {
+        "old": "91de9b8453ad02dc5337db4dc45df52306110b51",
+        "local": "89fedbb86736e4242a756229f4031cae78f3bba5",
+        "published": "3e03eef6ed1b0db5e1c6ef52c38d15870d22c283",
+        "tree": "c94aa29922f5524c1dae0043e63528d839afb917"
+      },
+      {
+        "old": "b1a1c85c5fff77cd02062e6bbb11089be81a2bf8",
+        "local": "c21cb3ce04cc43a0876d2be75af5895630dddfd6",
+        "published": "8052c8e09ec58b2b1c27f17c7b69321f2b257d5a",
+        "tree": "a4ccb4c95f56269c1fd3a60439ede06245de65f9"
+      },
+      {
+        "old": "29beb56d31b630328072b0205a0106919bbb7ed4",
+        "local": "f3c3e71f8fb4d43dcf9a8b8990821a43e6ace3e1",
+        "published": "cf0b77c02b7ebe0d608b1946efb7f0eafd64c5a5",
+        "tree": "066092196da8569fb89566d81651ed9d2f8c8ff1"
+      },
+      {
+        "old": "345a6e63adad9c563ed75cdc694b9ef7e00b3aef",
+        "local": "ead35563c28f1477dccd5669bf4f2bf0ba1412f5",
+        "published": "d3286ad3b5d8f783be8b64ae29ad487997f1f8fb",
+        "tree": "eb7d1c6ea211f5f86f920fbaa4fa54834e2f2bbe"
+      },
+      {
+        "old": "4a5567553a36eef5f75ee6fd0c8fa7125188aa25",
+        "local": "2931dbc584284bb8f907217a42fe968d1e0a5820",
+        "published": "eb6e650c350e04801ee49833de5c456d11de1a25",
+        "tree": "ad70a8fd8c776da00037e478e23db333c35369d4"
+      },
+      {
+        "old": "59a2d55de921372f57295e84409a5a6a3c715ad2",
+        "local": "8e545b1748b9269700a630898a442d31c86856ff",
+        "published": "eaee314dc75fe25ccea4b24403e5e1aac976911d",
+        "tree": "761da48c0e3da9883a2123057c44959807204277"
+      },
+      {
+        "old": "666738b86b5640e11a8c6653e88048bf0bab47aa",
+        "local": "5f1f8c7ac9da620b647eadf883f53b32fd263708",
+        "published": "04c4061f7d4823c719a6ba731a7e134781ed9ec5",
+        "tree": "f1aba0e2c79c8fdefa410446fdac3acd0308762c"
+      },
+      {
+        "old": "0340dfba4a19b55b0bc50c894b4a6e8e283409c3",
+        "local": "6d9025b48fe45557df39a8faaf5b16de2e739227",
+        "published": "9fa0b33b19ebb333040a9344a612642a08d77029",
+        "tree": "89738174759d7dd7099cd8fc0356bfd47240e328"
+      },
+      {
+        "old": "8012074914de568120700cd894164fdfb18871fd",
+        "local": "29824505dabfb8151c1c01f818ea6af5fbeb8c96",
+        "published": "4751169b80fcfe51fab2aff81c9be44edc9d1270",
+        "tree": "98acf6c5ee1996a39df61a2a3eb66e57bf51eb02"
+      },
+      {
+        "old": "d1a3a96f599263f5e7781052db8644b9d5444987",
+        "local": "26f186cd6e8bf2905dc90ed4f683f0885105ca97",
+        "published": "51e2f7be8882949f80f9b2f0c4f908aaaf24a1b0",
+        "tree": "ba5ddd7e7f0eebcee7124252f8029cf31d22f8ba"
+      },
+      {
+        "old": "ac55e1f642c61beab75b60af24abbdcbfd5bab34",
+        "local": "f555b2c5f321f68c82a211ea2a90b5d3e8428a19",
+        "published": "bea928ef07e5da666116e528931851d4cc8f7eac",
+        "tree": "48fb7b79c377b32f7ce530d496b4b154fcdee2c4"
+      },
+      {
+        "old": "4318d16022564c1c3d3d4df7eb0a3aaedef60cfa",
+        "local": "98cc548608f7580a1bd3d09a57b8591999e56b5b",
+        "published": "b504a99b0ee04a3ab1d07e08292e2d53144f5120",
+        "tree": "6a6c52c6b1205043cceaba4b03c910c448c2bb5b"
+      },
+      {
+        "old": "1c744c9c870fe5b28b26817c17d3ed1a4e68042c",
+        "local": "e3324a3427e5742ed533b570a2aa69e5c9649516",
+        "published": "03ca6fa74f33280c0b02bb704efd612c5d4c2292",
+        "tree": "1c858e792d99e89d2ca128663247bfe915fef0f9"
+      },
+      {
+        "old": "f50f7a5c99bf07390c441075bb1314ca70f54b78",
+        "local": "147329703355942ecb5856a7120fedc2e3654837",
+        "published": "1c1cde6d8955f504ff2cc6e94c08a36709b8c910",
+        "tree": "a284fed18cb6657cc3956867cc5ea22a3421e5a7"
+      },
+      {
+        "old": "cde2cc020c660b1294660656b82e0422137c62a2",
+        "local": "e02a1d6d17080d1ddc6733c146f6f9e8a0a788ff",
+        "published": "fb65f591b320f695c5725f3d066ee81d8eff08b3",
+        "tree": "285cb001fe023a171e410ae1979ce9c0a970abd7"
+      },
+      {
+        "old": "4a1efa686b3636697dbf17f248e2ede7b2e45865",
+        "local": "e770f0659cd3ae3245335124b572af820832163d",
+        "published": "15d0e12cd4c40ccbafd4b35b8275e643176abc96",
+        "tree": "0818c667c9dcd000ea6ad69120240140e931e743"
+      },
+      {
+        "old": "c532317c48794737bf7c4a0b1717674427d8f674",
+        "local": "8b05bd8a36c7ad21fc7d3d4a6d3aa14b913a24dc",
+        "published": "af8f8e795089b799e119cedbd3486825a6443810",
+        "tree": "d2c0f98fec1f6d49a5e89941f6fc0fcc904a2c27"
+      },
+      {
+        "old": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+        "local": "bc3550bd9969fd9fdf41b14800a02f9b3738c52a",
+        "published": "17e9d9eb400c727dc095f497e0e742d7ac55e9f2",
+        "tree": "131c3a6af40f6f0bc30089edc9568067d7131700"
+      },
+      {
+        "old": "6b774e8b9b4d6fc4ddd7affa40cc4fa881a3b18d",
+        "local": "da3745574a8f7a2d4a2d8b84afb43eb531c1abfe",
+        "published": "a62e2e70bf712a54d1a398dfdc18a9a44bae9535",
+        "tree": "6f0d6880d087c0de6b0037fb8c13f87b669dd5f4"
+      },
+      {
+        "old": "e27311c7e272f400bc838232cef20801f84cc391",
+        "local": "4dbb5c5a9f467958b2d40ba7851ca6b1d0cfa1d6",
+        "published": "08e2770a9b4999b6c3e5c579ddc9ab74193ce529",
+        "tree": "7babad59573ff9ccf98d684c7a003d55b420e194"
+      }
+    ],
+    "conflicts": [
+      {
+        "old": "8b03e3c64fc6caff337b693a80674d49c0c4e3a9",
+        "old_version": 17,
+        "new_version": 18
+      },
+      {
+        "old": "f82fbf1d7bf7bef4d9b46237b05bb1c2740939c4",
+        "old_version": 18,
+        "new_version": 19
+      },
+      {
+        "old": "b0a4c6187f85dd18081d3cabfe86e1b4ed7b5b3d",
+        "old_version": 19,
+        "new_version": 20
+      }
+    ],
+    "final_additional_cache_commit": "bb4b2255c424eb399732da67f8c184c186bc5034",
+    "only_final_paths_different_from_isolated": [
+      "src/shader_recompiler/frontend/decode.cpp",
+      "src/video_core/renderer_vulkan/vk_pipeline_serialization.cpp"
+    ]
+  },
+  "handoff": {
+    "source": "bb4b2255c424eb399732da67f8c184c186bc5034",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "first_game": "CUSA34384",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "e9fd867bcdd9c1f0c9edc22c64b27a823c71aec28ff5c6eedbd60f5dab0413f5",
+    "same_binary_for_both": true,
+    "per_game_options": false,
+    "automated_input": false,
+    "timeout_term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "minimum_free_vram_gib": 8,
+    "stop_remaining_after_gpu_loss_or_live_process": true,
+    "defer_ollama_restore_after_gpu_loss": true,
+    "boundary_fixture": "PASS valid handoff, checksum rejection, download rejection and temporary cleanup; native launch mocked",
+    "expected_gow_limit": "Existing ordered-GDS assertion may recur; this candidate does not implement its seed or continuation."
+  },
+  "references": [
+    "https://docs.vulkan.org/spec/latest/chapters/shaders.html",
+    "https://github.khronos.org/Vulkan-Site/glslext/latest/glslext/khr/GL_KHR_shader_subgroup.html",
+    "https://github.com/shadps4-emu/shadPS4/commit/6999be18c67e84a7ebe6a654dc4c6616528d0229"
+  ],
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "next_step": "Run exact candidate on the native host with unchanged global automatic behavior. Compare GoT intro/menu progression and GPU termination, and retain GoW ordered-count failure honestly until dedicated initialization and continuation are implemented.",
+  "journal": {
+    "preserved_prefix_rows": 508,
+    "preserved_prefix_sha256": "1e037d451d80335f80ec22e3196f642e81e2d83428717cb12c930b26e220eaf7",
+    "appended_rows": 17,
+    "total_rows": 525,
+    "sha256": "1d7f4af6abc94d468136569b6880e0b5139c3f2d932fe4fe09a1c9fcd0ace980"
+  }
+}

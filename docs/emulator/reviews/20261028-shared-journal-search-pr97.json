@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "record_id": "shared-journal-review-search-pr97-kept-merged-20261028",
+  "recorded_on": "2026-10-28",
+  "record_type": "SHARED_ENGINEERING_TOOL_FIX_TESTED_AND_MERGED",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "pr": 97,
+  "label": "kept",
+  "merge_commit": "e12b9c0a77d4f3e51a18c2dd32ce4dd7d34fddc2",
+  "emulator_effect": "No renderer change. The existing query omitted recent committed reviews/*.json while searching TRIALS.jsonl and the optional host ledger. Fixed the read-only query to search all shared review addenda alongside the historical ledger, recognize recorded_on dates and merge references, and preserve distinct record IDs even when multiple attempts/reviews share an artifact hash. Existing historical rows and the FIXES registry remain unchanged.",
+  "game_effect": "NOT_RUN; no new graphics improvement claimed. This maintenance prevents prior negative shader trials and source-preservation findings from disappearing from pre-experiment history searches.",
+  "tests": {
+    "command": "python3 -m unittest -v test_query_emulator_diary_reviews",
+    "result": "PASS_14_OF_14_LOCAL_FIXTURES",
+    "elapsed_seconds": 14.587,
+    "scope": "Combined shared/private/review search; rejected trial; recorded_on ordering; GoW context versus actually tested GoT; distinct same-hash reviews; immutable shared-row precedence; PR-linked FIXES lookup; malformed or missing-ID review errors; missing and explicit review directories; merge/date/next-step display; no input-file mutations; build-only stays NOT_RUN.",
+    "query_blob": "05fbc05b563747d4fedd629b094e19d5a5395b29",
+    "test_blob": "737809760f3ab084d38ee5ff1b4a006cff8d6f06",
+    "query_sha256": "ff086a6786452c78957a4b742ba338faa0d659f5087972e5e81d45ded6b10552",
+    "test_sha256": "03538db0daf520bf89095e80c77ed82575b899e09d078d277e7f14d1d9805e92",
+    "qualification": "Local CLI fixtures, not native emulator/GPU tests or a newly executed host checkout. Remote source blob matched locally tested query bytes before merge."
+  },
+  "user_workflow_reconfirmed": {
+    "before_new_experiment": "Search all-game historical ledger plus reviewed addenda for the affected code path, hypothesis and previous negative outcomes. A retry must identify the genuinely changed evidence or source.",
+    "keep": "Evidence of a corrected generic behavior in logs or graphics is sufficient to KEEP that behavior; the whole game need not become fully rendered first.",
+    "merge": "Promote the reviewed compatible implementation through a real PR to main and record its actual merge SHA. A build pass alone is not runtime behavior proof. An algorithm already merged must be verified still present, not duplicated. Conflicting/unsafe ports or unexercised candidates are explicitly pending rather than falsely called merged.",
+    "preserve": "Subsequent source manifests must retain accepted fixes, even while unrelated missing materials remain. Do not discard a proven correctness fix just because complete scenery remains broken.",
+    "record_every_attempt": "Keep preflight errors, build failures/warnings, crashes, unchanged visuals, no-match/unexercised paths, rejections, rollback decisions and positive results. Preserve exact source/ELF/archive hashes, actual game scope and a falsifiable next step; never rewrite failed history."
+  },
+  "current_native_baseline_review": "20261028T144320763760Z-accepted-renderer-native.json",
+  "current_native_baseline_sha256": "18ed1b6f18a4cc9b466d4bc2a56e9a35dfd04bd0cafe54fa2d9714112d57d2e4",
+  "kept_existing_renderer_prs": {
+    "69": "kept label added; merged 86ebcf6249fae2a709b98790760de639e6978bef; current-main source verified; eight actual exact stencil events in latest native run",
+    "68": "kept label added; merged b8db275e6605b4183aa27c445bb39661d991cdd1; current-main source verified; latest source restored while original positive image-copy evidence remains historical"
+  },
+  "decision": "MERGED_MAIN",
+  "next_test": "Use the repaired combined search before another shader/renderer hypothesis. Do not ask for another unchanged menu run for journal maintenance. Remaining missing scenery is not resolved by this tooling change.",
+  "historical_ledger": "../TRIALS.jsonl"
+}

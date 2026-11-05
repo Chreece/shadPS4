@@ -1,0 +1,26 @@
+{
+  "schema_version": 2,
+  "scope": "UNIVERSAL_SHADPS4",
+  "recorded_at": "2026-10-29",
+  "experiment": "C925 GPU image resize preservation, checkpoint-stage failure",
+  "evidence_archive": "got-c925-gpu-image-resize-20261029T181616279139Z.tar.gz",
+  "source": "attached uploaded archive trial.json, failure.txt and four source diffs",
+  "status": "FAILED_CHECKPOINT_PREBUILD",
+  "error": "CHECKPOINT_MISMATCH:runtime_cpp",
+  "root_cause": "The reversible runner used identical `runtime_cpp` and `texture_cpp` keys for both source and object entries. Object digests overwrote source digests before snapshot verification.",
+  "build": "NOT_STARTED",
+  "game": "NOT_STARTED",
+  "gpu_test": "NOT_STARTED",
+  "visual_change": "NOT_TESTED",
+  "safety": "No modified emulator source, compiled object or ELF; all source and ELF states reported restored true; no GPU/Ollama changes.",
+  "rejected_inference": "Not an external concurrency issue. No source divergence or image resizing failure established.",
+  "fix": {
+    "pin": "046300beb36147ee81e3be763c61aed61a5efb70",
+    "source_path": "tools/development/c925_gpu_image_resize/run.py",
+    "git_blob": "158ccf1ae7396689dda93f452e115d0c72275a22",
+    "description": "Separate runtime_cpp_obj and texture_cpp_obj keys, add unique name assertion, fix object path lookups"
+  },
+  "local_regression_tests": "Seven checkpoint names distinct; byte-for-byte snapshot and restore pass in isolated mock.",
+  "disposition": "NO_GRAPHICS_FIX_VALIDATED; RESUME SAME PR5303 CANDIDATE ONLY AFTER CORRECTED CHECKPOINT",
+  "proven_baseline_preserved": true
+}
