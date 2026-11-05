@@ -23,6 +23,7 @@
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_indirect_read_sync.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -262,15 +263,17 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
 
+    const u64 preparation_tick = scheduler.CurrentTick();
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
     const auto state = BeginRendering(pipeline);
 
-    BindVertexBuffers(pipeline);
+    const auto vertex_buffers = PrepareVertexBuffers(pipeline);
+    std::optional<IndexBufferBinding> index_buffer;
     if (is_indexed) {
-        BindIndexBuffer(index_offset);
+        index_buffer = PrepareIndexBuffer(index_offset);
     }
 
     if (needs_barrier) {
@@ -288,6 +291,18 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto [vertex_offset, instance_offset] = GetDrawOffsets(regs, vs_info, fetch_shader);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    BindVertexBuffers(cmdbuf, vertex_buffers);
+    if (index_buffer) {
+        BindIndexBuffer(cmdbuf, *index_buffer);
+    }
+    if (scheduler.CurrentTick() != preparation_tick) {
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::DrawPreparationFlush,
+            "begin-tick=%llu draw-tick=%llu indexed=%u",
+            static_cast<unsigned long long>(preparation_tick),
+            static_cast<unsigned long long>(scheduler.CurrentTick()),
+            static_cast<unsigned>(is_indexed));
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
     if (occlusion) {
         occlusion->BeginDraw(cmdbuf, query);
@@ -330,15 +345,17 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
         return;
     }
 
+    const u64 preparation_tick = scheduler.CurrentTick();
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
         return;
     }
     const auto state = BeginRendering(pipeline);
 
-    BindVertexBuffers(pipeline);
+    const auto vertex_buffers = PrepareVertexBuffers(pipeline);
+    std::optional<IndexBufferBinding> index_buffer;
     if (is_indexed) {
-        BindIndexBuffer(0, true);
+        index_buffer = PrepareIndexBuffer(0, true);
     }
 
     const auto size = stride * max_count;
@@ -366,6 +383,18 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     scheduler.BeginRendering(state);
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    BindVertexBuffers(cmdbuf, vertex_buffers);
+    if (index_buffer) {
+        BindIndexBuffer(cmdbuf, *index_buffer);
+    }
+    if (scheduler.CurrentTick() != preparation_tick) {
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::DrawPreparationFlush,
+            "begin-tick=%llu draw-tick=%llu indexed=%u",
+            static_cast<unsigned long long>(preparation_tick),
+            static_cast<unsigned long long>(scheduler.CurrentTick()),
+            static_cast<unsigned>(is_indexed));
+    }
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
     if (occlusion) {
         occlusion->BeginDraw(cmdbuf, query);
@@ -1174,24 +1203,17 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
     return true;
 }
 
-void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
+Rasterizer::VertexBufferBindings Rasterizer::PrepareVertexBuffers(
+    const GraphicsPipeline* pipeline) {
     const auto& regs = liverpool->regs;
-    VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
-    VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;
+    VertexBufferBindings state;
     VertexInputs<vk::VertexInputBindingDivisorDescriptionEXT> divisors;
     VertexInputs<AmdGpu::Buffer> guest_buffers;
-    pipeline->GetVertexInputs(attributes, bindings, divisors, guest_buffers,
+    pipeline->GetVertexInputs(state.attributes, state.bindings, divisors, guest_buffers,
                               regs.vgt_instance_step_rate_0, regs.vgt_instance_step_rate_1);
 
-    if (instance.IsVertexInputDynamicState()) {
-        // Update current vertex inputs.
-        const auto cmdbuf = scheduler.CommandBuffer();
-        cmdbuf.setVertexInputEXT(bindings, attributes);
-    }
-
-    if (bindings.empty()) {
-        // If there are no bindings, there is nothing further to do.
-        return;
+    if (state.bindings.empty()) {
+        return state;
     }
 
     struct BufferRange {
@@ -1239,11 +1261,6 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
                                    vk::AccessFlagBits2::eVertexAttributeRead);
     }
 
-    // Bind vertex buffers
-    VertexInputs<vk::Buffer> host_buffers;
-    VertexInputs<vk::DeviceSize> host_offsets;
-    VertexInputs<vk::DeviceSize> host_sizes;
-    VertexInputs<vk::DeviceSize> host_strides;
     for (const auto& buffer : guest_buffers) {
         if (buffer.base_address != 0 && buffer.GetSize() > 0) {
             const auto host_buffer_info =
@@ -1252,28 +1269,38 @@ void Rasterizer::BindVertexBuffers(const GraphicsPipeline* pipeline) {
                            buffer.base_address < range.end_address;
                 });
             ASSERT(host_buffer_info != ranges_merged.cend());
-            host_buffers.emplace_back(host_buffer_info->buffer->Handle());
-            host_offsets.push_back(host_buffer_info->offset + buffer.base_address -
-                                   host_buffer_info->base_address);
+            state.buffers.emplace_back(host_buffer_info->buffer->Handle());
+            state.offsets.push_back(host_buffer_info->offset + buffer.base_address -
+                                    host_buffer_info->base_address);
         } else {
-            host_buffers.emplace_back(VK_NULL_HANDLE);
-            host_offsets.push_back(0);
+            state.buffers.emplace_back(VK_NULL_HANDLE);
+            state.offsets.push_back(0);
         }
-        host_sizes.push_back(buffer.GetSize());
-        host_strides.push_back(buffer.GetStride());
+        state.sizes.push_back(buffer.GetSize());
+        state.strides.push_back(buffer.GetStride());
     }
 
-    const auto cmdbuf = scheduler.CommandBuffer();
-    const auto num_buffers = guest_buffers.size();
+    return state;
+}
+
+void Rasterizer::BindVertexBuffers(vk::CommandBuffer cmdbuf,
+                                   const VertexBufferBindings& state) const {
     if (instance.IsVertexInputDynamicState()) {
-        cmdbuf.bindVertexBuffers(0, num_buffers, host_buffers.data(), host_offsets.data());
+        cmdbuf.setVertexInputEXT(state.bindings, state.attributes);
+    }
+    if (state.buffers.empty()) {
+        return;
+    }
+    const auto num_buffers = state.buffers.size();
+    if (instance.IsVertexInputDynamicState()) {
+        cmdbuf.bindVertexBuffers(0, num_buffers, state.buffers.data(), state.offsets.data());
     } else {
-        cmdbuf.bindVertexBuffers2(0, num_buffers, host_buffers.data(), host_offsets.data(),
-                                  host_sizes.data(), host_strides.data());
+        cmdbuf.bindVertexBuffers2(0, num_buffers, state.buffers.data(), state.offsets.data(),
+                                  state.sizes.data(), state.strides.data());
     }
 }
 
-void Rasterizer::BindIndexBuffer(u32 index_offset, bool is_indirect) {
+Rasterizer::IndexBufferBinding Rasterizer::PrepareIndexBuffer(u32 index_offset, bool is_indirect) {
     const auto& regs = liverpool->regs;
 
     // Figure out index type and size.
@@ -1308,11 +1335,14 @@ void Rasterizer::BindIndexBuffer(u32 index_offset, bool is_indirect) {
         index_buffer = null_buffer->Handle();
     }
 
-    const auto cmdbuf = scheduler.CommandBuffer();
+    return {index_buffer, buffer_offset, index_buffer_size, index_type};
+}
+
+void Rasterizer::BindIndexBuffer(vk::CommandBuffer cmdbuf, const IndexBufferBinding& state) const {
     if (instance.IsMaintenance5Supported()) {
-        cmdbuf.bindIndexBuffer2KHR(index_buffer, buffer_offset, index_buffer_size, index_type);
+        cmdbuf.bindIndexBuffer2KHR(state.buffer, state.offset, state.size, state.type);
     } else {
-        cmdbuf.bindIndexBuffer(index_buffer, buffer_offset, index_type);
+        cmdbuf.bindIndexBuffer(state.buffer, state.offset, state.type);
     }
 }
 
