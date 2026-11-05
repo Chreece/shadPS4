@@ -1237,9 +1237,6 @@ void Translator::LogMissingOpcode(const GcnInst& inst) {
 
 void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
                            std::span<const GcnInst> inst_list) {
-    if (inst_list.empty()) {
-        return;
-    }
     ir = IR::IREmitter{*block, block->begin()};
     pc = start_pc;
     bool full_wave_select = false;
@@ -1247,6 +1244,9 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
     const GcnInst* previous_inst{};
     for (const auto& inst : inst_list) {
         pc += inst.length;
+        const bool mask_outputs = info.uses_ordered_gds && inst.WritesScalarMask();
+        const IR::U1 active = mask_outputs ? ir.GetExec() : IR::U1{};
+        const auto previous = block->empty() ? block->end() : std::prev(block->end());
 
         // Special case for emitting fetch shader.
         if (inst.opcode == Opcode::S_SWAPPC_B64) {
@@ -1264,6 +1264,19 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
             V_CNDMASK_B32(inst, true);
         } else {
             TranslateInstruction(inst);
+        }
+        if (mask_outputs) {
+            auto first = previous == block->end() ? block->begin() : std::next(previous);
+            for (auto it = first; it != block->end(); ++it) {
+                IR::IREmitter masked_ir{*block, it};
+                if (it->GetOpcode() == IR::Opcode::SetVectorRegister) {
+                    const auto reg = it->Arg(0).VectorReg();
+                    const auto old = masked_ir.GetVectorReg<IR::U32>(reg);
+                    it->SetArg(1, masked_ir.Select(active, it->Arg(1), old));
+                } else if (it->GetOpcode() == IR::Opcode::Ballot) {
+                    it->SetArg(0, masked_ir.LogicalAnd(active, IR::U1{it->Arg(0)}));
+                }
+            }
         }
         if (inst.opcode != Opcode::S_WAITCNT && inst.opcode != Opcode::S_NOP) {
             full_wave_select = inst.opcode == Opcode::S_ORN2_SAVEEXEC_B64 &&
