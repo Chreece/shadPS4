@@ -727,3 +727,12 @@ The complete recovered archive verifies 678 file hashes. Four resource/buffer fi
 The candidate on upstream `2183807e` restores generic GPU-indexed descriptors and scalar reads while preserving the DS capture, SRT, synchronization and upstream work. It removes silent texture-budget/capacity truncation and rejects unsupported numeric/dimension conversions. Native compilation, 31 CTest cases, existing CPU checks, 12 production discovery checks and five Vulkan 1.3 SPIR-V cases pass. Initial build and temporary-fixture failures are retained in the [review record](reviews/20261102-indexed-renderer-restoration.json).
 
 No game was launched here. The next evidence is the bounded, isolated native GoW capture and GoT visual run. No main promotion, final DS continuation, menu restoration, full-world rendering or cross-platform pass is claimed. The separate OpenOrbis scalar descriptor probe was assembled and syntax-checked; PS4 execution remains outstanding.
+
+
+### 2026-11-02 — native regression and generic contract recovery (PR121)
+
+The 17:32 native archive built source `96c5742b` successfully, but GoW aborted after 8.013 seconds at our new indexed Color1D guard, before DS ordered capture. GoT ran for the bounded 120 seconds without a GPU reset: the 25-second image is black, and the 110-second image still shows the Sony opening screen, not the historical menu. This is not a graphics pass.
+
+PR121 adds typed 1D sampling, empty-to-populated texture-table revalidation and independent scalar-range/material-record strides. It also restores missing SRT dependency scheduling, uniform lane-pointer handling, whole-result SCC, 64-bit bit tests and portable 64-bit bit insertion. Previous production code fails four focused counterexamples; the corrected source builds and passes existing CPU/startup checks plus 203 SRT, 9600 scalar and 28 table checks and six SPIR-V validations. See [the full review](reviews/20261102-generic-contract-recovery.json) for exact source/binary/evidence identities, fixture corrections and hardware-probe status.
+
+The complete GoT native regression cause is not proven. No new game result is claimed, no historical binary is replaced, no DS seed is guessed, and main remains unchanged pending bounded native verification.
