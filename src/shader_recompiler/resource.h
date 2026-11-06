@@ -108,6 +108,7 @@ struct BufferResource {
     SharpFetchPostOp post_op{};
     u32 post_op_dw1_mask{};
     u32 post_op_dw2_shift{};
+    u64 accessed_size = ~u64{0};
 
     bool IsSpecial() const noexcept {
         return buffer_type != BufferType::Guest;
