@@ -1,0 +1,2162 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+  "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "source_tree": "b6e28190a280f55206f4dac73a159a3f55d69a8e",
+  "native": {
+    "archive": "universal-two-games-20261106T075007Z-376975.tar.gz",
+    "archive_sha256": "253338321c1011d064ac56adfc094ddbae44a9554718aa61aed8239b81dd9f34",
+    "library_file_id": "libfile_fba54232957c8191a671f4c1c1035c2e",
+    "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+    "binary_sha256": "cbf39db826cd784adaefec2f36db235a0f36bf19896a5d5c5e5b879e1f3d1e2e",
+    "runner_commit": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+    "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+    "batch_exit_code": 1,
+    "game": "CUSA34384",
+    "native_exit_code": 0,
+    "native_elapsed_seconds": 118.564,
+    "exit_reason": "TEST_118S_DURATION_LIMIT",
+    "gpu_failure": null,
+    "native_fault": {
+      "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+    },
+    "validation_layer_active": false,
+    "performance_bytes": 116059,
+    "performance_truncated": false,
+    "completed_ds_dispatches": 1956,
+    "completed_phases": [
+      2
+    ],
+    "maximum_waves": 3011,
+    "wrapped_dispatches": 343,
+    "regions": [
+      {
+        "name": "draw",
+        "calls": 1541349,
+        "inclusive_ns": 34008284575,
+        "self_ns": 10215891466,
+        "max_ns": 353677611,
+        "bytes": 0,
+        "last_ns": 117992445127
+      },
+      {
+        "name": "dispatch",
+        "calls": 429382,
+        "inclusive_ns": 42376056805,
+        "self_ns": 9318673980,
+        "max_ns": 2816334716,
+        "bytes": 0,
+        "last_ns": 117956228055
+      },
+      {
+        "name": "ordered-ds",
+        "calls": 1956,
+        "inclusive_ns": 15233140697,
+        "self_ns": 5268969638,
+        "max_ns": 41152407,
+        "bytes": 0,
+        "last_ns": 117951735766
+      },
+      {
+        "name": "bind-buffers",
+        "calls": 3331157,
+        "inclusive_ns": 16009146606,
+        "self_ns": 7572925245,
+        "max_ns": 403520848,
+        "bytes": 0,
+        "last_ns": 117992441180
+      },
+      {
+        "name": "bind-textures",
+        "calls": 3331157,
+        "inclusive_ns": 3954990052,
+        "self_ns": 3879756291,
+        "max_ns": 87612138,
+        "bytes": 0,
+        "last_ns": 117992441438
+      },
+      {
+        "name": "shader-compile",
+        "calls": 1563,
+        "inclusive_ns": 4935770807,
+        "self_ns": 4935350029,
+        "max_ns": 2798674042,
+        "bytes": 0,
+        "last_ns": 117993268757
+      },
+      {
+        "name": "pipeline-lookup",
+        "calls": 1970397,
+        "inclusive_ns": 20336843215,
+        "self_ns": 11172214232,
+        "max_ns": 2802541810,
+        "bytes": 0,
+        "last_ns": 117992433010
+      },
+      {
+        "name": "image-readback",
+        "calls": 24626487,
+        "inclusive_ns": 8122119359,
+        "self_ns": 2796606831,
+        "max_ns": 11002713,
+        "bytes": 91982135543568,
+        "last_ns": 117992445361
+      },
+      {
+        "name": "buffer-readback",
+        "calls": 16110,
+        "inclusive_ns": 9767377431,
+        "self_ns": 284003756,
+        "max_ns": 57901757,
+        "bytes": 3875220288,
+        "last_ns": 117969891109
+      },
+      {
+        "name": "page-protect",
+        "calls": 8311904,
+        "inclusive_ns": 21272497349,
+        "self_ns": 21272497349,
+        "max_ns": 5529789,
+        "bytes": 709537067008,
+        "last_ns": 117992448885
+      },
+      {
+        "name": "submit",
+        "calls": 35570,
+        "inclusive_ns": 239000065,
+        "self_ns": 239000065,
+        "max_ns": 1661079,
+        "bytes": 0,
+        "last_ns": 117988241493
+      },
+      {
+        "name": "gpu-wait",
+        "calls": 30584,
+        "inclusive_ns": 23891415175,
+        "self_ns": 23695003837,
+        "max_ns": 57860753,
+        "bytes": 0,
+        "last_ns": 117990265595
+      },
+      {
+        "name": "buffer-clamp",
+        "calls": 97705,
+        "inclusive_ns": 2442464,
+        "self_ns": 2442464,
+        "max_ns": 8486,
+        "bytes": 0,
+        "last_ns": 117988192460
+      }
+    ],
+    "threads": {
+      "025": [
+        {
+          "tid": 490890,
+          "name": "GpuCullMonitor",
+          "user_ticks": 306,
+          "system_ticks": 1418,
+          "runtime_ns": 17246263483,
+          "runqueue_wait_ns": 1297757494,
+          "timeslices": 593574
+        },
+        {
+          "tid": 490404,
+          "name": "shadPS4:GpuComm",
+          "user_ticks": 1073,
+          "system_ticks": 466,
+          "runtime_ns": 15399554214,
+          "runqueue_wait_ns": 80674877,
+          "timeslices": 76370
+        },
+        {
+          "tid": 490868,
+          "name": "Game:Main",
+          "user_ticks": 991,
+          "system_ticks": 138,
+          "runtime_ns": 11300290089,
+          "runqueue_wait_ns": 141732336,
+          "timeslices": 303289
+        },
+        {
+          "tid": 490889,
+          "name": "Wad Loading Thr",
+          "user_ticks": 149,
+          "system_ticks": 400,
+          "runtime_ns": 5499898048,
+          "runqueue_wait_ns": 291652955,
+          "timeslices": 153010
+        },
+        {
+          "tid": 490870,
+          "name": "TaskManager00",
+          "user_ticks": 97,
+          "system_ticks": 359,
+          "runtime_ns": 4567065461,
+          "runqueue_wait_ns": 863788696,
+          "timeslices": 280956
+        },
+        {
+          "tid": 490873,
+          "name": "TaskManager03",
+          "user_ticks": 65,
+          "system_ticks": 164,
+          "runtime_ns": 2295319724,
+          "runqueue_wait_ns": 853009528,
+          "timeslices": 276871
+        },
+        {
+          "tid": 490874,
+          "name": "TaskManager04",
+          "user_ticks": 65,
+          "system_ticks": 141,
+          "runtime_ns": 2064655731,
+          "runqueue_wait_ns": 607754707,
+          "timeslices": 252564
+        },
+        {
+          "tid": 490872,
+          "name": "TaskManager02",
+          "user_ticks": 60,
+          "system_ticks": 132,
+          "runtime_ns": 1930225806,
+          "runqueue_wait_ns": 607226686,
+          "timeslices": 248373
+        },
+        {
+          "tid": 490871,
+          "name": "TaskManager01",
+          "user_ticks": 45,
+          "system_ticks": 92,
+          "runtime_ns": 1378529198,
+          "runqueue_wait_ns": 657546032,
+          "timeslices": 213057
+        },
+        {
+          "tid": 490875,
+          "name": "Async FileIO Wo",
+          "user_ticks": 19,
+          "system_ticks": 76,
+          "runtime_ns": 960491104,
+          "runqueue_wait_ns": 45270693,
+          "timeslices": 75445
+        }
+      ],
+      "080": [
+        {
+          "tid": 490890,
+          "name": "GpuCullMonitor",
+          "user_ticks": 1191,
+          "system_ticks": 5378,
+          "runtime_ns": 65697243805,
+          "runqueue_wait_ns": 6704146636,
+          "timeslices": 2998301
+        },
+        {
+          "tid": 490404,
+          "name": "shadPS4:GpuComm",
+          "user_ticks": 3775,
+          "system_ticks": 2012,
+          "runtime_ns": 57881798145,
+          "runqueue_wait_ns": 366936013,
+          "timeslices": 180373
+        },
+        {
+          "tid": 490868,
+          "name": "Game:Main",
+          "user_ticks": 2983,
+          "system_ticks": 482,
+          "runtime_ns": 34651072269,
+          "runqueue_wait_ns": 598034415,
+          "timeslices": 1182494
+        },
+        {
+          "tid": 490870,
+          "name": "TaskManager00",
+          "user_ticks": 368,
+          "system_ticks": 850,
+          "runtime_ns": 12184140877,
+          "runqueue_wait_ns": 2874546563,
+          "timeslices": 1185939
+        },
+        {
+          "tid": 490874,
+          "name": "TaskManager04",
+          "user_ticks": 329,
+          "system_ticks": 634,
+          "runtime_ns": 9642736314,
+          "runqueue_wait_ns": 2921845362,
+          "timeslices": 1205613
+        },
+        {
+          "tid": 490871,
+          "name": "TaskManager01",
+          "user_ticks": 303,
+          "system_ticks": 602,
+          "runtime_ns": 9063246597,
+          "runqueue_wait_ns": 3409574741,
+          "timeslices": 1240123
+        },
+        {
+          "tid": 490873,
+          "name": "TaskManager03",
+          "user_ticks": 324,
+          "system_ticks": 574,
+          "runtime_ns": 8984373187,
+          "runqueue_wait_ns": 3637209683,
+          "timeslices": 1387969
+        },
+        {
+          "tid": 490872,
+          "name": "TaskManager02",
+          "user_ticks": 303,
+          "system_ticks": 551,
+          "runtime_ns": 8549438642,
+          "runqueue_wait_ns": 2831837891,
+          "timeslices": 1210227
+        },
+        {
+          "tid": 490889,
+          "name": "Wad Loading Thr",
+          "user_ticks": 249,
+          "system_ticks": 573,
+          "runtime_ns": 8233166816,
+          "runqueue_wait_ns": 493155518,
+          "timeslices": 279561
+        },
+        {
+          "tid": 490875,
+          "name": "Async FileIO Wo",
+          "user_ticks": 53,
+          "system_ticks": 195,
+          "runtime_ns": 2494808270,
+          "runqueue_wait_ns": 129601823,
+          "timeslices": 180313
+        }
+      ],
+      "110": [
+        {
+          "tid": 490890,
+          "name": "GpuCullMonitor",
+          "user_ticks": 1660,
+          "system_ticks": 7578,
+          "runtime_ns": 92386869751,
+          "runqueue_wait_ns": 9902578566,
+          "timeslices": 4372044
+        },
+        {
+          "tid": 490404,
+          "name": "shadPS4:GpuComm",
+          "user_ticks": 5353,
+          "system_ticks": 2722,
+          "runtime_ns": 80759132493,
+          "runqueue_wait_ns": 497188368,
+          "timeslices": 200647
+        },
+        {
+          "tid": 490868,
+          "name": "Game:Main",
+          "user_ticks": 4136,
+          "system_ticks": 599,
+          "runtime_ns": 47359495877,
+          "runqueue_wait_ns": 821423042,
+          "timeslices": 1514000
+        },
+        {
+          "tid": 490870,
+          "name": "TaskManager00",
+          "user_ticks": 548,
+          "system_ticks": 1132,
+          "runtime_ns": 16809103993,
+          "runqueue_wait_ns": 4116693825,
+          "timeslices": 1717247
+        },
+        {
+          "tid": 490874,
+          "name": "TaskManager04",
+          "user_ticks": 496,
+          "system_ticks": 960,
+          "runtime_ns": 14569402637,
+          "runqueue_wait_ns": 4063185763,
+          "timeslices": 1677919
+        },
+        {
+          "tid": 490872,
+          "name": "TaskManager02",
+          "user_ticks": 483,
+          "system_ticks": 921,
+          "runtime_ns": 14045317342,
+          "runqueue_wait_ns": 4659481886,
+          "timeslices": 1868156
+        },
+        {
+          "tid": 490873,
+          "name": "TaskManager03",
+          "user_ticks": 491,
+          "system_ticks": 878,
+          "runtime_ns": 13701579339,
+          "runqueue_wait_ns": 4852193683,
+          "timeslices": 1866406
+        },
+        {
+          "tid": 490871,
+          "name": "TaskManager01",
+          "user_ticks": 465,
+          "system_ticks": 904,
+          "runtime_ns": 13700766023,
+          "runqueue_wait_ns": 4784415288,
+          "timeslices": 1736196
+        },
+        {
+          "tid": 490889,
+          "name": "Wad Loading Thr",
+          "user_ticks": 249,
+          "system_ticks": 573,
+          "runtime_ns": 8233166816,
+          "runqueue_wait_ns": 493155518,
+          "timeslices": 279561
+        },
+        {
+          "tid": 490875,
+          "name": "Async FileIO Wo",
+          "user_ticks": 63,
+          "system_ticks": 227,
+          "runtime_ns": 2909804647,
+          "runqueue_wait_ns": 146655799,
+          "timeslices": 218059
+        }
+      ]
+    },
+    "gpu_utilization": [
+      {
+        "start_s": 5,
+        "end_s": 60,
+        "median_busy_percent": 33,
+        "min_busy_percent": 0,
+        "max_busy_percent": 37
+      },
+      {
+        "start_s": 60,
+        "end_s": 90,
+        "median_busy_percent": 27.0,
+        "min_busy_percent": 7,
+        "max_busy_percent": 94
+      },
+      {
+        "start_s": 90,
+        "end_s": 118,
+        "median_busy_percent": 32.5,
+        "min_busy_percent": 23,
+        "max_busy_percent": 40
+      }
+    ],
+    "first_vram_over_10_gib": {
+      "elapsed_seconds": 66.461,
+      "gpus": [
+        {
+          "card": "card0",
+          "gpu_busy_percent": 46,
+          "mem_busy_percent": 2,
+          "mem_info_vram_used": 21072904192
+        }
+      ]
+    },
+    "final_vram_usage": [
+      {
+        "card": "card0",
+        "gpu_busy_percent": 26,
+        "mem_busy_percent": 1,
+        "mem_info_vram_used": 25341362176
+      }
+    ],
+    "ollama_restore_leases": [
+      {
+        "endpoint": "http://172.23.0.2:11434",
+        "model": "qwen3.8-greek:latest",
+        "context_length": 16384,
+        "expires_at": "2319-02-16T07:02:58.010449+00:00",
+        "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+        "size_vram": 17361985862,
+        "status": "RESTORE_FAILED",
+        "error": "MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN"
+      }
+    ],
+    "got_launched": false,
+    "got_reason": "Batch stopped after GoW because MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN set stop_remaining_tests. No GoT run is present.",
+    "user_report": "GoW looks good except low in-game FPS; GoT did not launch.",
+    "screenshot_review": "80s and 110s images are identical loading-tips screens with 9 FPS/113.3 ms. User-reported gameplay is not visible in those captures.",
+    "screenshots": {
+      "frame-080s.png": "422d6931480c028e8be8edc4fd04fc95a94289280080a58446353f2a23a3cd92",
+      "frame-008s.png": "c261e9b0c21101a104bb0285fdc4b181d1b52bca29c347e524013c4fa9fe460d",
+      "frame-110s.png": "422d6931480c028e8be8edc4fd04fc95a94289280080a58446353f2a23a3cd92",
+      "frame-025s.png": "654ff02bf0851d43207cf18a192c9f45b166e49879e82a5931c8920a8150f6ee"
+    },
+    "cpu_sampling": "16680 attempted, 2476 unique, 256 reported; no capacity overflow. Statistical locations, not exact thread CPU percentages.",
+    "timing_limits": "Region totals are inclusive/self wall time and may overlap or run concurrently. No native FPS gain is established for the new change."
+  },
+  "validation": {
+    "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+    "source_tree": "b6e28190a280f55206f4dac73a159a3f55d69a8e",
+    "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+    "build": "PASS",
+    "cpu_suite": "PASS",
+    "cli_cases": 3,
+    "event_checks": 20,
+    "baseline_event_failures": 6,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "leak_detection": "DISABLED_HOST_TRACING_ENVIRONMENT",
+    "new_runner_checks": 38,
+    "inherited_runner_checks": 40,
+    "handoff_cases": 3,
+    "homebrew_host_syntax": "PASS",
+    "homebrew_sdk_link": "NOT_RUN",
+    "homebrew_hardware": "NOT_RUN",
+    "binary_bytes": 95804584,
+    "binary_sha256": "4495f39ce00d08021ce15380af8a74950c9443dfd688bb8ae76a996cc394a5c1",
+    "embedded_source_verified": true,
+    "runner_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+    "wrapper_sha256": "7b938ffc328a72bffc9b1cc71b470bb6767b11fe43d5667114cba53075dce733",
+    "native_new_candidate": "NOT_RUN",
+    "main_changed": false,
+    "game_specific_options": false,
+    "guest_clock_or_shader_changes": false,
+    "benchmark": [
+      {
+        "us": 100,
+        "baseline_cpu_ms": 58.330601,
+        "fixed_cpu_ms": 10.577871,
+        "cpu_reduction_percent": 81.86565744453756,
+        "baseline_median_late_us": 0.293,
+        "fixed_median_late_us": 14.305,
+        "fixed_p99_late_us": 730.277
+      },
+      {
+        "us": 500,
+        "baseline_cpu_ms": 277.625619,
+        "fixed_cpu_ms": 10.993636,
+        "cpu_reduction_percent": 96.04012193125448,
+        "baseline_median_late_us": 0.649,
+        "fixed_median_late_us": 30.426,
+        "fixed_p99_late_us": 613.563
+      },
+      {
+        "us": 1000,
+        "baseline_cpu_ms": 523.772053,
+        "fixed_cpu_ms": 12.085332,
+        "cpu_reduction_percent": 97.69263519678474,
+        "baseline_median_late_us": 0.799,
+        "fixed_median_late_us": 32.495,
+        "fixed_p99_late_us": 432.519
+      }
+    ]
+  },
+  "benchmark": {
+    "raw": {
+      "baseline": [
+        {
+          "us": 100,
+          "calls": 500,
+          "cpu_ns": 58330601,
+          "elapsed_ns": 58454176,
+          "median_late_ns": 293,
+          "p99_late_ns": 283794,
+          "max_late_ns": 489236
+        },
+        {
+          "us": 500,
+          "calls": 500,
+          "cpu_ns": 277625619,
+          "elapsed_ns": 294928300,
+          "median_late_ns": 649,
+          "p99_late_ns": 1864014,
+          "max_late_ns": 3736202
+        },
+        {
+          "us": 1000,
+          "calls": 500,
+          "cpu_ns": 523772053,
+          "elapsed_ns": 523792615,
+          "median_late_ns": 799,
+          "p99_late_ns": 671870,
+          "max_late_ns": 1377941
+        }
+      ],
+      "fixed": [
+        {
+          "us": 100,
+          "calls": 500,
+          "cpu_ns": 10577871,
+          "elapsed_ns": 80498363,
+          "median_late_ns": 14305,
+          "p99_late_ns": 730277,
+          "max_late_ns": 3173641
+        },
+        {
+          "us": 500,
+          "calls": 500,
+          "cpu_ns": 10993636,
+          "elapsed_ns": 283769612,
+          "median_late_ns": 30426,
+          "p99_late_ns": 613563,
+          "max_late_ns": 1358625
+        },
+        {
+          "us": 1000,
+          "calls": 500,
+          "cpu_ns": 12085332,
+          "elapsed_ns": 528470511,
+          "median_late_ns": 32495,
+          "p99_late_ns": 432519,
+          "max_late_ns": 731811
+        }
+      ]
+    },
+    "comparison": [
+      {
+        "us": 100,
+        "baseline_cpu_ms": 58.330601,
+        "fixed_cpu_ms": 10.577871,
+        "cpu_reduction_percent": 81.86565744453756,
+        "baseline_median_late_us": 0.293,
+        "fixed_median_late_us": 14.305,
+        "fixed_p99_late_us": 730.277
+      },
+      {
+        "us": 500,
+        "baseline_cpu_ms": 277.625619,
+        "fixed_cpu_ms": 10.993636,
+        "cpu_reduction_percent": 96.04012193125448,
+        "baseline_median_late_us": 0.649,
+        "fixed_median_late_us": 30.426,
+        "fixed_p99_late_us": 613.563
+      },
+      {
+        "us": 1000,
+        "baseline_cpu_ms": 523.772053,
+        "fixed_cpu_ms": 12.085332,
+        "cpu_reduction_percent": 97.69263519678474,
+        "baseline_median_late_us": 0.799,
+        "fixed_median_late_us": 32.495,
+        "fixed_p99_late_us": 432.519
+      }
+    ],
+    "interpretation": "Production event-wait methods in an external fixture; native game FPS and hardware timer timing are not measured. Wake-up latency is still host-scheduler dependent."
+  },
+  "evidence": {
+    "path": "/workspace/scratch/e77588f59ff3/equeue-deadline-evidence-20261106.zip",
+    "filename": "equeue-deadline-evidence-20261106.zip",
+    "files": 104,
+    "bytes": 141826,
+    "sha256": "0df2c290c56832e0e79d48fb25f090564bf5905f1fa365941f7575a47d6e772d",
+    "library_file_id": "libfile_2d48388302f48191a5d3e745fae30da8",
+    "url": "https://chatgpt.com/library?file_id=libfile_2d48388302f48191a5d3e745fae30da8&account_id=personal"
+  },
+  "journal": {
+    "previous_rows": 737,
+    "rows": 747,
+    "previous_sha256": "8590fc687b1f47d70c5f58f1dacbd14de6891f9fc69ed39ec05c123e904e1aa2",
+    "sha256": "dfdf4cc8d59326cd3d8c9066c1d354380b52e835d581a33013e5411c65c7fbfc",
+    "prefix_unchanged": true
+  },
+  "records": [
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-native-build",
+      "record_id": "equeue-deadline-20261106-native-build",
+      "result": "PASS_ALL_43_NATIVE_BUILD_LOGS_REVIEWED",
+      "details": {
+        "result": {
+          "schema_version": 2,
+          "record_id": "universal-upstream-20261106T075008Z-376989",
+          "timestamp_utc": "2026-11-06T08:04:09.564027+00:00",
+          "scope": "UNIVERSAL_SHADPS4",
+          "stage": "COMPLETE_BUILD_ONLY",
+          "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+          "exit_code": 0,
+          "requested_commit": "7b61290376949a403402822297baa0300d8120c5",
+          "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+          "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+          "game_launched": false,
+          "graphics_verified": false,
+          "installed_binary_changed": false,
+          "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261106T075008Z-376989.tar.gz",
+          "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+          "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-7b6129037694/build/shadps4",
+          "binary_sha256": "cbf39db826cd784adaefec2f36db235a0f36bf19896a5d5c5e5b879e1f3d1e2e"
+        },
+        "logs": [
+          {
+            "name": "build.log",
+            "bytes": 363746,
+            "sha256": "41d2b837b8c0f607dcd180312c9ba8cc914c06d027bfd6cce901f63156b72619",
+            "errors": []
+          },
+          {
+            "name": "checkout.log",
+            "bytes": 91,
+            "sha256": "765e3f6ed095f25a1f5c16154f71e7f564e6f90006d5c9713d6787c6c0ea8e73",
+            "errors": []
+          },
+          {
+            "name": "clone.log",
+            "bytes": 92,
+            "sha256": "f04ef4c0cbcf9cd3f36e93bfc0473796fd84cdf548b170ccf04bc78ecf591c56",
+            "errors": []
+          },
+          {
+            "name": "compiler-check.log",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "errors": []
+          },
+          {
+            "name": "configure.log",
+            "bytes": 47048,
+            "sha256": "674be4cfd4b2e16688f2aaeed4414af05abba38cd43ba025bfe06938d3e2767b",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/contiguous-vma.log",
+            "bytes": 32,
+            "sha256": "80b2b3e0105854386cf168a8df15e199464ce267987c57eecd142693c7f1e6b6",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/descriptor-heap.log",
+            "bytes": 229,
+            "sha256": "a0bd47f629e30cdc285869b8ef9b8934a8c0647af15ee9bfec1c9ba4cba80a19",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/graphics_diagnostics-build.log",
+            "bytes": 154,
+            "sha256": "300a87f284cce14e24e7fb79170c4b0aaadb6f137206513abed372d2d199d11e",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/graphics_diagnostics-configure.log",
+            "bytes": 452,
+            "sha256": "ad7a5be4019a2a1460c9d0a2304c91dd642f87253837928696cfe3633600bed3",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/graphics_diagnostics-test.log",
+            "bytes": 545,
+            "sha256": "02ea637fe2fe2b2cd34414cb3f03334bb475cb77d0c15d4aadaff8b00cb9d189",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/hle-abi.log",
+            "bytes": 30,
+            "sha256": "73f114c9dc2117e84da4a1408b9e20308344ccad57a7fab8b92f37d2953f7373",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/image_transfer-build.log",
+            "bytes": 269,
+            "sha256": "6f279355e569cdb34f857e10b68d0d366c35638b6bde3ac304075199b3ba58d7",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/image_transfer-configure.log",
+            "bytes": 446,
+            "sha256": "d70a045583aeff28f1d37f7f63acd09217acec590035db415a294d6ec085eab7",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/image_transfer-test.log",
+            "bytes": 772,
+            "sha256": "8361b0a0e3df486f2a01bb550ee43cf58ddaaf7d0a3efa8aee782f7ab8eb6f66",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_sanitizer-build.log",
+            "bytes": 347,
+            "sha256": "c8570a41c6df9f13271dc16286929721ac071828282dd6d4313462b128219891",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_sanitizer-configure.log",
+            "bytes": 448,
+            "sha256": "b9ac523f6d7e1062ee5132c3fbea382a9e2aac0c94f5b443439a27d1f0ce68ef",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_sanitizer-test.log",
+            "bytes": 438,
+            "sha256": "afc9eea250b4e4bca73aeb17253b6624d9e2e5e4a90048b583e8db7c54fd9182",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_thread_atexit-build.log",
+            "bytes": 516,
+            "sha256": "548c6bc900d1ac8fd0db0fd8e86ae961cd02d6605969e42006013a32ac3254b1",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_thread_atexit-configure.log",
+            "bytes": 571,
+            "sha256": "d331643c776202d8f60e98058fc3c752da57783f98254496c7bdb96ddad737e9",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/kernel_thread_atexit-test.log",
+            "bytes": 442,
+            "sha256": "620dd79047fdc448640aca92949613924d93df078f371982da62b3034fdb0a07",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/ngs2_hle-build.log",
+            "bytes": 4694,
+            "sha256": "43e6b16a736be77e90c1f966203de272e8af51eaad4098885517b88b4c3a85ca",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/ngs2_hle-configure.log",
+            "bytes": 805,
+            "sha256": "515329c559bffd1696879cac95bbb20b036dbeeb0c6a90a170bc23a6928f5a0c",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/ngs2_hle-test.log",
+            "bytes": 1582,
+            "sha256": "85a5a84eb6df71af2c93d78a2c13abbee772da964a9dec642a548faf854ced6c",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/occlusion_query-build.log",
+            "bytes": 290,
+            "sha256": "6d0667d020dd98df1239705add9c9e283e07f7f17cd67b6cbb38b72aa228e58f",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/occlusion_query-configure.log",
+            "bytes": 447,
+            "sha256": "84c6d601e36d9731f4dd7b6cc30ac8ce81d1fdf77af5af453c00554222004d71",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/occlusion_query-test.log",
+            "bytes": 539,
+            "sha256": "b2e98e70caee00610a57f8af44323cbb95ae8dadaa0786275d2d3499321fde0a",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/quit_dialog-build.log",
+            "bytes": 127,
+            "sha256": "505b7d21ea0d36d1c4ceaaf15ffee46c47d46cda37cfd9d064a1ec72bd9624b0",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/quit_dialog-configure.log",
+            "bytes": 443,
+            "sha256": "5590510a637afe1ee16321db70c1712422551c5ad9da90b159c40aaafb4eac46",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/quit_dialog-test.log",
+            "bytes": 960,
+            "sha256": "7cc2162f5a80e6fd0671a9e80386c2a8efff54e2ee359c1162b7a19e04b53022",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/renderer-contracts.log",
+            "bytes": 105,
+            "sha256": "670a39115e7523a8984e4842e16547cb2094b03fad392b037b4b9dc8b2656e62",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/sparse-production.log",
+            "bytes": 222,
+            "sha256": "9d59e3fd6ec4d3a8dc2e1f7363dca74a86a9258cd54e6e82d4d61e5125e774c5",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/srt-production.log",
+            "bytes": 37,
+            "sha256": "791c797bf025b9ff0d616966c683ec891186f714078779f6dc5d2092472bd0b4",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/startup_loading-build.log",
+            "bytes": 988,
+            "sha256": "48ccd1c0ce6692a27a358ca5607c425737bd62adedb0a782c79fbe2524f01473",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/startup_loading-configure.log",
+            "bytes": 566,
+            "sha256": "b70e4ec5c280d013436dd1b9158c1bb938a59aeca69cc755db6916ec9bc8b37d",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/startup_loading-test.log",
+            "bytes": 644,
+            "sha256": "4b85884ebbeba656b9dfbc07e9962c8f2f7083cb4cb86b9c1cbd774c2c932782",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/userservice-build.log",
+            "bytes": 347,
+            "sha256": "13d10ef8738d47e060e204990189d265613c4169a89c485cc35771fae188d6fb",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/userservice-configure.log",
+            "bytes": 443,
+            "sha256": "931ca0777775ceaea4707cee8ce68c6268791b64055dc25272a6e4227093c3cc",
+            "errors": []
+          },
+          {
+            "name": "cpu-suite-logs/userservice-test.log",
+            "bytes": 426,
+            "sha256": "8afa09bd330f79eadfd03bb525a349e5712c850d55673ebee7397dad3798c778",
+            "errors": []
+          },
+          {
+            "name": "cpu-tests.log",
+            "bytes": 7263,
+            "sha256": "3f023da9f314ae360216e6c5de38f3588d977057bc0c6eac8a9266dd431969b5",
+            "errors": []
+          },
+          {
+            "name": "fetch.log",
+            "bytes": 117,
+            "sha256": "ea91ecdcb54987deac223ce76aec70e9726f5f6368256a107add2a3405f22bbc",
+            "errors": []
+          },
+          {
+            "name": "native-startup.log",
+            "bytes": 57,
+            "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+            "errors": []
+          },
+          {
+            "name": "submodules.log",
+            "bytes": 21503,
+            "sha256": "c93e0577c4603ff38c44bc5611a9cd6e8eec68a27acf11353537c75ead83d673",
+            "errors": []
+          },
+          {
+            "name": "upstream-fetch.log",
+            "bytes": 142,
+            "sha256": "4350da73ac32af27e85b45e7717415216849ee4728c36266af43c440e89b7ef6",
+            "errors": []
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-native-gow",
+      "record_id": "equeue-deadline-20261106-native-gow",
+      "result": "PASS_NATIVE_DS_PROGRESS_LOW_FPS_REMAINS",
+      "details": {
+        "archive": "universal-two-games-20261106T075007Z-376975.tar.gz",
+        "archive_sha256": "253338321c1011d064ac56adfc094ddbae44a9554718aa61aed8239b81dd9f34",
+        "library_file_id": "libfile_fba54232957c8191a671f4c1c1035c2e",
+        "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+        "binary_sha256": "cbf39db826cd784adaefec2f36db235a0f36bf19896a5d5c5e5b879e1f3d1e2e",
+        "runner_commit": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+        "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+        "batch_exit_code": 1,
+        "game": "CUSA34384",
+        "native_exit_code": 0,
+        "native_elapsed_seconds": 118.564,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "gpu_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        },
+        "validation_layer_active": false,
+        "performance_bytes": 116059,
+        "performance_truncated": false,
+        "completed_ds_dispatches": 1956,
+        "completed_phases": [
+          2
+        ],
+        "maximum_waves": 3011,
+        "wrapped_dispatches": 343,
+        "regions": [
+          {
+            "name": "draw",
+            "calls": 1541349,
+            "inclusive_ns": 34008284575,
+            "self_ns": 10215891466,
+            "max_ns": 353677611,
+            "bytes": 0,
+            "last_ns": 117992445127
+          },
+          {
+            "name": "dispatch",
+            "calls": 429382,
+            "inclusive_ns": 42376056805,
+            "self_ns": 9318673980,
+            "max_ns": 2816334716,
+            "bytes": 0,
+            "last_ns": 117956228055
+          },
+          {
+            "name": "ordered-ds",
+            "calls": 1956,
+            "inclusive_ns": 15233140697,
+            "self_ns": 5268969638,
+            "max_ns": 41152407,
+            "bytes": 0,
+            "last_ns": 117951735766
+          },
+          {
+            "name": "bind-buffers",
+            "calls": 3331157,
+            "inclusive_ns": 16009146606,
+            "self_ns": 7572925245,
+            "max_ns": 403520848,
+            "bytes": 0,
+            "last_ns": 117992441180
+          },
+          {
+            "name": "bind-textures",
+            "calls": 3331157,
+            "inclusive_ns": 3954990052,
+            "self_ns": 3879756291,
+            "max_ns": 87612138,
+            "bytes": 0,
+            "last_ns": 117992441438
+          },
+          {
+            "name": "shader-compile",
+            "calls": 1563,
+            "inclusive_ns": 4935770807,
+            "self_ns": 4935350029,
+            "max_ns": 2798674042,
+            "bytes": 0,
+            "last_ns": 117993268757
+          },
+          {
+            "name": "pipeline-lookup",
+            "calls": 1970397,
+            "inclusive_ns": 20336843215,
+            "self_ns": 11172214232,
+            "max_ns": 2802541810,
+            "bytes": 0,
+            "last_ns": 117992433010
+          },
+          {
+            "name": "image-readback",
+            "calls": 24626487,
+            "inclusive_ns": 8122119359,
+            "self_ns": 2796606831,
+            "max_ns": 11002713,
+            "bytes": 91982135543568,
+            "last_ns": 117992445361
+          },
+          {
+            "name": "buffer-readback",
+            "calls": 16110,
+            "inclusive_ns": 9767377431,
+            "self_ns": 284003756,
+            "max_ns": 57901757,
+            "bytes": 3875220288,
+            "last_ns": 117969891109
+          },
+          {
+            "name": "page-protect",
+            "calls": 8311904,
+            "inclusive_ns": 21272497349,
+            "self_ns": 21272497349,
+            "max_ns": 5529789,
+            "bytes": 709537067008,
+            "last_ns": 117992448885
+          },
+          {
+            "name": "submit",
+            "calls": 35570,
+            "inclusive_ns": 239000065,
+            "self_ns": 239000065,
+            "max_ns": 1661079,
+            "bytes": 0,
+            "last_ns": 117988241493
+          },
+          {
+            "name": "gpu-wait",
+            "calls": 30584,
+            "inclusive_ns": 23891415175,
+            "self_ns": 23695003837,
+            "max_ns": 57860753,
+            "bytes": 0,
+            "last_ns": 117990265595
+          },
+          {
+            "name": "buffer-clamp",
+            "calls": 97705,
+            "inclusive_ns": 2442464,
+            "self_ns": 2442464,
+            "max_ns": 8486,
+            "bytes": 0,
+            "last_ns": 117988192460
+          }
+        ],
+        "threads": {
+          "025": [
+            {
+              "tid": 490890,
+              "name": "GpuCullMonitor",
+              "user_ticks": 306,
+              "system_ticks": 1418,
+              "runtime_ns": 17246263483,
+              "runqueue_wait_ns": 1297757494,
+              "timeslices": 593574
+            },
+            {
+              "tid": 490404,
+              "name": "shadPS4:GpuComm",
+              "user_ticks": 1073,
+              "system_ticks": 466,
+              "runtime_ns": 15399554214,
+              "runqueue_wait_ns": 80674877,
+              "timeslices": 76370
+            },
+            {
+              "tid": 490868,
+              "name": "Game:Main",
+              "user_ticks": 991,
+              "system_ticks": 138,
+              "runtime_ns": 11300290089,
+              "runqueue_wait_ns": 141732336,
+              "timeslices": 303289
+            },
+            {
+              "tid": 490889,
+              "name": "Wad Loading Thr",
+              "user_ticks": 149,
+              "system_ticks": 400,
+              "runtime_ns": 5499898048,
+              "runqueue_wait_ns": 291652955,
+              "timeslices": 153010
+            },
+            {
+              "tid": 490870,
+              "name": "TaskManager00",
+              "user_ticks": 97,
+              "system_ticks": 359,
+              "runtime_ns": 4567065461,
+              "runqueue_wait_ns": 863788696,
+              "timeslices": 280956
+            },
+            {
+              "tid": 490873,
+              "name": "TaskManager03",
+              "user_ticks": 65,
+              "system_ticks": 164,
+              "runtime_ns": 2295319724,
+              "runqueue_wait_ns": 853009528,
+              "timeslices": 276871
+            },
+            {
+              "tid": 490874,
+              "name": "TaskManager04",
+              "user_ticks": 65,
+              "system_ticks": 141,
+              "runtime_ns": 2064655731,
+              "runqueue_wait_ns": 607754707,
+              "timeslices": 252564
+            },
+            {
+              "tid": 490872,
+              "name": "TaskManager02",
+              "user_ticks": 60,
+              "system_ticks": 132,
+              "runtime_ns": 1930225806,
+              "runqueue_wait_ns": 607226686,
+              "timeslices": 248373
+            },
+            {
+              "tid": 490871,
+              "name": "TaskManager01",
+              "user_ticks": 45,
+              "system_ticks": 92,
+              "runtime_ns": 1378529198,
+              "runqueue_wait_ns": 657546032,
+              "timeslices": 213057
+            },
+            {
+              "tid": 490875,
+              "name": "Async FileIO Wo",
+              "user_ticks": 19,
+              "system_ticks": 76,
+              "runtime_ns": 960491104,
+              "runqueue_wait_ns": 45270693,
+              "timeslices": 75445
+            }
+          ],
+          "080": [
+            {
+              "tid": 490890,
+              "name": "GpuCullMonitor",
+              "user_ticks": 1191,
+              "system_ticks": 5378,
+              "runtime_ns": 65697243805,
+              "runqueue_wait_ns": 6704146636,
+              "timeslices": 2998301
+            },
+            {
+              "tid": 490404,
+              "name": "shadPS4:GpuComm",
+              "user_ticks": 3775,
+              "system_ticks": 2012,
+              "runtime_ns": 57881798145,
+              "runqueue_wait_ns": 366936013,
+              "timeslices": 180373
+            },
+            {
+              "tid": 490868,
+              "name": "Game:Main",
+              "user_ticks": 2983,
+              "system_ticks": 482,
+              "runtime_ns": 34651072269,
+              "runqueue_wait_ns": 598034415,
+              "timeslices": 1182494
+            },
+            {
+              "tid": 490870,
+              "name": "TaskManager00",
+              "user_ticks": 368,
+              "system_ticks": 850,
+              "runtime_ns": 12184140877,
+              "runqueue_wait_ns": 2874546563,
+              "timeslices": 1185939
+            },
+            {
+              "tid": 490874,
+              "name": "TaskManager04",
+              "user_ticks": 329,
+              "system_ticks": 634,
+              "runtime_ns": 9642736314,
+              "runqueue_wait_ns": 2921845362,
+              "timeslices": 1205613
+            },
+            {
+              "tid": 490871,
+              "name": "TaskManager01",
+              "user_ticks": 303,
+              "system_ticks": 602,
+              "runtime_ns": 9063246597,
+              "runqueue_wait_ns": 3409574741,
+              "timeslices": 1240123
+            },
+            {
+              "tid": 490873,
+              "name": "TaskManager03",
+              "user_ticks": 324,
+              "system_ticks": 574,
+              "runtime_ns": 8984373187,
+              "runqueue_wait_ns": 3637209683,
+              "timeslices": 1387969
+            },
+            {
+              "tid": 490872,
+              "name": "TaskManager02",
+              "user_ticks": 303,
+              "system_ticks": 551,
+              "runtime_ns": 8549438642,
+              "runqueue_wait_ns": 2831837891,
+              "timeslices": 1210227
+            },
+            {
+              "tid": 490889,
+              "name": "Wad Loading Thr",
+              "user_ticks": 249,
+              "system_ticks": 573,
+              "runtime_ns": 8233166816,
+              "runqueue_wait_ns": 493155518,
+              "timeslices": 279561
+            },
+            {
+              "tid": 490875,
+              "name": "Async FileIO Wo",
+              "user_ticks": 53,
+              "system_ticks": 195,
+              "runtime_ns": 2494808270,
+              "runqueue_wait_ns": 129601823,
+              "timeslices": 180313
+            }
+          ],
+          "110": [
+            {
+              "tid": 490890,
+              "name": "GpuCullMonitor",
+              "user_ticks": 1660,
+              "system_ticks": 7578,
+              "runtime_ns": 92386869751,
+              "runqueue_wait_ns": 9902578566,
+              "timeslices": 4372044
+            },
+            {
+              "tid": 490404,
+              "name": "shadPS4:GpuComm",
+              "user_ticks": 5353,
+              "system_ticks": 2722,
+              "runtime_ns": 80759132493,
+              "runqueue_wait_ns": 497188368,
+              "timeslices": 200647
+            },
+            {
+              "tid": 490868,
+              "name": "Game:Main",
+              "user_ticks": 4136,
+              "system_ticks": 599,
+              "runtime_ns": 47359495877,
+              "runqueue_wait_ns": 821423042,
+              "timeslices": 1514000
+            },
+            {
+              "tid": 490870,
+              "name": "TaskManager00",
+              "user_ticks": 548,
+              "system_ticks": 1132,
+              "runtime_ns": 16809103993,
+              "runqueue_wait_ns": 4116693825,
+              "timeslices": 1717247
+            },
+            {
+              "tid": 490874,
+              "name": "TaskManager04",
+              "user_ticks": 496,
+              "system_ticks": 960,
+              "runtime_ns": 14569402637,
+              "runqueue_wait_ns": 4063185763,
+              "timeslices": 1677919
+            },
+            {
+              "tid": 490872,
+              "name": "TaskManager02",
+              "user_ticks": 483,
+              "system_ticks": 921,
+              "runtime_ns": 14045317342,
+              "runqueue_wait_ns": 4659481886,
+              "timeslices": 1868156
+            },
+            {
+              "tid": 490873,
+              "name": "TaskManager03",
+              "user_ticks": 491,
+              "system_ticks": 878,
+              "runtime_ns": 13701579339,
+              "runqueue_wait_ns": 4852193683,
+              "timeslices": 1866406
+            },
+            {
+              "tid": 490871,
+              "name": "TaskManager01",
+              "user_ticks": 465,
+              "system_ticks": 904,
+              "runtime_ns": 13700766023,
+              "runqueue_wait_ns": 4784415288,
+              "timeslices": 1736196
+            },
+            {
+              "tid": 490889,
+              "name": "Wad Loading Thr",
+              "user_ticks": 249,
+              "system_ticks": 573,
+              "runtime_ns": 8233166816,
+              "runqueue_wait_ns": 493155518,
+              "timeslices": 279561
+            },
+            {
+              "tid": 490875,
+              "name": "Async FileIO Wo",
+              "user_ticks": 63,
+              "system_ticks": 227,
+              "runtime_ns": 2909804647,
+              "runqueue_wait_ns": 146655799,
+              "timeslices": 218059
+            }
+          ]
+        },
+        "gpu_utilization": [
+          {
+            "start_s": 5,
+            "end_s": 60,
+            "median_busy_percent": 33,
+            "min_busy_percent": 0,
+            "max_busy_percent": 37
+          },
+          {
+            "start_s": 60,
+            "end_s": 90,
+            "median_busy_percent": 27.0,
+            "min_busy_percent": 7,
+            "max_busy_percent": 94
+          },
+          {
+            "start_s": 90,
+            "end_s": 118,
+            "median_busy_percent": 32.5,
+            "min_busy_percent": 23,
+            "max_busy_percent": 40
+          }
+        ],
+        "first_vram_over_10_gib": {
+          "elapsed_seconds": 66.461,
+          "gpus": [
+            {
+              "card": "card0",
+              "gpu_busy_percent": 46,
+              "mem_busy_percent": 2,
+              "mem_info_vram_used": 21072904192
+            }
+          ]
+        },
+        "final_vram_usage": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 26,
+            "mem_busy_percent": 1,
+            "mem_info_vram_used": 25341362176
+          }
+        ],
+        "ollama_restore_leases": [
+          {
+            "endpoint": "http://172.23.0.2:11434",
+            "model": "qwen3.8-greek:latest",
+            "context_length": 16384,
+            "expires_at": "2319-02-16T07:02:58.010449+00:00",
+            "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+            "size_vram": 17361985862,
+            "status": "RESTORE_FAILED",
+            "error": "MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN"
+          }
+        ],
+        "got_launched": false,
+        "got_reason": "Batch stopped after GoW because MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN set stop_remaining_tests. No GoT run is present.",
+        "user_report": "GoW looks good except low in-game FPS; GoT did not launch.",
+        "screenshot_review": "80s and 110s images are identical loading-tips screens with 9 FPS/113.3 ms. User-reported gameplay is not visible in those captures.",
+        "screenshots": {
+          "frame-080s.png": "422d6931480c028e8be8edc4fd04fc95a94289280080a58446353f2a23a3cd92",
+          "frame-008s.png": "c261e9b0c21101a104bb0285fdc4b181d1b52bca29c347e524013c4fa9fe460d",
+          "frame-110s.png": "422d6931480c028e8be8edc4fd04fc95a94289280080a58446353f2a23a3cd92",
+          "frame-025s.png": "654ff02bf0851d43207cf18a192c9f45b166e49879e82a5931c8920a8150f6ee"
+        },
+        "cpu_sampling": "16680 attempted, 2476 unique, 256 reported; no capacity overflow. Statistical locations, not exact thread CPU percentages.",
+        "timing_limits": "Region totals are inclusive/self wall time and may overlap or run concurrently. No native FPS gain is established for the new change."
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-got-not-launched",
+      "record_id": "equeue-deadline-20261106-got-not-launched",
+      "result": "BLOCKED_RUNNER_EXTERNAL_MODEL_STATE_CHANGED",
+      "details": {
+        "launched": false,
+        "reason": "Batch stopped after GoW because MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN set stop_remaining_tests. No GoT run is present.",
+        "restoration": [
+          {
+            "endpoint": "http://172.23.0.2:11434",
+            "model": "qwen3.8-greek:latest",
+            "context_length": 16384,
+            "expires_at": "2319-02-16T07:02:58.010449+00:00",
+            "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+            "size_vram": 17361985862,
+            "status": "RESTORE_FAILED",
+            "error": "MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN"
+          }
+        ],
+        "not_a_new_got_stall_result": true,
+        "new_loaded_model_values": "NOT_CAPTURED_BY_OLD_RUNNER"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-hotspot",
+      "record_id": "equeue-deadline-20261106-hotspot",
+      "result": "SHORT_TIMER_POLLING_IDENTIFIED_NATIVE_FPS_CAUSAL_SHARE_UNMEASURED",
+      "details": {
+        "monitor_cpu_ns_at_110s": 92386869751,
+        "monitor_samples": {
+          "SignalHandler_entry": 3167,
+          "libc_sigprocmask": 2181,
+          "vdso_rdtscp": 1172,
+          "libc_sched_yield": 772
+        },
+        "symbols": [
+          {
+            "tid": 490874,
+            "count": 40,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490873,
+            "count": 37,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490868,
+            "count": 28,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490870,
+            "count": 22,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490871,
+            "count": 18,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 11,
+            "rip": "5634c7e28eb7",
+            "symbol": "Libraries::Kernel::EqueueInternal::WaitForSmallTimer(Libraries::Kernel::OrbisKernelEvent*, int, unsigned int)+0xb7",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490872,
+            "count": 10,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490874,
+            "count": 6,
+            "rip": "5634c7c94d35",
+            "symbol": "Common::NativeClock::GetUptime() const+0x5",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490404,
+            "count": 6,
+            "rip": "5634c845f3c0",
+            "symbol": "IntervalList<Interval>::Add(Interval)+0x1c0",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490884,
+            "count": 5,
+            "rip": "5634c7d985b8",
+            "symbol": "void std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()::{lambda()#1}>(int const*, std::__atomic_semaphore::_M_acquire()::{lambda()#1})+0x38",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 5,
+            "rip": "5634c82aa8dc",
+            "symbol": "Core::SignalHandler(int, siginfo_t*, void*)+0x1c",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490872,
+            "count": 5,
+            "rip": "5634c7c94d35",
+            "symbol": "Common::NativeClock::GetUptime() const+0x5",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490868,
+            "count": 5,
+            "rip": "5634c84f7828",
+            "symbol": "Vulkan::Rasterizer::IsMapped(unsigned long, unsigned long) [clone .part.0]+0x88",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 5,
+            "rip": "5634c7e28ebd",
+            "symbol": "Libraries::Kernel::EqueueInternal::WaitForSmallTimer(Libraries::Kernel::OrbisKernelEvent*, int, unsigned int)+0xbd",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 5,
+            "rip": "5634c834a46d",
+            "symbol": "Core::(anonymous namespace)::DecodeFunction(unsigned long, unsigned long, unsigned long, unsigned long)+0x6cd",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 5,
+            "rip": "5634c82aa8e2",
+            "symbol": "Core::SignalHandler(int, siginfo_t*, void*)+0x22",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490873,
+            "count": 5,
+            "rip": "5634c84f7824",
+            "symbol": "Vulkan::Rasterizer::IsMapped(unsigned long, unsigned long) [clone .part.0]+0x84",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 5,
+            "rip": "5634c836303e",
+            "symbol": "Core::HandleCpuIdFault(void*, void*)+0x4ae",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490874,
+            "count": 4,
+            "rip": "5634c84f23d7",
+            "symbol": "Vulkan::Rasterizer::GetGpuCommandProcessorThread()+0x7",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 4,
+            "rip": "5634c8348a85",
+            "symbol": "Core::TryPatch(unsigned char*, Core::PatchModule*, bool)+0xc5",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 4,
+            "rip": "5634c82aaa00",
+            "symbol": "Core::SignalHandler(int, siginfo_t*, void*)+0x140",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490890,
+            "count": 4,
+            "rip": "5634c8362be3",
+            "symbol": "Core::HandleCpuIdFault(void*, void*)+0x53",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490871,
+            "count": 4,
+            "rip": "5634c7c94d35",
+            "symbol": "Common::NativeClock::GetUptime() const+0x5",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 4,
+            "rip": "5634c87daa64",
+            "symbol": "ZydisDecoderDecodeOperands+0x2c4",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 3,
+            "rip": "5634c8345306",
+            "symbol": "Core::FilterTcbAccess(ZydisDecodedOperand_ const*)+0x6",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490874,
+            "count": 3,
+            "rip": "5634c84f7824",
+            "symbol": "Vulkan::Rasterizer::IsMapped(unsigned long, unsigned long) [clone .part.0]+0x84",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 3,
+            "rip": "5634c87d65aa",
+            "symbol": "ZydisDecoderDecodeInstruction+0xca",
+            "exact_bytes": 16
+          },
+          {
+            "tid": 490415,
+            "count": 3,
+            "rip": "5634c87da889",
+            "symbol": "ZydisDecoderDecodeOperands+0xe9",
+            "exact_bytes": 16
+          }
+        ],
+        "method": "Unique exact 16-byte instruction matches to local same-source build; native ELF not present and layouts differ.",
+        "inference": "Clock/yield polling repeatedly enters existing time-read fault emulation. Reducing polling should remove avoidable host work; game FPS effect remains unmeasured.",
+        "other_costs_wall_ns": {
+          "page-protect": 21272497349,
+          "gpu-wait": 23891415175,
+          "pipeline-lookup": 20336843215,
+          "ordered-ds": 15233140697
+        },
+        "limits": "Counters overlap and may run concurrently. Samples are locations, not exact CPU percentages. External model reload and VRAM pressure confound the native run."
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-implementation",
+      "record_id": "equeue-deadline-20261106-implementation",
+      "result": "IMPLEMENTED_COMMON_EVENT_DEADLINE_WAITS_AND_BATCH_HANDOFF",
+      "details": {
+        "changes": [
+          "Remove short-timer clock/yield busy loop; wait on earliest timer/caller deadline",
+          "Deliver ordinary events and expired timers together within output capacity",
+          "Include expired short timers in zero-time polling",
+          "Notify waiting threads on small-timer add/replacement/removal",
+          "Delete requested long HR timer when unrelated small timers exist",
+          "Use Linux thread-local minimum timer coalescing with once-only unsupported warning",
+          "Preserve externally changed live Ollama state and continue to next-game preflight",
+          "Report shader dump setting from actual isolated profile"
+        ],
+        "selectors": "No title, shader hash, vendor or per-game options",
+        "unchanged": "Existing CPU-ID/TSC emulation, shader compiler, DS ordering, rendering and memory coherence",
+        "source_tree": "b6e28190a280f55206f4dac73a159a3f55d69a8e"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-host-validation",
+      "record_id": "equeue-deadline-20261106-host-validation",
+      "result": "PASS_RELEASE_CPU_CLI_EVENT_FIXTURE_SANITIZERS",
+      "details": {
+        "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+        "source_tree": "b6e28190a280f55206f4dac73a159a3f55d69a8e",
+        "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+        "build": "PASS",
+        "cpu_suite": "PASS",
+        "cli_cases": 3,
+        "event_checks": 20,
+        "baseline_event_failures": 6,
+        "sanitizers": [
+          "ASan",
+          "UBSan"
+        ],
+        "leak_detection": "DISABLED_HOST_TRACING_ENVIRONMENT",
+        "new_runner_checks": 38,
+        "inherited_runner_checks": 40,
+        "handoff_cases": 3,
+        "homebrew_host_syntax": "PASS",
+        "homebrew_sdk_link": "NOT_RUN",
+        "homebrew_hardware": "NOT_RUN",
+        "binary_bytes": 95804584,
+        "binary_sha256": "4495f39ce00d08021ce15380af8a74950c9443dfd688bb8ae76a996cc394a5c1",
+        "embedded_source_verified": true,
+        "runner_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+        "wrapper_sha256": "7b938ffc328a72bffc9b1cc71b470bb6767b11fe43d5667114cba53075dce733",
+        "native_new_candidate": "NOT_RUN",
+        "main_changed": false,
+        "game_specific_options": false,
+        "guest_clock_or_shader_changes": false,
+        "benchmark": [
+          {
+            "us": 100,
+            "baseline_cpu_ms": 58.330601,
+            "fixed_cpu_ms": 10.577871,
+            "cpu_reduction_percent": 81.86565744453756,
+            "baseline_median_late_us": 0.293,
+            "fixed_median_late_us": 14.305,
+            "fixed_p99_late_us": 730.277
+          },
+          {
+            "us": 500,
+            "baseline_cpu_ms": 277.625619,
+            "fixed_cpu_ms": 10.993636,
+            "cpu_reduction_percent": 96.04012193125448,
+            "baseline_median_late_us": 0.649,
+            "fixed_median_late_us": 30.426,
+            "fixed_p99_late_us": 613.563
+          },
+          {
+            "us": 1000,
+            "baseline_cpu_ms": 523.772053,
+            "fixed_cpu_ms": 12.085332,
+            "cpu_reduction_percent": 97.69263519678474,
+            "baseline_median_late_us": 0.799,
+            "fixed_median_late_us": 32.495,
+            "fixed_p99_late_us": 432.519
+          }
+        ]
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-benchmark",
+      "record_id": "equeue-deadline-20261106-benchmark",
+      "result": "PASS_HOST_TIMER_CPU_REDUCTION_NATIVE_FPS_UNMEASURED",
+      "details": {
+        "raw": {
+          "baseline": [
+            {
+              "us": 100,
+              "calls": 500,
+              "cpu_ns": 58330601,
+              "elapsed_ns": 58454176,
+              "median_late_ns": 293,
+              "p99_late_ns": 283794,
+              "max_late_ns": 489236
+            },
+            {
+              "us": 500,
+              "calls": 500,
+              "cpu_ns": 277625619,
+              "elapsed_ns": 294928300,
+              "median_late_ns": 649,
+              "p99_late_ns": 1864014,
+              "max_late_ns": 3736202
+            },
+            {
+              "us": 1000,
+              "calls": 500,
+              "cpu_ns": 523772053,
+              "elapsed_ns": 523792615,
+              "median_late_ns": 799,
+              "p99_late_ns": 671870,
+              "max_late_ns": 1377941
+            }
+          ],
+          "fixed": [
+            {
+              "us": 100,
+              "calls": 500,
+              "cpu_ns": 10577871,
+              "elapsed_ns": 80498363,
+              "median_late_ns": 14305,
+              "p99_late_ns": 730277,
+              "max_late_ns": 3173641
+            },
+            {
+              "us": 500,
+              "calls": 500,
+              "cpu_ns": 10993636,
+              "elapsed_ns": 283769612,
+              "median_late_ns": 30426,
+              "p99_late_ns": 613563,
+              "max_late_ns": 1358625
+            },
+            {
+              "us": 1000,
+              "calls": 500,
+              "cpu_ns": 12085332,
+              "elapsed_ns": 528470511,
+              "median_late_ns": 32495,
+              "p99_late_ns": 432519,
+              "max_late_ns": 731811
+            }
+          ]
+        },
+        "comparison": [
+          {
+            "us": 100,
+            "baseline_cpu_ms": 58.330601,
+            "fixed_cpu_ms": 10.577871,
+            "cpu_reduction_percent": 81.86565744453756,
+            "baseline_median_late_us": 0.293,
+            "fixed_median_late_us": 14.305,
+            "fixed_p99_late_us": 730.277
+          },
+          {
+            "us": 500,
+            "baseline_cpu_ms": 277.625619,
+            "fixed_cpu_ms": 10.993636,
+            "cpu_reduction_percent": 96.04012193125448,
+            "baseline_median_late_us": 0.649,
+            "fixed_median_late_us": 30.426,
+            "fixed_p99_late_us": 613.563
+          },
+          {
+            "us": 1000,
+            "baseline_cpu_ms": 523.772053,
+            "fixed_cpu_ms": 12.085332,
+            "cpu_reduction_percent": 97.69263519678474,
+            "baseline_median_late_us": 0.799,
+            "fixed_median_late_us": 32.495,
+            "fixed_p99_late_us": 432.519
+          }
+        ],
+        "interpretation": "Production event-wait methods in an external fixture; native game FPS and hardware timer timing are not measured. Wake-up latency is still host-scheduler dependent."
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-runner-handoff",
+      "record_id": "equeue-deadline-20261106-runner-handoff",
+      "result": "PASS_38_NEW_40_INHERITED_RUNNER_CHECKS_THREE_HANDOFF_PATHS",
+      "details": {
+        "runner": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+        "wrapper_sha256": "7b938ffc328a72bffc9b1cc71b470bb6767b11fe43d5667114cba53075dce733",
+        "checks": {
+          "checks": 38,
+          "result": "PASS",
+          "external_model_state_preserved": true,
+          "genuine_restore_failures_still_stop": true,
+          "subsequent_game_preflight_retained": true,
+          "dump_setting_reported_from_profile": true
+        },
+        "inherited_checks": 40,
+        "handoff_paths": [
+          "success",
+          "checksum-mismatch",
+          "download-failure"
+        ],
+        "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=c7365c9fbb7ff8bb004229b71f948619a864c4bd\nRUNNER=c7365c9fbb7ff8bb004229b71f948619a864c4bd\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-timer.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  7b938ffc328a72bffc9b1cc71b470bb6767b11fe43d5667114cba53075dce733 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 SHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+        "protections": "118s TERM +2s KILL, >=8GiB VRAM, genuine restoration failure blocks, exact conditional model restoration, installed binary/config/saves preserved, no automatic input, upstream ancestry gate",
+        "native_new_candidate": "NOT_RUN"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-limits-attempts",
+      "record_id": "equeue-deadline-20261106-limits-attempts",
+      "result": "HARDWARE_AND_NATIVE_FPS_PENDING_CORRECTED_ATTEMPTS_RETAINED",
+      "details": {
+        "homebrew": "Original OpenOrbis event probe shared in evidence; strict host C syntax PASS, SDK linking and PS4 hardware NOT_RUN",
+        "fixture_stubs": "Unchanged file/socket readiness and asynchronous long-timer scheduling are stubbed",
+        "initial_fixture_compile": "Failed due to missing unchanged timer callback declarations in stubs; fixed, log retained",
+        "timer_coalescing": "Initial default-coalescing fixture showed greater median delay; final guest-thread policy uses 1ns Linux slack. Blocking still has host scheduling lateness; raw distributions retained.",
+        "sanitizers": "ASan/UBSan PASS; LeakSanitizer disabled under host tracing; sanitizer timing is not a performance benchmark",
+        "platforms": "Common event logic built on Linux; other native platforms untested",
+        "preexisting_fields": "Small-timer event flags/data kept unchanged; hardware field comparison pending",
+        "upstream_verification": "No upstream remote alias in checkout; direct official repository ls-remote confirms 0d5f2739. Canonical tracking ref was stale; fetched explicit remote head before comparing journal/diaries."
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T08:40:48.169647+00:00",
+      "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172,
+        173
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-equeue-deadline-waits.json",
+      "id": "equeue-deadline-20261106-decision",
+      "record_id": "equeue-deadline-20261106-decision",
+      "result": "PR172_READY_PR173_DRAFT_MAIN_HELD",
+      "details": {
+        "evidence": {
+          "path": "/workspace/scratch/e77588f59ff3/equeue-deadline-evidence-20261106.zip",
+          "filename": "equeue-deadline-evidence-20261106.zip",
+          "files": 104,
+          "bytes": 141826,
+          "sha256": "0df2c290c56832e0e79d48fb25f090564bf5905f1fa365941f7575a47d6e772d",
+          "library_file_id": "libfile_2d48388302f48191a5d3e745fae30da8",
+          "url": "https://chatgpt.com/library?file_id=libfile_2d48388302f48191a5d3e745fae30da8&account_id=personal"
+        },
+        "pr169": "READY_FOR_REVIEW",
+        "pr170": "DRAFT_GOT_UNRESOLVED",
+        "pr171": "READY_FOR_REVIEW",
+        "pr172": "READY_FOR_REVIEW_NATIVE_PROFILE_CONFIRMED",
+        "pr173": "DRAFT_NATIVE_TIMER_TIMING_FPS_AND_GOT_LAUNCH_PENDING",
+        "prior_prs_preserved": [
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172
+        ],
+        "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+        "main_reason": "Do not promote full experimental ancestry while GoT recovery is unresolved.",
+        "universal_completion": false,
+        "proven_native_fps_gain": false
+      }
+    }
+  ]
+}
