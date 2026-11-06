@@ -282,6 +282,13 @@ def collect_display_health(out, display, query_display=True):
     save(out / 'kernel-gpu-journal.json', diagnostic_command(
         ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic',
          '--grep', GPU_JOURNAL_PATTERN], 5))
+    if os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1':
+        save(out / 'kernel-journal-root.json', diagnostic_command(
+            ['sudo', '-n', 'journalctl', '-k', '-b', '--no-pager', '-n', '600',
+             '-o', 'short-monotonic'], 5))
+        save(out / 'kernel-gpu-journal-root.json', diagnostic_command(
+            ['sudo', '-n', 'journalctl', '-k', '-b', '--no-pager', '-n', '600',
+             '-o', 'short-monotonic', '--grep', GPU_JOURNAL_PATTERN], 5))
     match = re.fullmatch(r':(\d+)(?:\.\d+)?', display)
     if match:
         name = 'Xorg.' + match.group(1) + '.log'
@@ -601,7 +608,8 @@ def copy_profile(old, new, diagnostics=False):
         data.setdefault('GPU', {})['dump_shaders'] = True
     else:
         data = {'GPU': {'dump_shaders': True}}
-    if os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1':
+    if (os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1' or
+            os.environ.get('SHADPS4_TEST_GPU_TRACE') == '1'):
         data.setdefault('GPU', {})['dump_shaders'] = (
             os.environ.get('SHADPS4_CAPTURE_SHADER_DIAGNOSTICS') == '1')
         data.setdefault('Vulkan', {}).update(
@@ -706,6 +714,9 @@ def main():
     record['vulkan_diagnostics_requested'] = diagnostics
     record['performance_diagnostics_requested'] = (
         os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1')
+    record['gpu_command_trace_requested'] = os.environ.get('SHADPS4_TEST_GPU_TRACE') == '1'
+    record['privileged_kernel_journal_requested'] = (
+        os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1')
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
@@ -715,6 +726,9 @@ def main():
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if record['gpu_command_trace_requested'] and (
+                diagnostics or record['performance_diagnostics_requested']):
+            raise RuntimeError('GPU_TRACE_REQUIRES_VALIDATION_AND_PERFORMANCE_DIAGNOSTICS_OFF')
         if not all(re.fullmatch(r'[0-9a-f]{40}', value)
                    for value in (PIN, record['runner_commit'])):
             raise RuntimeError('INVALID_SOURCE_PIN')
