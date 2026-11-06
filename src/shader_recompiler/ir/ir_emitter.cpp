@@ -198,6 +198,14 @@ U1 IREmitter::Condition(IR::Condition cond) {
         return LogicalNot(GetExec());
     case IR::Condition::Execnz:
         return GetExec();
+    case IR::Condition::WaveVccz:
+        return IEqual(BitwiseOr(GetVccLo(), GetVccHi()), Imm32(0));
+    case IR::Condition::WaveVccnz:
+        return INotEqual(BitwiseOr(GetVccLo(), GetVccHi()), Imm32(0));
+    case IR::Condition::WaveExecz:
+        return IEqual(Ballot(GetExec()), Imm64(u64{0}));
+    case IR::Condition::WaveExecnz:
+        return INotEqual(Ballot(GetExec()), Imm64(u64{0}));
     default:
         UNREACHABLE_MSG("");
     }
