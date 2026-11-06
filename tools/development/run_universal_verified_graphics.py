@@ -111,6 +111,12 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                     if (shader_hash not in validation_compilation_hashes and
                             len(validation_compilation_hashes) < 16):
                         validation_compilation_hashes.append(shader_hash)
+                if ('UnresolvedShaderPhiDescriptor:' in line and thread and
+                        thread.group(1) in compilation_by_thread):
+                    shader_hash = compilation_by_thread[thread.group(1)]
+                    if shader_hash in blocked:
+                        blocked.remove(shader_hash)
+                    blocked.append(shader_hash)
                 if current_hash and ('Unexpected instruction for offset computation' in line or
                                      'Ordered GDS preflight:' in line):
                     if current_hash in blocked:
@@ -557,7 +563,8 @@ def copy_profile(old, new, diagnostics=False):
     else:
         data = {'GPU': {'dump_shaders': True}}
     if os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1':
-        data.setdefault('GPU', {})['dump_shaders'] = False
+        data.setdefault('GPU', {})['dump_shaders'] = (
+            os.environ.get('SHADPS4_CAPTURE_SHADER_DIAGNOSTICS') == '1')
         data.setdefault('Vulkan', {}).update(
             vkvalidation_enabled=False, vkvalidation_core_enabled=False,
             vkvalidation_sync_enabled=False, vkvalidation_gpu_enabled=False,
