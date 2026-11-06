@@ -19,6 +19,8 @@
 // ordered GDS executor must obtain real guest ordering separately.
 namespace Shader::Gcn::OrderedGds {
 
+inline constexpr std::uint32_t CikComputeOrderedWaveIdMask = 0x7ffu;
+
 struct DispatchExtent {
     std::uint32_t x{};
     std::uint32_t y{};
