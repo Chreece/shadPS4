@@ -93,7 +93,7 @@ if [[ "$MODE" == build ]]; then
         "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-upstream-build.sh" \
         -o "$OUT/build.sh"
     printf '%s  %s\n' 6f827be5ef09ff9e296a970c7c02d3ebda7b4c05d5d4a1dd79189716968e6416 "$OUT/build.sh" | sha256sum --check -
-    bash "$OUT/build.sh" "$PIN" 2>&1 | tee "$OUT/build-runner.log"
+    SHADPS4_PERFORMANCE_DIAGNOSTICS=0 bash "$OUT/build.sh" "$PIN" 2>&1 | tee "$OUT/build-runner.log"
 else
     printf 'REUSING_VERIFIED_NATIVE_BUILD=%s\n' "$PIN"
 fi
