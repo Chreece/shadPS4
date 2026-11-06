@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-indexed-table-revalidation-pr96-local-20261028",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "prior_native_review": "20261028T112756671630889Z-pr95-native.json",
+  "pr": 96,
+  "pr_state": "DRAFT_UNMERGED",
+  "adapter_commit": "bd1a926dc78b7c169183a2fdcfae1fb2e4e84cdd",
+  "upstream_main_checked": "45837a89a617ac394c1844ec95a28471fb79ec08",
+  "source_base": "c925523b49ef39434024b16b2b014d120471ee1a",
+  "rebased_to_upstream": false,
+  "actual_source_defect": "Indexed-table source metadata was retained only after nonzero acceptance. Indexed images use a null representative, and the normal specialization bitset can skip their capacity dependency. A cached null or fixed-size shader therefore has no explicit key for the real changing bounded table capacity.",
+  "actual_change": [
+    "Preserve indexed source, record layout and real host limit even when the current header is empty or rejected.",
+    "Snapshot complete bounded capacity and compare it independently of the ordinary image binding bit.",
+    "Serialize the capacity state and advance shader metadata/binary versions together.",
+    "Keep C925 per-permutation Info ownership and all typed 2D/3D/Cube routing; bounded logs record mismatched capacities.",
+    "Do not invent record counts, expand buffers, bypass zero bounds, add title/hash exceptions, change GPU settings or inject input."
+  ],
+  "causal_limits": "The seven sampled zero-record GoT headers may be legitimately empty. No evidence yet proves they later become nonzero. Other buffer-key changes may incidentally cause recompilation. This source correctness defect is not proof of the cause of all missing scenery.",
+  "implementation_form": "Exact C925 six-file source adapter, not replacement files copied onto main. The captured local renderer differs from fork main. Production common-main forward-port is still pending.",
+  "local_tests": {
+    "gcc_cpp20_werror": "PASS 91560 runtime checks plus static assertions",
+    "clang_cpp20_werror": "PASS 91560 runtime checks plus static assertions",
+    "clang_asan_ubsan": "PASS same focused helper/state fixture",
+    "source_transform": "PASS five exact captured C925 files including PR95 helper; serializer tested only on reviewed-anchor fixture, not complete host serializer",
+    "missing_context_and_repeat": "PASS fail closed without source writes",
+    "source_restore_fixture": "PASS original six file bytes restored",
+    "runner_subprocess_progress": "PASS success/failure reporting and real 16-second quiet command heartbeat at 15 seconds",
+    "private_profile_fixture": "PASS copied save mutation leaves original save unchanged; only internal filesystem paths relocated, GPU settings retained",
+    "initial_local_failure": "First test fixture used wrong directory root and failed with missing header before test execution. Corrected fixture path, reran PASS. Not an emulator build failure."
+  },
+  "native_compile_new_change": "NOT_RUN",
+  "gpu_runtime_new_change": "NOT_RUN",
+  "visual_recovery": "UNVERIFIED",
+  "runner": "tools/development/c925_indexed_revalidation/run_c925_indexed_revalidation.py",
+  "runner_sha256": "d99f8be88b6c13bca4bcbdb3e06df816f57813c3199abd095a38fbea9ebb4469",
+  "runner_scope": "Incremental reuse of verified PR95 candidate 75788b56..., checkpoint old candidate, visible stages and 15-second quiet subprocess heartbeat, complete Ninja failure log, no game after build failure, private saves/profile, 8GiB VRAM gate, conditional known-context Ollama unload/restore, absolute screenshot times and 118+2s own-process stop. Existing original C925/GoW binaries and launcher not rewritten.",
+  "decision": "KEEP_DRAFT_SOURCE_CORRECTION_AND_LOCAL_TESTS; NATIVE_AND_GRAPHICS_ACCEPTANCE_PENDING",
+  "next_falsifiable_test": "Compile exact patched isolated candidate; if build and safety gates pass, one changed-source menu-only run records real indexed-capacity changes and images. No repeated old Linear8 matcher, per-game readback toggle or unchanged A/B."
+}

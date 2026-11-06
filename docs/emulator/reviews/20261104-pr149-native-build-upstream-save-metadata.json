@@ -1,0 +1,515 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T17:52:51.206816+00:00",
+  "page_context": "e1b747bf-9115-4748-8486-c02518ea521a",
+  "source_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+  "upstream_commit": "0414fe17539aa0d77daa2030eed9178ad9903f52",
+  "pr": 150,
+  "archive": {
+    "filename": "universal-two-games-20261104T173130Z-1849599.tar.gz",
+    "library_file_id": "libfile_b5e327150dbc819181e36504f631835b",
+    "sha256": "cca57ac11966e8b3e5a63590f2771a3d7ec4bf76c33da743a1d2b93e8eef3fd1",
+    "size_bytes": 4542113
+  },
+  "batch_result": {
+    "exit_code": 1,
+    "runs": [
+      {
+        "schema_version": 2,
+        "record_id": "universal-upstream-20261104T173131Z-1849613",
+        "timestamp_utc": "2026-11-04T17:45:54.966343+00:00",
+        "scope": "UNIVERSAL_SHADPS4",
+        "stage": "COMPLETE_BUILD_ONLY",
+        "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+        "exit_code": 0,
+        "requested_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+        "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+        "upstream_commit": "b2ad718fd9f57e8855b137c761899620b8f0aeef",
+        "game_launched": false,
+        "graphics_verified": false,
+        "installed_binary_changed": false,
+        "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T173131Z-1849613.tar.gz",
+        "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+        "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-fc4cbfa9c764/build/shadps4",
+        "binary_sha256": "f797dc631f19cfa5ee1aea2ef2e11ac3679f0eaffa217985aaa88fea7ee14372"
+      },
+      {
+        "schema_version": 2,
+        "record_id": "universal-graphics-20261104T174555Z-1988567",
+        "scope": "UNIVERSAL_SHADPS4",
+        "timestamp_utc": "2026-11-04T17:45:55.175746+00:00",
+        "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+        "binary_sha256": "f797dc631f19cfa5ee1aea2ef2e11ac3679f0eaffa217985aaa88fea7ee14372",
+        "game_launched": false,
+        "graphics_verified": false,
+        "installed_binary_changed": false,
+        "evidence": "/home/chreece/projects/shadps4/logs/universal-graphics-20261104T174555Z-1988567.tar.gz",
+        "result": "PREFLIGHT_FAILED",
+        "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+        "runner_sha256": "3dc7b64a23c10a55ee4e6fb580e4a92e94ef53bded15db08dfb75247128dbfa0",
+        "vulkan_diagnostics_requested": true,
+        "context_games": [
+          "CUSA34384"
+        ],
+        "build_record": "/home/chreece/projects/shadps4/logs/universal-upstream-20261104T173131Z-1849613/result.json",
+        "upstream_main_checked": "0414fe17539aa0d77daa2030eed9178ad9903f52",
+        "stop_remaining_tests": true,
+        "error": "BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing",
+        "tested_games": [],
+        "ordered_gds_capture_requested": false,
+        "ordered_gds_evidence": [],
+        "shader_diagnostics": {
+          "dump_enabled": true,
+          "blocked_hashes": [],
+          "validation_named_hashes": [],
+          "validation_compilation_hashes": [],
+          "resource_warning_hashes": [],
+          "observed_readbacks_modes": [],
+          "automatic_coherence_enabled": false,
+          "recorded_gpu_work_hashes": [],
+          "waiting_gpu_work_hashes": [],
+          "first_wait_window": null,
+          "first_wait_work_hashes": [],
+          "first_wait_hashes_truncated": false,
+          "first_wait_missing_binary_hashes": [],
+          "recent_compiled_hashes": [],
+          "priority_hashes": [],
+          "saved_ir": [],
+          "saved_bytes": 0,
+          "limit_bytes": 20971520,
+          "limit_files": 48,
+          "saved_binary": [],
+          "saved_binary_bytes": 0,
+          "binary_unrepresented_hashes": [],
+          "binary_limit_bytes": 8388608,
+          "binary_limit_files": 128,
+          "capture_completed_marker": false,
+          "console_tail_complete": false
+        },
+        "exit_code": 1
+      }
+    ],
+    "graphics_verified": false,
+    "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+    "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "build_mode": "build",
+    "requested_game_order": [
+      "CUSA34384",
+      "CUSA11456"
+    ]
+  },
+  "native_build_review": {
+    "source_commit": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+    "upstream_at_build": "b2ad718fd9f57e8855b137c761899620b8f0aeef",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "binary_sha256": "f797dc631f19cfa5ee1aea2ef2e11ac3679f0eaffa217985aaa88fea7ee14372",
+    "complete_build_log_reviewed": true,
+    "build_log_lines": 3280,
+    "warnings": 115,
+    "errors": 0,
+    "build_log_sha256": "de25dff6fc5eb0ea0df0c88e8c497ee9d1305f3e75aaf3d22979268a484700ae",
+    "warning_multiset_matches_previous_native_build": true,
+    "compiler": "g++-14 Debian 14.2.0",
+    "cpu": {
+      "result": "PASS",
+      "ctests": 31,
+      "renderer_contracts": 7,
+      "production_srt_checks": 10418,
+      "sparse_ranges": 288,
+      "sparse_scenarios": 7,
+      "sparse_modes": [
+        "recorder",
+        "vulkan-headers"
+      ],
+      "descriptor_vma_abi": "PASS"
+    },
+    "startup_cases": 3,
+    "installed_binary_changed": false
+  },
+  "graphics_preflight_review": {
+    "result": "PREFLIGHT_FAILED",
+    "stage": "BEFORE_GAME_LAUNCH",
+    "reason": "BLOCKED_UPSTREAM_ADVANCED",
+    "upstream_at_graphics_preflight": "0414fe17539aa0d77daa2030eed9178ad9903f52",
+    "game_launched": false,
+    "stop_remaining_tests": true,
+    "tested_games": [],
+    "note": "No runtime shader mode was observed. automatic_coherence_enabled=false in the empty diagnostics record is a no-launch default, not evidence that automatic coherence was disabled."
+  },
+  "candidate_validation": {
+    "source_commit": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+    "source_tree": "18b8476cd1c9592ce4c7ba65fc7c4972347a0306",
+    "upstream_commit": "0414fe17539aa0d77daa2030eed9178ad9903f52",
+    "full_build": "PASS Clang 18 Release, save implementation and full executable link; final published-revision link also passes",
+    "binary_sha256": "103895ca9ebc48ee0c635f30604794640055db6a8a3afba9a7952afc6ff9be88",
+    "startup_cases": 3,
+    "startup_log": "NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN",
+    "rebase": {
+      "commits_preserved": 52,
+      "conflicts": 0,
+      "all_published_trees_match_local": true,
+      "only_emulator_delta": [
+        "src/core/libraries/save_data/save_instance.cpp"
+      ],
+      "mapping": [
+        {
+          "old": "ba919f3a5794109cc2daaf68d5a99ad68127e804",
+          "local": "0cf0681ee7982c70b067e494c73cbfc7a2685bb6",
+          "published": "a23d052de4c3307fec14803c7892aace8b870ca2",
+          "tree": "0dbcbc2e85e8467dd8ba9e72ebed9038117b2a46"
+        },
+        {
+          "old": "63a50a6e61bbadd6a13fa2592f479b16c164fc83",
+          "local": "abb1aa29a457da1b68fbf192e9f24bbfc8c4fd0d",
+          "published": "be31b91f4737bdd61885571462b9a12884b9fc89",
+          "tree": "4a91de752c8cbb7f3f8cb49ab68c72ff7e89e152"
+        },
+        {
+          "old": "ce907ad506aea610ba60eae6e71697661a453cd8",
+          "local": "512f96690e1d2265b7e320548596cf02f20799e3",
+          "published": "b786273954090acb77cf7bc7bed02f65c3c30116",
+          "tree": "187cce9060b980464857efc18aa51426e45be262"
+        },
+        {
+          "old": "32e2e1946169abbf8d47df32b381c673d38601ed",
+          "local": "ef51b7613021711efbba28bc81a588fe85fabb79",
+          "published": "bb946953b92b6e6c5ca7cb4d0443c2f9d99869de",
+          "tree": "564de030ddd1bbfa5755857e930b17b4f75da05e"
+        },
+        {
+          "old": "820f24b50580aea2f71445009edd2c0d2846775c",
+          "local": "17f356b5f6dba90cbef0554173d92187288a95d0",
+          "published": "27ba67f4f7d4b0e33a6bf88fbdb15d6878563365",
+          "tree": "f71575324f3765e93d7ab3ab695d82df70c34e73"
+        },
+        {
+          "old": "c4e28bef7e5a15a11dd9bfd0dc56da7d10d40d7f",
+          "local": "90a956c5083073e219216f2d26af280b1baf8752",
+          "published": "053574001b84fb9cd2a2be1266ca15df743d4519",
+          "tree": "b043730026cafd42199c13fa3589e605dee6e695"
+        },
+        {
+          "old": "e03c794edf71fadfbc6d4530a931d4d3da324cae",
+          "local": "7b81e3ffd740ab528cd21e2aadf7a3972750f388",
+          "published": "f63b0019e56be64ac0ceb7aa89fa7a7d224264f2",
+          "tree": "63e624a6a24a10029ef98ca53e0c836c53d60335"
+        },
+        {
+          "old": "3acd1c235bcc5cee4cc2c10e022fccacb85d1537",
+          "local": "79d07b3c87de5bd0bfdb8f5ca9dff2aadb9f5567",
+          "published": "dc149e81af18777214e16075415f291332cebd02",
+          "tree": "834c1b52a56afca1e821f9077d429d6bba73412a"
+        },
+        {
+          "old": "d662b4a07e8fbea9a676e37a5c8a10ea613f05bd",
+          "local": "52b1256da41b2dcdb489d1abd1425313184b7aaf",
+          "published": "53516da85ab293057364247b6f49c54dd5aa0fcf",
+          "tree": "7cf614166b8ba6b4e63490612b1ef8b47190a704"
+        },
+        {
+          "old": "fa72dbf2878535d381ac323e424e6bc1763844bb",
+          "local": "a43c67f7c53c8e0650d152341fbeb5c47a10b5e0",
+          "published": "b3b1ee79442f98f2e2cb60968aae17f2f13077e3",
+          "tree": "e9aff266a5582859418a55b0e1c460e8e3d73220"
+        },
+        {
+          "old": "a0fdb24801466ae2dfc04dfdec020d1a1d99c386",
+          "local": "7fc2be37f1d8a31fe2b14cdce65d4950a7e56284",
+          "published": "f50509f8606ad1a111a09f26efd678b5363a85b3",
+          "tree": "fa2f1468070760e11264e01ab057c13788aa24d6"
+        },
+        {
+          "old": "21ab036a3f595317154ccb2cf860b9d70e212e62",
+          "local": "7477a282d273d978793bc0960fd363334c5705ab",
+          "published": "ae3c20efe7a7967ff3c5c99e1812a2860f51e9b4",
+          "tree": "5ad63ad596133a4ec4c72c909250a462b8ffaac7"
+        },
+        {
+          "old": "607e48a817fdfec5f1d92750f9fa56d8aecd9e0e",
+          "local": "2ac8d3816a2f7a2ff7e5ebc9647ee1a0584d8eeb",
+          "published": "193b6953e4829e573e211b7cf091f802d6ab26a6",
+          "tree": "bab8e9fae6003ce152b587a05a69bbde1e8647b8"
+        },
+        {
+          "old": "2ab8f3518b4f81aae2fd17b998e9cf8c2fd5fda8",
+          "local": "6c78d0085bd796116e6682a26ec7b69837828014",
+          "published": "e8baf7d661b4259135cefa06ba80d565f33d6476",
+          "tree": "d2588a012fafdb1ca9eaf6345e239d836b595022"
+        },
+        {
+          "old": "5d94a7bc01df38d32e2a7f8d0a1d03fc96740549",
+          "local": "23f0cfa155c3b78c886b76eade352c0941fc04db",
+          "published": "c7ac93bec3df881ab92140d08678fa5da74af3c9",
+          "tree": "bd69c46aa0fd95d28e9af1c6a64786a74112b67b"
+        },
+        {
+          "old": "0a82b3302d71e93ea01df4268f459e01106b5d8a",
+          "local": "439582d19ecf5d0fc01b6c9e7f479f10daf37ff1",
+          "published": "5161d191adcecac63f0ff7b18fc3dd6a5087e02f",
+          "tree": "eed1e435cf674f480ab159b8d7062b1765cea1f9"
+        },
+        {
+          "old": "2ff64012a78f7f6a5b4e6d293c1f1595065c7ced",
+          "local": "44c25421e7fed6021d89b5ac15ea46e7e4cb69ab",
+          "published": "834ac744b9921c2d031d657056076c42493e8aec",
+          "tree": "3a1866a9134412157e42f3b409227dfe0b4dcbf0"
+        },
+        {
+          "old": "4d455feee2d3040c1752562b134191abde7bdaf0",
+          "local": "32f225205fdee2706a78ad3596164d7041365258",
+          "published": "7dcbaac75afcc859686b4aeebcf0fef71cf4a6bf",
+          "tree": "e41c95fa508f4187c71731b364a855010feab0cb"
+        },
+        {
+          "old": "43e12b999300292ed5f9b71dc8a0f34627d07dbf",
+          "local": "6ed9bf3b0251221ebe2d4ec1c1cf3efb94e08ab9",
+          "published": "5e9d837fb71fc43217b177b3759ac58fd4fe6507",
+          "tree": "2bd73bd86a89f348bd48745ac86f2067bc08bdb7"
+        },
+        {
+          "old": "14e7453203e183aaa37015a491c6f3204c4c0796",
+          "local": "ec943b61c21b33f612c35da6bfb8f12536207840",
+          "published": "785b071bba4ff618a2f42cfb6ef667c25a142107",
+          "tree": "f5b7301ec1bdef71c0f9ee99b3082b4fec2d2fe5"
+        },
+        {
+          "old": "1a86ee5d52c5c0031704741fdfb0977a51c219af",
+          "local": "4c1d496f23f7052858661cd0438269c81bf39ac9",
+          "published": "5daa3d5ff942e20b962775539b315e653815827c",
+          "tree": "4b430667049459d764b850210d5e0df9c714ee84"
+        },
+        {
+          "old": "eae920004630188af013cb019ee9c90e8c1f91ee",
+          "local": "6166dd1d4e98c224101de21a9821c31d765c940b",
+          "published": "56049b0adc22603bff6af89cc3ec259b2e4ca720",
+          "tree": "bb504ff63858b0b856a586deb824597f8e86ca71"
+        },
+        {
+          "old": "7c447c2a331d8fc2b4e1e4876654c26468eac715",
+          "local": "d7c5288d6db8fb9e3536a412004e9bd786e97f5a",
+          "published": "ddc8a6f2d8e6c243ac66df5f7b1c8dc0810dcd09",
+          "tree": "ca6e8060329d5e58040fd94a00193e130319541e"
+        },
+        {
+          "old": "606f95b30c6942712250bb8f99c027f410c4c2f0",
+          "local": "36755f8ed249a8a7d802d26121e3447a5e6c6db0",
+          "published": "e1c9451ad8b8f92dfe60d6da914488702404f527",
+          "tree": "e7b4e7080be26dfebfc524e31061b3fd989c129d"
+        },
+        {
+          "old": "92e5a87392123fd4942ebbbb259af359eea974d0",
+          "local": "e5e4a94642656dd642106309ee263a8b9788bde2",
+          "published": "750d2c802bb46b56363469e83c690ee3409adebc",
+          "tree": "5871f4b4ff41a12126612d3ace89c4ea97fde632"
+        },
+        {
+          "old": "cbd0fc71cf250fe797f3c8a5561fabc8002ebe46",
+          "local": "2af86335f2ce63f2446a9fea0ed6e231609babee",
+          "published": "43fceb14550e9c550301bc79099680be64dabf5b",
+          "tree": "6ea9c44764e035a058e909d5ef2d6e0976737c3f"
+        },
+        {
+          "old": "397aa8607d216bbf1077fef05fdb87fd68695104",
+          "local": "4e6d31c6e36b81fa23a725def005e22054740a62",
+          "published": "a513ebf216eae57db26ca45eece94a98d6d1af6d",
+          "tree": "6a224ac84d0225f3f26de8228154631daefd8c3f"
+        },
+        {
+          "old": "eccca516b1ceee169395aa080bc82837d8d8a5dd",
+          "local": "1391bbe86a4e4c74b6092b6a29d6b5e4bb404307",
+          "published": "790af3e6b24c80f329f92db8664b02a940b7ae2e",
+          "tree": "415b6842dffd3e26cc824f9b5ba6dcc27cca50ad"
+        },
+        {
+          "old": "624e130d413bb013f287428ddb687a395e4ccd95",
+          "local": "bbee3ca9d98a53f17879473a9b9311c304b075ff",
+          "published": "a6609d67e185cb8ea3b11ebf195bb90b144cbd69",
+          "tree": "74ab79b1ddf18d8abb87d588d82d0a81d17f57c9"
+        },
+        {
+          "old": "e3bfc8a4f2f1dd64128a3f554443d3d2e9411c8c",
+          "local": "7c2ff78407fa3c01b7c9549b94850b25f8292de8",
+          "published": "8c3b6d923b1958b56ca07de84ea1b633846ac645",
+          "tree": "8d4618298d1adca920046d492c5f5754e6d8e61e"
+        },
+        {
+          "old": "20de96aec8dc53d66033d7b7bb8e6849cac6329d",
+          "local": "3ad4eca0e740d29445e134282e0834bf29c2a534",
+          "published": "db7496a3019fd8ad77bac80719e4648b1725353a",
+          "tree": "dd5e5c6c5575b4370ad74164a9dbe02adbcf936e"
+        },
+        {
+          "old": "63ee6472760c8b3d98775b6a4813643468ddcbc7",
+          "local": "302f5d13e53095a8c0ab9ffa6c2a11e0775c6bd5",
+          "published": "ee7849fee3ae1c1161e2f6a5aab0af75c6579608",
+          "tree": "f6885873a4153dd0f4ed95536ae427c9d58f874c"
+        },
+        {
+          "old": "d0364e9cf7a111b8c5f01fcfc90ce7fa2d5bc58f",
+          "local": "a2090ab6c2a3f303c9754e1ccf64ec6d82cdbb5a",
+          "published": "a024a1551a579ce417c744271f4003a4946bdaa6",
+          "tree": "a53c7acdc12169001d2e772774aea0ede2f08ade"
+        },
+        {
+          "old": "3fd1db8aad4d33fd38d43094635fba1a229790e2",
+          "local": "d3df4f00561080e7d4269db959eef01f4557dd72",
+          "published": "788db8dcc438af9e6be366c8ee9291459716633a",
+          "tree": "cf703439be3aba7b34649b4d0efaae0fdf76921b"
+        },
+        {
+          "old": "b87ea587f3e45646ad2e1096acf6b0d8ffa287d6",
+          "local": "c2e690eee9896041e2a1dc1af013d993d47fece9",
+          "published": "fb91348a7db9c87c1fc8b9bba1767519769d8ead",
+          "tree": "26a94115f876e562c5043f175fe677bafc07c4a0"
+        },
+        {
+          "old": "c823565632d4a514f3e39586493f5e9d4995a14c",
+          "local": "d368659e0db0aec0a8a0eccec5761c57b0b0d933",
+          "published": "b9bc2be4293cf6642e82ebda631f27aa3c86116c",
+          "tree": "40c9ccbb289b3276ae20edc06a17e50ce391334f"
+        },
+        {
+          "old": "6fde9421494d829fb5b9fe6013e461ee378f2bfb",
+          "local": "53cb6815820a75be073bb953d0994d9a60cc9180",
+          "published": "b8653179eaf9d4ad09b006d8ce46e934f82b97c4",
+          "tree": "65b9bd33e9588f0b3df3436c9fbc99e1d408a072"
+        },
+        {
+          "old": "c179ec415e3c1ce554189a83ba1d6fd346c4756f",
+          "local": "19c6ad0ae4d2ed5a4988b9e4d238a51c1a0441a1",
+          "published": "669ddf7efbf66a4d99a179560de6b157e56e3c2e",
+          "tree": "5a0c2fd54ceb599c0ec139bd72a8558f74600354"
+        },
+        {
+          "old": "21e39a96545141c18b40e4976c3ffa48eda8b237",
+          "local": "98563bb10cd1e20d07f8c313e922cddb2c047287",
+          "published": "438ea1c8cd1eb0ae40edaf61517ea77b7fbc59ab",
+          "tree": "de0f4a7192dbdabe95ae85cb4fbe2b0a1396e391"
+        },
+        {
+          "old": "61d7e6054ff4f16ef7b6c6e905c4f3171105c5ea",
+          "local": "786b6d53c7076c8ad29070bf587efa9632f57898",
+          "published": "2b6b4fdf6c563f940e543623cc09d5a8bb4eb5dd",
+          "tree": "9e54a33098882196d271afa42ee170d953e16f23"
+        },
+        {
+          "old": "6acb6361641f43acda4a11e4ed68dbb278e544b6",
+          "local": "8947ca2ee387eaadbda1d3022b33c3811f1beea5",
+          "published": "0cf1b4200f5939bec5cc24698a965200be6570cc",
+          "tree": "0cbeaa01eb31dcb5be7066683e9e42cb04412cda"
+        },
+        {
+          "old": "b682cdef794372c03341b2d8f9ded65ff03af870",
+          "local": "4fe464b6fde6c1cb33fbf86d1ef1c0403e1a44f0",
+          "published": "56e2bcb795edff05491a2c1f4b1abaa04e358329",
+          "tree": "7086952d04207d724865429f94a37d3b2af5e5b3"
+        },
+        {
+          "old": "adb7b0354de98c38669514917c8c0ee806a12fa4",
+          "local": "0b570c472d78a3ecc6116a0e502371e04decfcd6",
+          "published": "ce675fb88ef176a8f93873da3fab09154edc6cce",
+          "tree": "c61ae525f891954666f4073790b36151367b70bf"
+        },
+        {
+          "old": "45d2c2252f129cb3f633698fb1bbf4c99ddebfe8",
+          "local": "d89c9a46df26af772f09d565a3c3d40d5a511c0f",
+          "published": "b88af0625785a1db73d94e450167c472fc5b8d35",
+          "tree": "aad1eb629a6bbca992ba1a2128a4c8a59b0236df"
+        },
+        {
+          "old": "ed37dfd53b5127ab13ef184b77e443ff36e7db29",
+          "local": "ae82c2398874da4c68748657683edc0d84c0af68",
+          "published": "bd13ecd586b8a0bc9f3940feb48247481439ce71",
+          "tree": "4241a095f0a6d5b9d74340cc09d862ecbd3ac58b"
+        },
+        {
+          "old": "e2d7066a1950979f84533bdd72064288c636a453",
+          "local": "75b4babbf77aa38980ca10a39508bd62793f1035",
+          "published": "3736dee1ca0631c3f57473b17251c612d8b12140",
+          "tree": "5c3f77f4e79ada2884d50037e1ca09f4b9478021"
+        },
+        {
+          "old": "3ce62bd813837b23811230127a16be9a79606f55",
+          "local": "abc8cb9e9451062b5c1dd9d9062b5dbcf90e93f4",
+          "published": "09fc737c614a1642d36267399a2a94e2fa35d427",
+          "tree": "dae2be95c2fd8a9f53bdf8577ca1cf0cb9e26d7c"
+        },
+        {
+          "old": "236ed6acddb4dfa218941c1f693d26a728b0a65c",
+          "local": "cd081aec581614fe4999c2d7ecf0a332b91a1360",
+          "published": "36741ee05edafa5f34178a6783ec0ba07a459499",
+          "tree": "1da5e49031fbd3c3a5f11165fea5cede48fd5ca6"
+        },
+        {
+          "old": "1204b6733e98e0f30a4ae74fc21ce982d6409a52",
+          "local": "054e6043c406dd0e4b57604cf10a5a151aad3be4",
+          "published": "d580bcb815d386f50f56a6810f4122fc0075b21a",
+          "tree": "059d1ec610a626dad750ef5ffb65b80ecff4faba"
+        },
+        {
+          "old": "3e3c8f4f36c12842d2c1f714a7f51feb061f355d",
+          "local": "a3c420151732c5db3009f81b956f820189853b42",
+          "published": "9634a6f110b67c79b9dac2c56e50be2564e549ce",
+          "tree": "081512108496aad70441535ed985729c6968b2be"
+        },
+        {
+          "old": "fc4cbfa9c7644b78ac4f626d8831e56d99dadce0",
+          "local": "34a224c6024f3243ca0078c24b78315bc41991cf",
+          "published": "3b59204d19e3a79966157178c29a376a302efc8e",
+          "tree": "9e940eb37bc4122cbc615435f673a89dbbfca004"
+        },
+        {
+          "old": "becce78657019cde1776d2e6daf61a7f82b700cf",
+          "local": "90a9e0a9a3a32042e874bddf16213570ec1b4d53",
+          "published": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+          "tree": "18b8476cd1c9592ce4c7ba65fc7c4972347a0306"
+        }
+      ]
+    },
+    "retained_code_proof": "Shader, renderer, DS capture/guards, automatic coherence, CPU tests, dependency revisions and runner files are byte-identical to native-verified fc4cbfa9. Only upstream read-only save metadata behavior changes.",
+    "cpu_scope": "Native suite passed on fc4cbfa9; its covered sources remain unchanged after this save-only rebase. No new native game or PS4 hardware run is claimed.",
+    "logs": {
+      "nov4h-build.log": {
+        "sha256": "47fc453bc60f7700c3b0e1e80d8bd29d16fe4361263cdca13ec087f22ce96da5",
+        "lines": 346,
+        "warnings": 0,
+        "errors": 0
+      },
+      "nov4h-final-build.log": {
+        "sha256": "48cc00526fb3178cc4584d39d6b800341cddb9ac676307afa1ad1289c1eee874",
+        "lines": 345,
+        "warnings": 0,
+        "errors": 0
+      }
+    }
+  },
+  "handoff": {
+    "source": "cca781769232adfa0d5d634c2dc71fa7124816e7",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "first_game": "CUSA34384",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "9972da08e823b31fc5622cf0e297567ff520e468405f40e2bb14d6cec3935f86",
+    "boundary_fixture": "ONEPASTE case=pass expected_exit=0 handoff=True PASS\nONEPASTE case=bad_checksum expected_exit=1 handoff=False PASS\nONEPASTE case=download_fail expected_exit=22 handoff=False PASS\nDOWNLOAD_AND_NATIVE_RUN_BOUNDARIES_STUBBED; GPU_NOT_RUN",
+    "same_binary_for_both": true,
+    "per_game_options": false,
+    "automatic_input": false,
+    "term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "minimum_free_vram_gib": 8,
+    "stop_remaining_after_gpu_loss_or_live_process": true,
+    "exact_conditional_ollama_leases": true,
+    "defer_ollama_restore_after_gpu_loss": true,
+    "native_build_mode": "build",
+    "native_build_note": "The runner uses an isolated tree for the new source; it does not relabel or reuse the old native binary.",
+    "bash": "bash <<'BASH'\nset -Eeuo pipefail\nSOURCE=cca781769232adfa0d5d634c2dc71fa7124816e7\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nBASH\n"
+  },
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "limits": [
+    "Neither game launched in this archive; it supplies no new visual, audio, FPS or crash evidence.",
+    "GoW DS ordered-counter initialization and authentic guest continuation remain incomplete; the assertion is retained.",
+    "GoT last accepted evidence remains intro followed by GPU context loss, with no menu/gameplay recovery proven.",
+    "Native GPU/lifetime, same-scene and cross-title acceptance remain pending. Host build/startup checks do not establish universal compatibility."
+  ]
+}

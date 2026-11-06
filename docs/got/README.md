@@ -1,0 +1,21 @@
+# Ghost of Tsushima - shadPS4 engineering checkpoint
+
+This directory is the **GoT game-specific evidence appendix**, not a second emulator-wide diary. The single authoritative combined GoW/GoT/all-games history is [the universal emulator trial diary](../emulator/EXPERIMENT_DIARY.md), with an append-only [structured trial ledger](../emulator/TRIALS.jsonl) and [generic fix registry](../emulator/FIXES.json). The goal is generic correctness across games - never title-ID cases, shader-hash branches, fake descriptors, skipped draws, synthetic texels, forced input, or unsafe CPU substitutions for live GPU values.
+
+
+**Latest native review (2026-11-03):** Native PR136 checkpoint `8a6ab293`: GoT loading screenshots remain identical at8/25s, then GPU context is lost at61.484s; GoW is skipped. Trace captures108 command records across three wait windows and4 draw-preparation flushes. The collector dropped both compute hashes from the first stalled submission and treated fetch-only binaries as represented shaders. [Draft PR137](https://github.com/Chreece/shadPS4/pull/137) fixes evidence priority/pair completeness and adds read-only recovery from retained dumps. 104 focused checks and retained trace/observer/wrapper checks pass; C++ is unchanged from the native build pass. [Evidence and limits](../emulator/reviews/20261103-pr136-native-first-stalled-shaders.json). Next recover existing shaders without another GPU run. Main unchanged; all prior fixes/upstream retained; game recovery and DS seed/re-entry unfinished.
+
+- [EXPERIMENT_DIARY.md](EXPERIMENT_DIARY.md): successful and failed experiments with emulator effect, native proof, game appearance, performance, retained code and exact evidence.
+- [BASELINES.json](BASELINES.json): machine-readable hashes and promotion status.
+- [PENDING_MAIN_FORWARDPORTS.md](PENDING_MAIN_FORWARDPORTS.md): proven resource changes still awaiting isolated C++ forward-port and main build regression, plus exact accepted and rejected provenance.
+- [PROMOTION_POLICY.md](PROMOTION_POLICY.md): rules for going from local exact-source validation to the GoT tree, a main-targeted PR, and safe general-engine promotion.
+
+**Development branches**: the last experimentally validated PR #52 + PR #57 baseline is `test/generic-precise-linear-image-coherence-20261025`; the separate proven-resource-capability candidate is PR #64; the consolidated GoT development branch is `got/proven-progress-20261026`. These differ from GitHub `main` by hundreds of commits; **do not merge the full experimental ancestry into main**. Main promotion must be a small, reviewed and build-validated forward-port of the specific proven generic change.
+
+**Required for EVERY game build/test:** real game loading splash path (reads `/app0/sce_sys/pic1.png`, presents `IsSplashVisible()`), gamepad host quit dialog (GUIDE opens, A/Cross confirms, B/Circle cancels, consumes inputs), manual gameplay, `timeout -s TERM -k 2s 118s`, SSH stays open, frozen binary SHA, four screenshots, bounded error logs and full `UPLOAD_THIS` diagnostics. Do not modify saved configuration, ES-DE, game saves, or the last accepted candidate for experiments. Gameplay ends within 120 seconds; build time is separate. A forced timeout may report exit 124 **or 137**; inspect GPU/device error evidence separately.
+
+**Candidate locations on user host:** `~/projects/shadps4/GhostOfTsushima/candidates/`. Keep both SHA-pinned accepted and latest demonstrated candidates. Logs under `~/projects/shadps4/logs/`. Scripts under `~/projects/shadps4/scripts/`. Never delete a binary until an exact SHA, corresponding archive and disposition are recorded.
+
+**Status labels**: `KEEP - tested generic capability` (correct behavior observed even if visible geometry unchanged), `KEEP - visual`, `DIAGNOSTIC`, `REJECT`, `BLOCKED`, `NOT TESTED`. KEEP in the dedicated GoT tree does **not** imply safe fast-forward of its entire ancestry to `main`. Main promotion requires isolated diff plus native regression checks.
+
+The remaining important unresolved systems are dynamically indexed image/buffer resources outside already bound tables; SRT walker parent dependencies; SHARP flatbuf sources; stencil-reference and unsigned/saturated buffer-size warnings; dark/untextured terrain; missing character geometry; and GPU/CPU sync performance. Separate each experimentally.

@@ -568,7 +568,7 @@ void Translator::IMAGE_ATOMIC(AtomicOp op, const GcnInst& inst) {
     const IR::Value body =
         ir.CompositeConstruct(ir.GetVectorReg(addr_reg), ir.GetVectorReg(addr_reg + 1),
                               ir.GetVectorReg(addr_reg + 2), ir.GetVectorReg(addr_reg + 3));
-    const IR::Value prev = [&] {
+    const IR::Value prev = [&]() -> IR::Value {
         switch (op) {
         case AtomicOp::Swap:
             return ir.ImageAtomicExchange(handle, body, value, {});
@@ -587,9 +587,11 @@ void Translator::IMAGE_ATOMIC(AtomicOp op, const GcnInst& inst) {
         case AtomicOp::Umax:
             return ir.ImageAtomicUMax(handle, body, value, info);
         case AtomicOp::Fmax:
-            return ir.ImageAtomicFMax(handle, body, value, info);
+            return ir.BitCast<IR::U32>(IR::F32{
+                ir.ImageAtomicFMax(handle, body, ir.BitCast<IR::F32>(IR::U32{value}), info)});
         case AtomicOp::Fmin:
-            return ir.ImageAtomicFMin(handle, body, value, info);
+            return ir.BitCast<IR::U32>(IR::F32{
+                ir.ImageAtomicFMin(handle, body, ir.BitCast<IR::F32>(IR::U32{value}), info)});
         case AtomicOp::And:
             return ir.ImageAtomicAnd(handle, body, value, info);
         case AtomicOp::Or:

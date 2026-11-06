@@ -1,0 +1,326 @@
+{
+  "schema_version": 2,
+  "record_id": "automatic-coherence-20261103",
+  "reviewed_at": "2026-11-03T16:36:55.095611+00:00",
+  "source_commit": "612dce4372d33e72c31d72eae6136dad73285b1a",
+  "source_tree": "b1d37a3287f17033a86347ed4878559948d2d417",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "pr": 130,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/130",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "native_review": "20261103-pr129-native-readback-parity.json",
+  "decision": "KEEP_DRAFT_NATIVE_PENDING",
+  "contract": "GPU correctness belongs in universal core behavior. No title/shader/vendor/host exception, per-game option, or readback-policy override.",
+  "changes": [
+    "GPU-written buffer pages automatically acquire read watches; CPU access uses existing synchronized buffer download and partial-write preservation regardless of legacy settings.",
+    "Page protection is no-access while a read watcher exists, including when no CPU-write watcher exists; never issue invalid write-only protection.",
+    "Use the existing signal/fault tracking implementation because the present userfaultfd backend only observes writes. The legacy userfaultfd request is logged as insufficient, not silently used.",
+    "Eligible GPU-written linear/tiny images automatically enter existing OnSubmit/OnFence publication; eligibility and download implementation are retained, with a nonzero-address guard for render targets.",
+    "Remove readback controls from the UI and override list. Legacy serialized fields remain loadable but have no renderer consumers. Remove the proposed SHADPS4_TEST_PRECISE_READBACKS runner override.",
+    "Log automatic core policy and bounded actual buffer/image publication events when diagnostics are requested; copied user configurations retain existing readback values.",
+    "Fair shader capture takes one complete binary/SPIR-V pair per priority hash before extra permutations; resource-clamp hashes join priorities, with existing byte/file limits."
+  ],
+  "upstream_integration": {
+    "retained_commits": 18,
+    "unchanged_later_patches": 17,
+    "resolution_files": [
+      "src/core/libraries/ngs2/ngs2.h",
+      "src/core/libraries/ngs2/ngs2_impl.h",
+      "tests/test_ngs2.cpp"
+    ],
+    "resolution": "Retain existing functional NGS2 lifecycle/decoder/mixer and bridge upstream public ABI/Impl entrypoints to it. Upstream silence-only rendering/separate registry implementation is superseded by the retained HLE; not a claim that every upstream lifecycle semantic is identical. All six current upstream NGS2 cases pass against the retained production implementation.",
+    "commit_mapping": [
+      {
+        "old": "89b5e25f165d63e6fff0b6edf1858ca2308dc0e4",
+        "new": "4db912ee1af9f3b3ebddb86ef86fe82acc279891",
+        "old_tree": "86a3d6d5efa478bec5ab1d2cc27c5a5a1d2423af",
+        "new_tree": "81747ed3ae94b0a82b57ae77f082fec35838d40d",
+        "message": "Rebase retained universal fixes and source evidence onto upstream 2183807e\n\nPreserves the exact integration and audit tree from PRs #118 and #119, with upstream libSceJpegDec #5607 integrated. Original reviewed commits remain available on their existing branches. Native game rendering is not promoted by this rebase.",
+        "published": "8c35ee7807152143556d5af19de87639a53bafe7"
+      },
+      {
+        "old": "cdd47cb6cc2c0994c49b00cf9f303735a222a9cc",
+        "new": "dd1be1456fe350bc098ed28e01fb9e24f6238360",
+        "old_tree": "0363721f405b781f778fb4815c75977c223cedd2",
+        "new_tree": "45d079ed54f8029e833e8a040b74dc640fed945b",
+        "message": "Restore generic indexed descriptor sampling from recovered source\n\nRecover exact descriptor masks, finite direct Phi sources, dynamic scalar buffer reads and GPU-indexed image/sampler arrays. Preserve retained ordered-GDS capture, bounded uniform stores, DMA synchronization and upstream changes. Use complete dimension-array capacities and exact Vulkan limits; recompile when table size changes. Reject unsupported numeric/dimension/conversion cases explicitly.\n\nLocal source tree 966ff989684d10b56054f0ac2c5d04f18cc51380 builds with GCC 14. Production resource discovery passes 12 checks; five backend shaders pass spirv-val for Vulkan 1.3. Native GoT/GoW graphics remain unverified.",
+        "published": "9652fa4052b45409f283d3858d798628d553ccc3"
+      },
+      {
+        "old": "1a6e29b287f63c608e29c550c4dd24d996bf3362",
+        "new": "fbe1d05c321f5cbf159061d7b2ffdfbde4276cb5",
+        "old_tree": "5c8048e0e7028ae5d935f62dc335040111cd55e1",
+        "new_tree": "12d8dcd717b7eb1ead2a0647992e9167d5d8ff1d",
+        "message": "Journal recovered renderer lineage and native build validation\n\nVerify 678 captured source hashes and four exact historical file matches. Preserve protected binary identities and append all preparation/build/fixture outcomes. Native game graphics and DS continuation remain unverified; no main promotion.",
+        "published": "2d28ada728df4a58b54ee99f3be12a9e0c8276a1"
+      },
+      {
+        "old": "6d34ce88f98c8896480536ece8967495b550c6bb",
+        "new": "d9b21a038b1a7eeaa05da5ec3d3332b9bac05b25",
+        "old_tree": "a82e66c13dcfbe429457824c656fcb15e0c8cdc0",
+        "new_tree": "8e3f43d08928bc27d3fe0e2384a71d6d7d75f9ed",
+        "message": "Restore descriptor dependencies and scalar contracts lost during integration",
+        "published": "d47eaff3eda5fce774f281c341e4503b3aa59c19"
+      },
+      {
+        "old": "6546f99c20f8d43d7a61d711f46f67a419b724d9",
+        "new": "6b160ead243e89018cf76c00186d28deb218a092",
+        "old_tree": "a19aff9e6abb889028807d0e63ee3f89c2a3fed2",
+        "new_tree": "80d76aa7afeace24e70a2ee4b2b53dabef285ab3",
+        "message": "Record PR120 native regressions and PR121 contract recovery evidence",
+        "published": "7961f97ccaaed5e76d28462fcb5327ed84d0067f"
+      },
+      {
+        "old": "0b6c8c6dcaa4738e828e042415b241ea7c5888bd",
+        "new": "98b313ab3a807f8702629cce51e5ffe87ae77f11",
+        "old_tree": "77c8a46a1fcd73107dccb98179fad5491bd1e941",
+        "new_tree": "7c136c7c310aa3e5cc54b1e9a2c12cc396adc585",
+        "message": "Restore compatible texture layer growth and biased BC5 numeric conversion",
+        "published": "b98bb516681e5b3ec0ec9f95b3d5ddd7237e9fcb"
+      },
+      {
+        "old": "1de095c6c78d7a32225c8e16f6de7fd7b918bd87",
+        "new": "981b3cca8396f840df10d1cbb58179569a70531c",
+        "old_tree": "fa6027e9bd05547f9b45942fc892a768b786a5e8",
+        "new_tree": "9f15ace8456d8b86c39d810c530a76c9126c13a3",
+        "message": "Journal both PR121 crashes and reviewed texture contract restoration",
+        "published": "eb3fd096622399bfe5c9ae1d9f7b9c57e6c6bb97"
+      },
+      {
+        "old": "cb312911ea6684cf10620e326dfeb99b80b8c880",
+        "new": "9ded14731877c4576a960ce6f536d902b8e6427b",
+        "old_tree": "b83bb55fc30fa29bdd191732631b7e1e238c064f",
+        "new_tree": "76a9cc929638b7d955d4c710c70d0271a59b31a2",
+        "message": "Support numeric image variants in indexed tables and restore bounded SH register writes",
+        "published": "44ba1630422754656eb806c45061f15e405bfbda"
+      },
+      {
+        "old": "02b50bfb58f17e1a4d9dd7bf75de9e4e1ed85205",
+        "new": "9f8a9031813997efdf7c7b645cdf6f5ee1f5fe3e",
+        "old_tree": "4d994b57d5cc097b768aa21b537324c5dae07b0b",
+        "new_tree": "342dae04fa3723536ccedcc8ed7eade3e8e0b3c7",
+        "message": "Record PR122 native failures and indexed numeric candidate validation",
+        "published": "6903febbdaabf083cc5aa892f9eccbee0b6b9417"
+      },
+      {
+        "old": "6b9b538edbb4e07181289c3de9f3fa2c1054c4c2",
+        "new": "f75a9898ef22f68f1ef53014c996428162090a7d",
+        "old_tree": "0ac674e8c23140b6a041f38f442688aac948ce34",
+        "new_tree": "175a781320c75dbec33611927f4b57233b59328f",
+        "message": "Capture runtime Vulkan validation with verified native binaries",
+        "published": "f70c652fe094f40a279178dd52d25346cac2ff04"
+      },
+      {
+        "old": "c66b8b00fb98a724e6c3dc983823e0d2505ef12d",
+        "new": "5703109cd850a7c382279f754bc54e6ca5270db9",
+        "old_tree": "89cfd2562efadef6104ffe9faedffa6f006813de",
+        "new_tree": "b68606ed0299dbe2e17c0c6307d59d4de6f2a427",
+        "message": "Record PR123 native GPU loss and validation capture checkpoint",
+        "published": "7c81984b793463d712398b76d20657980c2b3db6"
+      },
+      {
+        "old": "552bc829958fa3fa2294f36a812b0b0259bc26fb",
+        "new": "dadc8dc59240399302e796bd532573d73ad8bab3",
+        "old_tree": "8037db5967132dfab388ca5f98f859488f613e3d",
+        "new_tree": "0c3e566fa971ba06a25719928d7ebc165c1d088a",
+        "message": "Record upstream-blocked native attempt and preserved 87290181 refresh",
+        "published": "05ab3f085f2e22df283748a46ab24177ee635d56"
+      },
+      {
+        "old": "181ebd812045d842cda75cb0eaa81f24a760e7bb",
+        "new": "f4b61c5afb1c45201cb81a428baa4b0a493ff433",
+        "old_tree": "79625e69de723650a01092361b8718c1e87de327",
+        "new_tree": "b5e9cf7aa922b6d753272c06c3bf8ea82faa7099",
+        "message": "Fix integer-view fallback for float image atomics and retain validation shaders",
+        "published": "fbbbbb3ff23aafb868ab9a0b269a972aa678fe4b"
+      },
+      {
+        "old": "0db393f2cebad3dcd709af0ef67ef26464a402e0",
+        "new": "447626569ce1ca8d91894c6848847b106f2c061d",
+        "old_tree": "2eda7bd83181fbd1514f0368fdd0edc81f2b3c84",
+        "new_tree": "84e0555bf0117c00e9294c5f05509409dbfdf744",
+        "message": "Record PR125 native failures and PR126 atomic fallback evidence",
+        "published": "d5ce056063e319940acb33a5934a62275c7a9357"
+      },
+      {
+        "old": "69077c5637e7550038bbb2ea13595b05dbb01693",
+        "new": "2b1a97515758014b81ed473666122af280c3a564",
+        "old_tree": "b192ea35e31ceee2a26328012866b8eebef3ecb2",
+        "new_tree": "8c7a836ceefc95f2d148661b6795da4933a98848",
+        "message": "Separate integer texture samplers and bound observer shutdown",
+        "published": "0b82000703c0606245a34bd86ac2abd0114d2ea8"
+      },
+      {
+        "old": "2f9c29ac397afe7a3cc7b4c5fbcbc586afb7f8bd",
+        "new": "fe36a3bc92b0b9e3a534ff7bbe7c3187515f793c",
+        "old_tree": "4e1fd6181347652b6ad0d597ff4e61788d8b9ba5",
+        "new_tree": "1904cd653bd4dfa44cd810735af363cb43f92807",
+        "message": "diary: record PR126 sampler failure and PR127 validation evidence",
+        "published": "15e87cf31ab785ee52240b40f7263ca40bac72b0"
+      },
+      {
+        "old": "39e02ee5b4e4ae87f0500b1edc554288788c739a",
+        "new": "852a4d5b7bd560e8bbfef3ffa6147cae997179db",
+        "old_tree": "c01dd83f31e8eb1983abe12cf9288dae1901fe20",
+        "new_tree": "d61139672bc7adf202dc8be430fe6cbececd08fd",
+        "message": "diary: record PR127 upstream block and validated 943df2e3 rebase",
+        "published": "1022b5e6815213e54362008f62683c96217df75c"
+      },
+      {
+        "old": "77b4bf7991b380f100fe5923e26008994de6d179",
+        "new": "fbb2d207fd42d56b61b6a144bbe1571551a247de",
+        "old_tree": "c909523afeb7830890e8f50e065521a18e95f25d",
+        "new_tree": "0c72d8c163754837f2f42c90be99ab37e4e43dff",
+        "message": "diary: record checkpoint continuation on upstream 97b8ee47",
+        "published": "9e193a33b2638a24d3b7dbe7067da18621ce7379"
+      }
+    ]
+  },
+  "local_validation": {
+    "release_build": "PASS GCC14 Release/X11 full target, then published-source rebuild/link",
+    "existing_universal_cpu_suite": "PASS, including 31 CTest cases and production SRT/sparse/descriptor/ABI checks",
+    "actual_binary_cli": "PASS three scenarios; GPU not run",
+    "current_upstream_ngs2_cases": "PASS 6 existing upstream test cases",
+    "memory_tracker": "PASS 1022 checks / 4020 watch events using production MemoryTracker/RegionManager with intercepted PageManager boundary",
+    "memory_tracker_sanitizers": "PASS ASan/UBSan with ASAN_OPTIONS=detect_leaks=0; leak detection unavailable in this container",
+    "negative_control": "Pre-change headers with Disabled mode fail check8 as expected; no native GPU work",
+    "page_permissions": "PASS 512 checks using exact extracted PageState; no write-only page protections",
+    "runner": "PASS 17 cases covering preserved legacy values/linear toggle and actual automatic marker parser",
+    "collector": {
+      "result": "PASS",
+      "checks": [
+        "first pair from all eight shaders before extra permutations; file cap and pairing",
+        "oversized pairs skipped atomically under unchanged byte cap",
+        "symlink excluded; missing hash reported",
+        {
+          "uploaded_console": "CUSA11456",
+          "resource_warning_hashes": [
+            "000000005e89a8b4"
+          ],
+          "priority_hashes": [
+            "000000005e89a8b4",
+            "00000000615d1675",
+            "000000009f19579f",
+            "00000000745c455a",
+            "000000008a4870e0",
+            "00000000c6405cd5",
+            "000000000a894bb5",
+            "00000000b4735f9c",
+            "0000000061cf8491"
+          ],
+          "unrepresented_hashes": []
+        },
+        {
+          "uploaded_console": "CUSA34384",
+          "resource_warning_hashes": [
+            "00000000dfd7cccc",
+            "0000000031da72ce",
+            "00000000be13fedc",
+            "00000000f127445f",
+            "000000001fe2828d",
+            "000000000aaeb7a6",
+            "00000000a27fa0f2",
+            "000000003a3df9d8"
+          ],
+          "priority_hashes": [
+            "00000000dfd7cccc",
+            "0000000031da72ce",
+            "00000000be13fedc",
+            "00000000f127445f",
+            "000000001fe2828d",
+            "000000000aaeb7a6",
+            "00000000a27fa0f2",
+            "000000003a3df9d8",
+            "000000004b0cbefa",
+            "00000000e2cc90df",
+            "00000000b8b29263",
+            "0000000003c4ebd5",
+            "000000007f710602",
+            "000000007c465e33",
+            "000000002b3f2254",
+            "00000000eaebd843"
+          ],
+          "unrepresented_hashes": []
+        }
+      ]
+    },
+    "repository_tests_added": false,
+    "binary_sha256": "aa06b325bfab3fb1ba16aec13f3e4fb883fcb937ea7f9f6b9abadd2a06cc9c45",
+    "logs": {
+      "nov3f-native-build.log": {
+        "sha256": "15d93cf927af4628c0aa04d2d8f0fc0ba07ab2cee0117c162779c0c3df99b85b",
+        "bytes": 31899
+      },
+      "nov3f-native-build-retry.log": {
+        "sha256": "3b5b6eb5a55c393d835058bfe5835a5dafdaaf74a70dc89306817a51adb38f2f",
+        "bytes": 71246
+      },
+      "nov3f-ngs2-check-result.log": {
+        "sha256": "b74742269bf949615fdc5678567ce52ab58fc52af197342d242eadb73f34c000",
+        "bytes": 1250
+      },
+      "nov3g-auto-build.log": {
+        "sha256": "f269c2e3fbccf1adbfe9abdd64889fe3a012d61d3dc55274b9a8510862bc4c1b",
+        "bytes": 45297
+      },
+      "nov3g-final-build.log": {
+        "sha256": "6d5cffd27cc4e9753d1c4b60e255ff6b0df88c9cda533a96da0ad9bfff7f65ff",
+        "bytes": 45318
+      },
+      "nov3g-published-build.log": {
+        "sha256": "11193dff6127b1e44c9070a6dfb9791ccd344d3b191f76c1622b74bd511fdc06",
+        "bytes": 15590
+      },
+      "nov3g-cpu.log": {
+        "sha256": "f37952ea16a91ddaaa1d6d097f75237999d49cb5315b4181847a2455ecab1504",
+        "bytes": 6219
+      },
+      "nov3g-cli.log": {
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "bytes": 57
+      },
+      "nov3g-coherence-release.log": {
+        "sha256": "142afcedb56f829ddedcce7b8175c902e1b496b5ee1bef1cf752f8b5410a90e0",
+        "bytes": 72
+      },
+      "nov3g-coherence-san.log": {
+        "sha256": "142afcedb56f829ddedcce7b8175c902e1b496b5ee1bef1cf752f8b5410a90e0",
+        "bytes": 72
+      },
+      "nov3g-page-result.log": {
+        "sha256": "65d7bba7c935a6cd806a67f8ce2fddb994f6fc5c2f3c125599964c54e72e0600",
+        "bytes": 43
+      },
+      "nov3g-negative.log": {
+        "sha256": "f67348357c52309dc7d9d24bc619a2c9a792fafe4bb5e4d2fe7060d4e42c4570",
+        "bytes": 13
+      },
+      "nov3g-runner-result.log": {
+        "sha256": "b483edd18df4a8a51af7c301802a531c95665f2bc8bb065fcded3991f0befe1b",
+        "bytes": 205
+      },
+      "nov3g-collector.log": {
+        "sha256": "04f1ead3f6e0eb3ac08bb2747919703ef3ebf619d2f0ed55e4faca3582cbebc0",
+        "bytes": 1522
+      }
+    }
+  },
+  "openorbis": {
+    "url": "https://chatgpt.com/library?file_id=libfile_f5935b2d11ec8191812778c64604c491&account_id=personal",
+    "zip_sha256": "143b7d0faf2d4217b2dbf47412d5ffd456cdc250a931d70c17632d91adb62a51",
+    "assembly": "PASS three Bonaire kernels",
+    "host_c_syntax": "PASS GCC14 C11 O2 Wall Wextra Werror",
+    "sdk_link": "NOT_RUN",
+    "hardware_execution": "NOT_RUN",
+    "expected_dispatches": 176,
+    "expected_word_observations": 11264
+  },
+  "limits": [
+    "No native execution of this automatic-coherence candidate. GoT black screen and GoW GPU loss remain unresolved until tested.",
+    "Historical readback-mode mismatch is established, but its causal contribution to the two game regressions is not proven.",
+    "Existing image eligibility is retained; arbitrary tiled-image CPU reads and asynchronous GPU/CPU races are not established by these checks.",
+    "Signal handlers on Windows/macOS and native performance across GPUs still require execution; no all-systems/all-games success claim.",
+    "DS ordered code is retained but dedicated seed and guest re-entry remain unfinished; no ordered capture in the latest archive."
+  ],
+  "next_test": "Build exact final checkpoint SHA, GoT then GoW with diagnostics/DS capture, <=120s each and no input or readback-option changes. Require actual automatic marker and publication evidence; stop after GPU failure or unconfirmed child exit. Preserve >=8GiB VRAM and existing-session checks. No main promotion without native recovery."
+}
