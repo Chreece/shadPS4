@@ -326,6 +326,28 @@ def capture_native_mappings(pid, out):
         pass
 
 
+def capture_performance_usage(pid, out, elapsed, proc=Path('/proc'),
+                              drm=Path('/sys/class/drm')):
+    record={'elapsed_seconds':round(elapsed,3),'gpus':[]}
+    try:
+        record['process_stat']=(proc/str(pid)/'stat').read_text()[:4096]
+    except OSError as error:
+        record['process_stat_error']=str(error)
+    cards=sorted(p for p in drm.glob('card*') if re.fullmatch(r'card\d+',p.name))
+    for card in cards[:8]:
+        gpu={'card':card.name}
+        for metric in ('gpu_busy_percent','mem_busy_percent','mem_info_vram_used'):
+            try:
+                value=(card/'device'/metric).read_text()[:128].strip()
+                if value.isdecimal():
+                    gpu[metric]=int(value)
+            except OSError:
+                pass
+        record['gpus'].append(gpu)
+    with (out/'performance-usage.jsonl').open('a') as stream:
+        stream.write(json.dumps(record)+'\n')
+
+
 def classify_native_fault(console, out, binary):
     # A fault RIP in a PIE binary must be corrected by the mapping file
     # offset; don't mistake a generic SIGABRT for the true preceding SIGSEGV.
@@ -451,6 +473,8 @@ def main():
                         break
                 if elapsed-previous_map_capture>=1.0:
                     capture_native_mappings(child.pid,report)
+                    if launch['performance_diagnostics_requested']:
+                        capture_performance_usage(child.pid,report,elapsed)
                     previous_map_capture=elapsed
                 for second in due:
                     if elapsed>=second and second not in taken:
