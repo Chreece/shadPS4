@@ -20,6 +20,7 @@
 #include "sdl_window.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/renderdoc.h"
+#include "video_core/renderer_vulkan/idle_frame_reuse.h"
 #include "video_core/renderer_vulkan/vk_platform.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
@@ -603,23 +604,21 @@ void Presenter::RecreateFrame(Frame* frame, u32 width, u32 height) {
 }
 
 Frame* Presenter::PrepareLastFrame() {
-    if (last_submit_frame == nullptr) {
-        return nullptr;
+    Frame* frame{};
+    {
+        std::unique_lock lock{free_mutex, std::try_to_lock};
+        if (!lock.owns_lock()) {
+            return nullptr;
+        }
+        frame = TryPopMatchingReadyIdleFrame(free_queue, last_submit_frame, [&](Frame* candidate) {
+            const auto status = instance.GetDevice().getFenceStatus(candidate->present_done);
+            ASSERT_MSG(status == vk::Result::eSuccess || status == vk::Result::eNotReady,
+                       "Cannot query idle frame completion: {}", vk::to_string(status));
+            return status == vk::Result::eSuccess;
+        });
     }
-
-    Frame* frame = last_submit_frame;
-
-    while (true) {
-        vk::Result result = instance.GetDevice().waitForFences(frame->present_done, false,
-                                                               std::numeric_limits<u64>::max());
-        if (result == vk::Result::eSuccess) {
-            break;
-        }
-        if (result == vk::Result::eTimeout) {
-            continue;
-        }
-        ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
-                   "Device lost during waiting for a frame");
+    if (frame == nullptr) {
+        return nullptr;
     }
 
     auto& scheduler = flip_scheduler;
@@ -780,8 +779,10 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
 }
 
 Frame* Presenter::PrepareBlankFrame(bool present_thread) {
-    // Request a free presentation frame.
-    Frame* frame = GetRenderFrame();
+    Frame* frame = present_thread ? TryGetRenderFrameForHostIdle() : GetRenderFrame();
+    if (frame == nullptr) {
+        return nullptr;
+    }
     frame->has_game_content = false;
 
     auto& scheduler = present_thread ? present_scheduler : draw_scheduler;
@@ -946,11 +947,13 @@ void Presenter::CopyStartupReadback(const Frame* frame, vk::CommandBuffer cmdbuf
 }
 
 void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame) {
+    const bool actual_guest_flip =
+        IsRealGuestFrameSubmission(frame->has_game_content, is_reusing_frame, is_game_frame);
     // Free the frame for reuse
     const auto free_frame = [&] {
         if (!is_reusing_frame) {
-            last_submit_frame = frame;
             std::scoped_lock fl{free_mutex};
+            last_submit_frame = frame;
             free_queue.push(frame);
             free_cv.notify_one();
         }
@@ -985,7 +988,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
 
     auto& scheduler = present_scheduler;
     const auto cmdbuf = scheduler.CommandBuffer();
-    const bool startup_probe = PrepareStartupReadback(frame);
+    const bool startup_probe = actual_guest_flip && PrepareStartupReadback(frame);
     const u32 capture_with_overlays_count = VideoCore::ConsumeWithOverlaysScreenshotRequests();
     std::optional<ScreenshotReadback> pending_screenshot;
 
@@ -1206,7 +1209,7 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
         if (startup_probe) {
             startup_readback->presented = presented;
         }
-        if (frame->has_game_content && presented && !startup_first_frame_logged) {
+        if (actual_guest_flip && presented && !startup_first_frame_logged) {
             LOG_INFO(Frontend, "STARTUP_UI event=first_game_frame elapsed_ms={}",
                      Core::Startup::progress.ElapsedMs());
             startup_first_frame_logged = true;
@@ -1217,9 +1220,33 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
     }
 
     free_frame();
-    if (!is_reusing_frame && is_game_frame) {
+    if (actual_guest_flip) {
         DebugState.IncFlipFrameNum();
     }
+}
+
+Frame* Presenter::TryGetRenderFrameForHostIdle() {
+    Frame* frame{};
+    {
+        std::unique_lock lock{free_mutex, std::try_to_lock};
+        if (!lock.owns_lock()) {
+            return nullptr;
+        }
+        frame = TryPopReadyIdleFrame(free_queue, [&](Frame* candidate) {
+            const auto status = instance.GetDevice().getFenceStatus(candidate->present_done);
+            ASSERT_MSG(status == vk::Result::eSuccess || status == vk::Result::eNotReady,
+                       "Cannot query idle frame completion: {}", vk::to_string(status));
+            return status == vk::Result::eSuccess;
+        });
+    }
+    if (frame == nullptr) {
+        return nullptr;
+    }
+    if (frame->width != expected_frame_width || frame->height != expected_frame_height ||
+        frame->is_hdr != swapchain.GetHDR()) {
+        RecreateFrame(frame, expected_frame_width, expected_frame_height);
+    }
+    return frame;
 }
 
 Frame* Presenter::GetRenderFrame() {

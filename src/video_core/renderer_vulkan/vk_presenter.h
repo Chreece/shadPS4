@@ -104,6 +104,8 @@ public:
     Frame* PrepareLastFrame();
 
 private:
+    Frame* TryGetRenderFrameForHostIdle();
+
     Frame* GetRenderFrame();
 
     void RecreateFrame(Frame* frame, u32 width, u32 height);

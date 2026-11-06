@@ -249,6 +249,25 @@ def diagnostic_command(argv, timeout):
     return result
 
 
+def kernel_gpu_timeouts(out, started, ended):
+    if started is None or ended is None:
+        return []
+    failures = set()
+    for name in ('kernel-gpu-journal-root.json', 'kernel-gpu-journal.json'):
+        path = out / name
+        if not path.is_file():
+            continue
+        result = json.loads(path.read_text())
+        if result.get('exit_code') != 0:
+            continue
+        for line in result.get('stdout', '').splitlines():
+            stamp = re.search(r'\[\s*(\d+\.\d+)\]', line)
+            if (stamp and started <= float(stamp.group(1)) <= ended and
+                    re.search(r'amdgpu:.*ring .*timeout', line, re.IGNORECASE)):
+                failures.add(line.strip())
+    return sorted(failures)
+
+
 def collect_display_health(out, display, query_display=True):
     authority = Path(os.environ.get('XAUTHORITY') or str(Path.home() / '.Xauthority'))
     health = {'display': display, 'xauthority_path': str(authority),
@@ -501,7 +520,7 @@ def restore_models(out, record, observer):
     if not leases:
         return
     native = record.get('native', {})
-    unsafe = (native.get('gpu_failure') or
+    unsafe = (record.get('kernel_gpu_timeouts') or native.get('gpu_failure') or
               record.get('game_launched') and not native.get('owned_child_terminated', False))
     if not unsafe:
         try:
@@ -818,7 +837,11 @@ def main():
                     '--game', str(game), '--cwd', str(runtime), '--report', str(out / 'capture'),
                     '--seconds', '118']
         print('STARTING_VERIFIED_CANDIDATE NO_INPUT MAXIMUM_120_SECONDS', flush=True)
-        rc = module.main()
+        record['native_start_monotonic'] = time.monotonic()
+        try:
+            rc = module.main()
+        finally:
+            record['native_end_monotonic'] = time.monotonic()
         native = json.loads((out / 'capture/native-result.json').read_text())
         record['game_launched'] = (out / 'capture/launch.json').is_file()
         record['native'] = native
@@ -858,6 +881,12 @@ def main():
         if record['game_launched'] or record.get('native', {}).get('gpu_failure'):
             try:
                 collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
+                record['kernel_gpu_timeouts'] = kernel_gpu_timeouts(
+                    out, record.get('native_start_monotonic'), record.get('native_end_monotonic'))
+                if record['kernel_gpu_timeouts']:
+                    record['result'] = 'KERNEL_GPU_TIMEOUT_DURING_CAPTURE'
+                    record['stop_remaining_tests'] = True
+                    rc = 1
             except Exception as exc:
                 record['display_diagnostic_error'] = str(exc)
         logs = runtime / 'user/log'
