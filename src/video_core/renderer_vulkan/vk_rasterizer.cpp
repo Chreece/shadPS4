@@ -639,6 +639,9 @@ void Rasterizer::ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDevice
     const auto* pipeline = pipeline_cache.GetComputePipeline();
     ASSERT(pipeline);
     const auto& stage = pipeline->GetStage(Shader::SwStage::Compute);
+    const auto& cs_program = liverpool->GetCsRegs();
+    const bool ordered_append = cs_program.IsTgSizeEnabled() && cs_program.IsOrderedAppendEnabled();
+    const bool ordered_append_per_group = cs_program.IsOrderedAppendPerGroup();
     owner.PrepareContinuationState(instance, runtime, stage.ordered_gds_state_words);
     std::vector<u32> sites;
     for (const auto& site : stage.ordered_gds_sites) {
@@ -685,6 +688,11 @@ void Rasterizer::ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDevice
         if (!creation) {
             creation = VerifiedGuestCreationOrder::FromCompleteCikComputeM0(captured, epoch);
             if (!creation) {
+                creation = VerifiedGuestCreationOrder::FromCikComputeDispatch(
+                    owner.plan.waves, owner.plan.waves_per_group, ordered_append,
+                    ordered_append_per_group);
+            }
+            if (!creation) {
                 throw std::runtime_error(
                     "ordered GDS first phase has no complete CIK creation order");
             }
@@ -694,9 +702,12 @@ void Rasterizer::ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDevice
             if (packet.flags == CaptureBypassFlags) {
                 continue;
             }
-            if (((packet.runtime_m0 >> 13) & 7u) ||
-                (packet.runtime_m0 & 0x1fffu) != creation->RankForSlot(packet.logical_slot)) {
-                throw std::runtime_error("ordered GDS continuation changed its creation identity");
+            if (!creation->MatchesCikComputeM0(packet.logical_slot, packet.runtime_m0)) {
+                throw std::runtime_error(fmt::format(
+                    "ordered GDS creation identity mismatch: phase={}, waves={}, slot={}, "
+                    "rank={}, m0={:#x}",
+                    phase, owner.plan.waves, packet.logical_slot,
+                    creation->RankForSlot(packet.logical_slot), packet.runtime_m0));
             }
             keys.push_back(
                 CompleteBatch::KeyFromM0(packet.runtime_m0, packet.encoded_control >> 2 & 63u));
