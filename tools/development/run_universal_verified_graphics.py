@@ -841,7 +841,7 @@ def main():
             not record.get('native', {}).get('graphics_diagnostics_active') or
             diagnostics and not record.get('native', {}).get('validation_layer_active') or
             not record.get('native', {}).get('owned_child_terminated', False)))
-        if record.get('native', {}).get('gpu_failure'):
+        if record['game_launched'] or record.get('native', {}).get('gpu_failure'):
             try:
                 collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
             except Exception as exc:
