@@ -473,6 +473,18 @@ static bool IsSelectableBufferLoad(const IR::Inst& inst) {
     }
 }
 
+static bool IsSelectableBufferStore(const IR::Inst& inst) {
+    switch (inst.GetOpcode()) {
+    case IR::Opcode::StoreBufferU32:
+    case IR::Opcode::StoreBufferU32x2:
+    case IR::Opcode::StoreBufferU32x3:
+    case IR::Opcode::StoreBufferU32x4:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool IsEntryValue(const IR::Value& value) {
     return value.IsImmediate() || value.Inst()->GetParent()->ImmPredecessors().empty();
 }
@@ -549,8 +561,10 @@ static IR::Value SelectSideResult(IR::IREmitter& ir, const IR::U1& condition,
     return ir.CompositeConstruct(std::span<const IR::Value>{components.data(), components.size()});
 }
 
-static void SplitBufferLoadBySharpPhi(IR::Block& block, IR::Inst& inst,
-                                      std::size_t& remaining_budget) {
+static void SplitBufferAccessBySharpPhi(IR::Block& block, IR::Inst& inst,
+                                        std::size_t& remaining_budget,
+                                        std::unordered_map<IR::Inst*, IR::Value>& store_guards) {
+    const bool is_store = IsSelectableBufferStore(inst);
     IR::Inst* const handle = inst.Arg(0).TryInst();
     if (!handle || handle->GetOpcode() != IR::Opcode::CompositeConstructU32x4) {
         return;
@@ -631,9 +645,23 @@ static void SplitBufferLoadBySharpPhi(IR::Block& block, IR::Inst& inst,
         for (size_t i = 0; i < values.size(); ++i) {
             side_handle->SetArg(i, values[i]);
         }
-        IR::Inst* const load = &*block.PrependNewInst(insert_point, inst);
-        load->SetArg(0, IR::Value{side_handle});
-        loads.push_back(IR::Value{load});
+        IR::Value guard;
+        if (is_store) {
+            IR::IREmitter ir{block, insert_point};
+            guard = ir.IEqual(IR::U32{side_index}, ir.Imm32(static_cast<u32>(side)));
+        }
+        IR::Inst* const access = &*block.PrependNewInst(insert_point, inst);
+        access->SetArg(0, IR::Value{side_handle});
+        if (is_store) {
+            store_guards.emplace(access, guard);
+        } else {
+            loads.push_back(IR::Value{access});
+        }
+    }
+    if (is_store) {
+        inst.Invalidate();
+        remaining_budget -= num_sides - 1;
+        return;
     }
     IR::IREmitter ir{block, insert_point};
     IR::Value result = loads.back();
@@ -1035,7 +1063,7 @@ std::unordered_map<IR::Inst*, IR::Value> ExpandUniformBufferStores(IR::Program& 
 
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile) {
     // Preserve the incoming GPU Phi selections as shader control flow.
-    // Perform read-only resource splits before discovery; the transforms
+    // Perform resource splits before discovery; the transforms
     // may erase their original intrusive-list instructions.
     std::size_t original_samples = 0;
     std::size_t original_buffers = 0;
@@ -1050,17 +1078,18 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
     const std::size_t resource_capacity = std::min<std::size_t>(NUM_IMAGES, NUM_SAMPLERS);
     std::size_t image_split_budget =
         original_samples < resource_capacity ? resource_capacity - original_samples : 0;
+    std::unordered_map<IR::Inst*, IR::Value> store_guards;
     for (IR::Block* const block : program.blocks) {
         for (auto it = block->begin(); it != block->end();) {
             IR::Inst& inst = *it++;
-            if (IsSelectableBufferLoad(inst)) {
-                SplitBufferLoadBySharpPhi(*block, inst, buffer_split_budget);
+            if (IsSelectableBufferLoad(inst) || IsSelectableBufferStore(inst)) {
+                SplitBufferAccessBySharpPhi(*block, inst, buffer_split_budget, store_guards);
             } else if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
                 SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info);
             }
         }
     }
-    const auto store_guards = ExpandUniformBufferStores(program);
+    store_guards.merge(ExpandUniformBufferStores(program));
     ResourceDiscoveryList sharp_usages;
 
     for (IR::Block* const block : program.blocks) {
