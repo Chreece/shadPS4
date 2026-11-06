@@ -46,15 +46,15 @@ PY
     exit "$rc"
 }
 trap finish EXIT
-curl --fail --location --retry 3 \
+curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' dd3165231a5a05066da15323f1d3af90176c47cee69c94941926a03bbc6aba7d "$OUT/graphics.py" | sha256sum --check -
-curl --fail --location --retry 3 \
+printf '%s  %s\n' 50808e9ed2af482fefd38243309e3d76178cd00d478e527495030ee2775aef71 "$OUT/graphics.py" | sha256sum --check -
+curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
 python3 - "$OUT" "$PIN" "$RUNNER_PIN" <<'PY'
-import datetime,fcntl,hashlib,importlib.util,json,pathlib,sys
+import datetime,fcntl,hashlib,importlib.util,json,os,pathlib,sys
 out=pathlib.Path(sys.argv[1])
 record={'timestamp_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'kind':'universal-prebuild-process-preflight','source_commit':sys.argv[2],
@@ -73,6 +73,10 @@ try:
     for pid in record['existing_emulator_pids']:
         observer.capture_owned_stop_state(pid,out,filename=f'existing-process-{pid}.json')
     if record['existing_emulator_pids']:
+        try:
+            runner.collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
+        except Exception as error:
+            record['display_diagnostic_error']=f'{type(error).__name__}: {error}'
         raise RuntimeError('AN_EMULATOR_STILL_HAS_LIVE_OR_UNREADABLE_THREADS')
     record['result']='PASS'
 except Exception as error:
@@ -89,7 +93,7 @@ if record.get('error'):print(record['error'],flush=True)
 sys.exit(0 if record['result']=='PASS' else 2)
 PY
 if [[ "$MODE" == build ]]; then
-    curl --fail --location --retry 3 \
+    curl --ipv4 --fail --location --retry 3 \
         "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/scripts/shadps4-universal-upstream-build.sh" \
         -o "$OUT/build.sh"
     printf '%s  %s\n' 8dceded3ad6bba3df7379e792fcf3bb7339b729b6bf22aea432390eda1ed2ce8 "$OUT/build.sh" | sha256sum --check -
