@@ -1,0 +1,151 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T12:37:47.846585+00:00",
+  "archive": {
+    "filename": "universal-two-games-20261106T121502Z-2341462.tar.gz",
+    "library_file_id": "libfile_a18ce50f7fe481919fa2e220f36f4f97",
+    "sha256": "7d387e5620ee04c440470427338ee773e62d22b19869ab2651bf6748d508b2fb"
+  },
+  "native_build": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261106T121503Z-2341540",
+    "timestamp_utc": "2026-11-06T12:28:55.471921+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "COMPLETE_BUILD_ONLY",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0,
+    "requested_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+    "source_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+    "upstream_commit": "7201424ece9b39795759239d9405ff88be85055b",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261106T121503Z-2341540.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-3fbee42c3dec/build/shadps4",
+    "binary_sha256": "ac15e0ef42f5d06382d58a46d361440ca659228020c903702c681289f02f249c"
+  },
+  "native_failure": {
+    "game_launched": false,
+    "reason": "BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing",
+    "prepared_upstream": "7201424ece9b39795759239d9405ff88be85055b",
+    "moving_upstream_at_launch": "8b804805599df20e702d5a16410335b2ceaa0fcc",
+    "no_games_tested": true
+  },
+  "policy": "Resolve current upstream and rebase retained changes during assistant-side candidate preparation, then hand off one immutable source. Native build/launch must not recheck moving upstream or fork refs. Reuse the successful build for pending validation.",
+  "changes": [
+    "Remove native builder upstream fetch/ancestry gate.",
+    "Remove graphics runner upstream lookup/ancestry gate.",
+    "Remove legacy rebase preview post-build moving-ref gate.",
+    "Fetch the native build script from the immutable runner commit, independently of source commit.",
+    "Record upstream provenance from the pinned source metadata or successful build record, without network lookup.",
+    "Persist workflow rule in AGENTS.md; preserve source/binary/observer integrity and process/VRAM/model protections."
+  ],
+  "upstream_review": {
+    "observed_main": "8b804805599df20e702d5a16410335b2ceaa0fcc",
+    "new_commits": [
+      "4dc007a5ce0327fb3a50d442172b5f767114d6f3",
+      "8b804805599df20e702d5a16410335b2ceaa0fcc"
+    ],
+    "scope": [
+      "AAC reset before initialization guard",
+      "Handled buffer clamp log level"
+    ],
+    "decision": "Review and integrate when preparing the next new emulator build. Do not discard the already successful pinned PR175 build or claim it contains these newer changes."
+  },
+  "validation": {
+    "native_uploaded_build": "PASS: CPU regression suite and three native startup scenarios; binary ac15e0ef42f5d06382d58a46d361440ca659228020c903702c681289f02f249c. Game launch was blocked by the runner, not a build failure.",
+    "launch_regression": [
+      {
+        "baseline": true,
+        "case": "advanced",
+        "launched": false,
+        "error": "BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing",
+        "rc": 1
+      },
+      {
+        "baseline": true,
+        "case": "offline",
+        "launched": false,
+        "error": "Command '['git', 'ls-remote', 'https://github.com/shadps4-emu/shadPS4.git', 'refs/heads/main']' returned non-zero exit status 128.",
+        "rc": 1
+      },
+      {
+        "baseline": true,
+        "case": "binary_changed",
+        "launched": false,
+        "error": "VERIFIED_BINARY_CHANGED",
+        "rc": 1
+      },
+      {
+        "baseline": true,
+        "case": "source_changed",
+        "launched": false,
+        "error": "VERIFIED_SOURCE_CHANGED",
+        "rc": 1
+      },
+      {
+        "baseline": false,
+        "case": "advanced",
+        "launched": true,
+        "error": null,
+        "rc": 0
+      },
+      {
+        "baseline": false,
+        "case": "offline",
+        "launched": true,
+        "error": null,
+        "rc": 0
+      },
+      {
+        "baseline": false,
+        "case": "binary_changed",
+        "launched": false,
+        "error": "VERIFIED_BINARY_CHANGED",
+        "rc": 1
+      },
+      {
+        "baseline": false,
+        "case": "source_changed",
+        "launched": false,
+        "error": "VERIFIED_SOURCE_CHANGED",
+        "rc": 1
+      }
+    ],
+    "build_regression": [
+      {
+        "baseline": true,
+        "rc": 87,
+        "stage": "VERIFY_LATEST_UPSTREAM",
+        "result": "FAILED"
+      },
+      {
+        "baseline": false,
+        "rc": 0,
+        "stage": "COMPLETE_BUILD_ONLY",
+        "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN"
+      }
+    ],
+    "regression_scope": "Real runner main and shell build control flow with isolated filesystem fixtures; compiler/build, guest launch, display/VRAM boundaries substituted. No native game or GPU execution in these fixtures.",
+    "inherited_runner_checks": 78,
+    "syntax": "Python and Bash PASS",
+    "cached_release_build": "PASS; no emulator code changed by this correction"
+  },
+  "next_handoff": {
+    "source_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+    "mode": "existing",
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "automatic_input": false,
+    "maximum_game_seconds": 120,
+    "wrapper_sha256": "f73b4b3b7d7688caa41f0af7c71dc86809b3937594e451c4cc6b9ffc62989841"
+  },
+  "acceptance": {
+    "got_recovery": "UNTESTED: no game launched",
+    "gow_low_fps": "UNRESOLVED",
+    "decision": "Keep emulator fix draft; resume verified native binary with corrected runner."
+  }
+}
