@@ -193,7 +193,12 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     saved_spirv = {Path(item['file']).stem for item in saved_binary
                    if item['file'].endswith('.spv')}
     compiled_pairs = saved_gcn & saved_spirv
-    return {'dump_enabled': True, 'blocked_hashes': sorted(set(blocked)),
+    try:
+        config = json.loads((runtime / 'user/config.json').read_text())
+        dump_enabled = config.get('GPU', {}).get('dump_shaders', False)
+    except (OSError, ValueError):
+        dump_enabled = None
+    return {'dump_enabled': dump_enabled, 'blocked_hashes': sorted(set(blocked)),
             'validation_named_hashes': validation_hashes,
             'validation_compilation_hashes': validation_compilation_hashes,
             'resource_warning_hashes': list(reversed(resource_warning_hashes)),
@@ -462,7 +467,11 @@ def restore_models(out, record, observer):
             if current is not None:
                 if (current.get('context_length') != lease['context_length'] or
                         lease.get('digest') and current.get('digest') != lease['digest']):
-                    raise RuntimeError('MODEL_CHANGED_DURING_TEST_NOT_OVERWRITTEN')
+                    lease['status'] = 'SUPERSEDED_BY_EXTERNAL_LOAD'
+                    lease['observed_model'] = {
+                        key: current.get(key) for key in
+                        ('digest', 'context_length', 'size_vram', 'expires_at')}
+                    continue
                 lease['status'] = 'ALREADY_LOADED'
                 continue
             expiry = dt.datetime.fromisoformat(lease['expires_at'])
