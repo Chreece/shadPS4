@@ -11,6 +11,7 @@
 #include <limits>
 #include <mutex>
 
+#include "common/performance_diagnostics.h"
 #include "video_core/graphics_diagnostics.h"
 
 namespace VideoCore::GpuWorkDiagnostics {
@@ -42,7 +43,7 @@ inline History& GetHistory() {
 
 inline void Dump(const char* reason, const void* semaphore, std::uint64_t completed,
                  std::uint64_t requested) {
-    if (!GraphicsDiagnostics::Enabled()) {
+    if (!GraphicsDiagnostics::Enabled() || Common::PerformanceDiagnostics::Enabled()) {
         return;
     }
     auto& history = GetHistory();
@@ -107,7 +108,7 @@ inline void RegisterExitDump() {
 
 template <typename... Args>
 void Record(const void* semaphore, std::uint64_t tick, const char* format, Args... args) {
-    if (!GraphicsDiagnostics::Enabled()) {
+    if (!GraphicsDiagnostics::Enabled() || Common::PerformanceDiagnostics::Enabled()) {
         return;
     }
     auto& history = GetHistory();

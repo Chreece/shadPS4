@@ -10,6 +10,7 @@
 #include <string_view>
 #include "common/debug.h"
 #include "common/path_util.h"
+#include "common/performance_diagnostics.h"
 #include "common/scope_exit.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
@@ -250,6 +251,7 @@ void Rasterizer::EliminateFastClear() {
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Draw};
     RENDERER_TRACE;
 
     FlushPeriodically();
@@ -339,6 +341,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
                               u32 max_count, VAddr count_address, u16 vertex_sgpr_offset,
                               u16 instance_sgpr_offset) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Draw};
     RENDERER_TRACE;
 
     FlushPeriodically();
@@ -464,6 +467,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 }
 
 void Rasterizer::DispatchDirect() {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Dispatch};
     RENDERER_TRACE;
 
     FlushPeriodically();
@@ -513,6 +517,7 @@ void Rasterizer::DispatchDirect() {
 }
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Dispatch};
     RENDERER_TRACE;
 
     FlushPeriodically();
@@ -631,6 +636,7 @@ u32 Rasterizer::AuthorizeNewOrderedGdsCaptureEpoch(OrderedGdsEpochDeviceBuffers&
 }
 
 void Rasterizer::ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDeviceBuffers> owned) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::OrderedDs};
     using namespace Shader::Gcn::OrderedGds;
     SCOPE_EXIT {
         scheduler.DeferOperation([keep_alive = std::move(owned)] {});
@@ -1678,6 +1684,7 @@ bool Rasterizer::IsComputeImageClear(const Pipeline* pipeline) {
 
 void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::BindBuffers};
     const u64 alignment = instance.StorageMinAlignment();
     for (const auto& desc : stage.buffers) {
         const auto src_access =
@@ -1848,8 +1855,14 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
                 const u64 requested_size = std::min<u64>(vsharp.GetSize(), desc.accessed_size);
                 const u64 size = memory->ClampRangeSize(vsharp.base_address, requested_size);
                 if (size != requested_size) {
-                    LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}",
-                              requested_size, size, stage.pgm_hash);
+                    Common::PerformanceDiagnostics::Scope clamp_perf{
+                        Common::PerformanceDiagnostics::Region::BufferClamp};
+                    static std::atomic<u64> clamp_count{};
+                    const auto count = clamp_count.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (VideoCore::GraphicsDiagnostics::ShouldSample(count)) {
+                        LOG_ERROR(Render, "Clamped size from {} to {} for stage {:#x}; count={}",
+                                  requested_size, size, stage.pgm_hash, count);
+                    }
                 }
                 VideoCore::ObtainBufferFlags flags = {};
                 if (requested_size != vsharp.GetSize()) {
@@ -1888,6 +1901,8 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, Shader::Backend::Binding
 }
 
 void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::BindTextures};
     const u32 first_image_idx = image_infos.size();
     // To emulate storing to explicit mip levels, build a descriptor array with each mip level.
     boost::container::small_vector<u32, 8> image_descriptor_array_sizes;
