@@ -600,3 +600,10 @@ Native retest: runner `de894b11dd5ceb674902ef26c4a9dfb670026d4f`, build mode, Go
 PR175 source `3fbee42c3dec115c7f6062f78c2165767e74e246` completed the native CPU suite, Release build and three startup checks. The runner then blocked before any game because upstream advanced. Removed build/launch freshness gates and the legacy preview post-build ref comparison. Upstream is resolved by the assistant while preparing each candidate; native execution uses that immutable source. Source/binary/observer and process/VRAM/model checks remain.
 
 Resume this successful binary in existing mode, GoT then GoW. Newer upstream `8b804805599df20e702d5a16410335b2ceaa0fcc` was reviewed but is not claimed to be in this already-built source. Eight launch cases, two builder cases and 78 inherited runner checks pass; external build/game boundaries are substituted in local harnesses. No game outcome is available. See `../emulator/reviews/20261106-pinned-build-upstream-race.json`; journal row 754.
+
+
+## 2026-11-06 — Native menu recovery, loading assertion and frame cost
+
+The no-IRQ candidate reached the menu and Continue according to the user. It then exited -11 at 74.771 seconds on a two-ReadConst descriptor Phi assertion while compiling compute shader b5500bd4; this was not the runner time limit. Missing fill persists. Native dumps were disabled, so the exact failing operation is not yet confirmed. A new original shader reproduces the identical assertion for branch-selected buffer stores. The candidate adds guarded scalar/vector stores and passes 16 interpreter cases (8,704 output words), SPIR-V validation, Release build and three startup checks. Native loading remains pending.
+
+Candidate `4afbf1dc55ebb448c5c79ba10dd8c9552b975c4b` retains all 46 commits rebased onto upstream `8b804805599df20e702d5a16410335b2ceaa0fcc`. First-run shader capture can accompany performance data; second-run dumps remain off. The native runner has no moving-upstream checks. OpenOrbis source is shared separately; SDK/hardware execution is pending. See `../emulator/reviews/20261106-descriptor-phi-stores-native-progress.json`; journal rows 755–756 appended.
