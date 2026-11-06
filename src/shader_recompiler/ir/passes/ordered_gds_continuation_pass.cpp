@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <map>
+#include <set>
 #include <vector>
 #include "shader_recompiler/frontend/control_flow_graph.h"
 #include "shader_recompiler/frontend/ordered_gds_state.h"
@@ -141,21 +142,78 @@ void OrderedGdsContinuationPass(IR::Program& program, Gcn::CFG& cfg, Pools& pool
         }
     }
 
+    struct BlockRegisters {
+        std::set<u64> used;
+        std::set<u64> defined;
+        std::set<u64> live_in;
+    };
+    std::map<const Gcn::Block*, BlockRegisters> liveness;
+    for (const auto& block : cfg) {
+        auto& state = liveness[&block];
+        for (const auto& inst : *block.ir_block) {
+            const auto reg = RegisterOf(inst);
+            if (!reg) {
+                continue;
+            }
+            const auto key = RegisterKey(reg);
+            if (inst.Type() == IR::Type::Void) {
+                state.defined.insert(key);
+            } else if (!state.defined.contains(key)) {
+                state.used.insert(key);
+            }
+        }
+        state.live_in = state.used;
+    }
+    bool changed;
+    do {
+        changed = false;
+        for (const auto& block : cfg) {
+            auto& state = liveness.at(&block);
+            auto live = state.used;
+            for (const auto* successor : {block.branch_true, block.branch_false}) {
+                if (!successor) {
+                    continue;
+                }
+                for (const auto key : liveness.at(successor).live_in) {
+                    if (!state.defined.contains(key)) {
+                        live.insert(key);
+                    }
+                }
+            }
+            if (live != state.live_in) {
+                state.live_in = std::move(live);
+                changed = true;
+            }
+        }
+    } while (changed);
+
+    std::set<u64> live_at_resume;
+    for (const auto& site : program.info.ordered_gds_sites) {
+        const auto target = std::find_if(cfg.begin(), cfg.end(), [&](const auto& block) {
+            return !block.is_dummy && !block.is_exec_guard && block.begin == site.pc;
+        });
+        ASSERT(target != cfg.end());
+        const auto& live = liveness.at(&*target).live_in;
+        live_at_resume.insert(live.begin(), live.end());
+    }
+    std::erase_if(registers,
+                  [&](const auto& entry) { return !live_at_resume.contains(entry.first); });
+
     std::map<u64, u32> offsets;
     u32 words{};
     for (const auto& [key, reg] : registers) {
         offsets.emplace(key, words);
         words += Gcn::OrderedGds::StateWords(RegisterType(reg));
     }
-    ASSERT(words && words <= 1u << 20);
-    program.info.ordered_gds_state_words = words;
+    ASSERT(words <= 1u << 20);
+    program.info.ordered_gds_state_words = std::max(words, 1u);
     program.info.loads.Set(IR::Attribute::WorkgroupIndex);
     program.info.loads.Set(IR::Attribute::LocalInvocationIndex);
 
     for (auto* block : program.blocks) {
         for (auto it = block->begin(); it != block->end(); ++it) {
             const auto reg = RegisterOf(*it);
-            if (!reg || it->Type() != IR::Type::Void) {
+            if (!reg || it->Type() != IR::Type::Void || !offsets.contains(RegisterKey(reg))) {
                 continue;
             }
             const auto value = it->Arg(it->NumArgs() - 1);
