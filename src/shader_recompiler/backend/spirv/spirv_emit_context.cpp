@@ -1191,6 +1191,8 @@ void EmitContext::DefineSharedMemory() {
         make_type(IR::Type::U16, U16, 2u, "shared_mem_u16");
     std::tie(shared_memory_u32, shared_u32, shared_memory_u32_type) =
         make_type(IR::Type::U32, U32[1], 4u, "shared_mem_u32");
+    std::tie(shared_memory_f32, shared_f32, shared_memory_f32_type) =
+        make_type(IR::Type::F32, F32[1], 4u, "shared_mem_f32");
     std::tie(shared_memory_u64, shared_u64, shared_memory_u64_type) =
         make_type(IR::Type::U64, U64, 8u, "shared_mem_u64");
 }

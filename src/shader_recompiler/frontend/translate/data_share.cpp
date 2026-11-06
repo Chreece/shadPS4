@@ -190,17 +190,14 @@ void Translator::DS_OP_F32(const GcnInst& inst, AtomicOp op) {
     const IR::U32 offset =
         ir.Imm32((u32(inst.control.ds.offset1) << 8u) + u32(inst.control.ds.offset0));
     const IR::U32 addr_offset = ir.IAdd(addr, offset);
-    const IR::F32 original_val = [&] {
-        switch (op) {
-        case AtomicOp::Fmax:
-            return ir.SharedAtomicFMax(addr_offset, data, is_gds);
-        case AtomicOp::Fmin:
-            return ir.SharedAtomicFMin(addr_offset, data, is_gds);
-        default:
-            UNREACHABLE();
-        }
-    }();
-    SetDst(inst.dst[0], original_val);
+    switch (op) {
+    case AtomicOp::Fmax:
+        return static_cast<void>(ir.SharedAtomicFMax(addr_offset, data, is_gds));
+    case AtomicOp::Fmin:
+        return static_cast<void>(ir.SharedAtomicFMin(addr_offset, data, is_gds));
+    default:
+        UNREACHABLE();
+    }
 }
 
 void Translator::DS_CMPST(int bit_size, bool rtn, const GcnInst& inst) {
