@@ -23,6 +23,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 ERROR_TERMS = (
@@ -225,6 +226,111 @@ def prepare_live_symbols(binary):
             result['sampler_error'] = 'SAMPLER_SYMBOLS_UNAVAILABLE'
     except (OSError, ValueError, StopIteration, struct.error, subprocess.SubprocessError) as error:
         result['error'] = str(error)
+    return result
+
+
+def capture_instruction_context(read, mapping, pointers, deadline):
+    result = {'blocks': [], 'references_are_candidates': True,
+              'maximum_code_pages': 128, 'maximum_data_blocks': 256,
+              'maximum_code_reference_depth': 2, 'maximum_data_pointer_depth': 2}
+    if shutil.which('objdump') is None:
+        result['error'] = 'OBJDUMP_UNAVAILABLE'
+        return result
+    pages, data_blocks = {}, {}
+
+    def queue(address, origin, depth, data_depth=0):
+        region = mapping(address)
+        if region is None or not region['permissions'].startswith('r'):
+            return
+        code = 'x' in region['permissions']
+        if code and depth > result['maximum_code_reference_depth']:
+            return
+        if code and region['path'] and not region['path'].startswith(('/memfd:', '[anon:')):
+            return
+        size = 4096 if code else 1024
+        start = max(region['start'], address // size * size)
+        collection = pages if code else data_blocks
+        if start in collection:
+            return
+        if len(collection) >= result['maximum_code_pages' if code else 'maximum_data_blocks']:
+            result['code_truncated' if code else 'data_truncated'] = True
+            return
+        collection[start] = {'address': start, 'origin': origin,
+                             'depth': depth if code else data_depth,
+                             'code': code, 'size': min(size, region['end'] - start)}
+
+    for item in pointers:
+        if item['code'] and item['depth'] == 0:
+            queue(item['pointer'], item['origins'][0], 0)
+    for depth in range(result['maximum_code_reference_depth'] + 1):
+        batch = [item for item in pages.values() if item['depth'] == depth]
+        if not batch:
+            break
+        chunks = []
+        for item in batch:
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                break
+            raw = read(item['address'], item['size'])
+            result['blocks'].append(dict(item, hex=raw.hex()))
+            chunks.append(raw.ljust(4096, b'\x00'))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            result['budget_exhausted'] = True
+            break
+        try:
+            with tempfile.TemporaryDirectory(prefix='shadps4-code-context-') as directory:
+                binary = Path(directory) / 'context.bin'
+                binary.write_bytes(b''.join(chunks))
+                decoded = subprocess.run(
+                    ['objdump', '-D', '-b', 'binary', '-m', 'i386:x86-64',
+                     '--no-show-raw-insn', str(binary)],
+                    capture_output=True, text=True, timeout=remaining, check=True).stdout
+        except (OSError, subprocess.SubprocessError) as error:
+            result['error'] = type(error).__name__
+            result['budget_exhausted'] = time.monotonic() >= deadline
+            break
+        for line in decoded.splitlines():
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                break
+            match = re.match(r'^\s*([0-9a-f]+):\s+(\S+)\s*(.*)$', line)
+            if not match:
+                continue
+            offset, mnemonic, operands = int(match[1], 16), match[2], match[3]
+            index = offset // 4096
+            if index >= len(batch):
+                continue
+            item = batch[index]
+            adjustment = item['address'] - index * 4096
+            origin = f'instruction:{adjustment + offset:#x}'
+            if depth < result['maximum_code_reference_depth'] and (
+                    mnemonic.startswith('j') or mnemonic in ('call', 'callq', 'loop', 'loope', 'loopne')):
+                target = re.match(r'0x([0-9a-f]+)(?:\s|$)', operands)
+                if target:
+                    queue((int(target[1], 16) + adjustment) & ((1 << 64) - 1), origin, depth + 1)
+            relative = re.search(r'#\s*0x([0-9a-f]+)', operands) if '(%rip)' in operands else None
+            if relative:
+                queue((int(relative[1], 16) + adjustment) & ((1 << 64) - 1), origin, depth + 1)
+            for immediate in re.findall(r'\$0x([0-9a-f]+)', operands):
+                queue(int(immediate, 16), origin, depth + 1)
+    pending = list(data_blocks.values())
+    for item in pending:
+        if time.monotonic() >= deadline:
+            result['budget_exhausted'] = True
+            break
+        raw = read(item['address'], item['size'])
+        result['blocks'].append(dict(item, hex=raw.hex()))
+        if item['depth'] < result['maximum_data_pointer_depth']:
+            before = set(data_blocks)
+            for offset in range(0, len(raw) - 7, 8):
+                queue(int.from_bytes(raw[offset:offset + 8], 'little'),
+                      f'data:{item["address"] + offset:#x}',
+                      result['maximum_code_reference_depth'] + 1, item['depth'] + 1)
+            pending.extend(value for key, value in data_blocks.items() if key not in before)
+    result['bytes'] = sum(len(item['hex']) // 2 for item in result['blocks'])
+    result['code_pages_captured'] = sum(item['code'] for item in result['blocks'])
+    result['data_blocks_captured'] = len(result['blocks']) - result['code_pages_captured']
     return result
 
 
@@ -440,6 +546,7 @@ def capture_owned_live_memory(pid, out, second, symbols):
                                   f'{item["address"]:#x}+{offset}', item['depth'] + 1)
         record['pointer_context_bytes'] = sum(len(item['hex']) // 2
                                                for item in record['pointer_context'])
+        record['instruction_context'] = capture_instruction_context(read, mapping, pending, deadline)
     except (OSError, RuntimeError, ValueError, StopIteration) as error:
         record['error'] = str(error)
     finally:
