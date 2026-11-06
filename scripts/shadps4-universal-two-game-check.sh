@@ -7,7 +7,10 @@ RUNNER_PIN=${3:-$PIN}
 [[ "$MODE" == build || "$MODE" == existing ]] || exit 2
 [[ "$RUNNER_PIN" =~ ^[0-9a-f]{40}$ ]] || exit 2
 export SHADPS4_GRAPHICS_DIAGNOSTICS=1
-if [[ "${SHADPS4_TEST_PERFORMANCE:-0}" == 1 ]]; then
+if [[ "${SHADPS4_TEST_GPU_TRACE:-0}" == 1 ]]; then
+    unset SHADPS4_PERFORMANCE_DIAGNOSTICS
+    export SHADPS4_VULKAN_DIAGNOSTICS=0
+elif [[ "${SHADPS4_TEST_PERFORMANCE:-0}" == 1 ]]; then
     export SHADPS4_PERFORMANCE_DIAGNOSTICS=1
     export SHADPS4_VULKAN_DIAGNOSTICS=0
 else
@@ -49,7 +52,7 @@ trap finish EXIT
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 50808e9ed2af482fefd38243309e3d76178cd00d478e527495030ee2775aef71 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' c6cd875f328fd71b217e4be2316a75cce5d285ae0f586ca12a57434406d714a2 "$OUT/graphics.py" | sha256sum --check -
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
@@ -72,11 +75,12 @@ try:
     record['existing_emulator_pids']=observer.existing_games()
     for pid in record['existing_emulator_pids']:
         observer.capture_owned_stop_state(pid,out,filename=f'existing-process-{pid}.json')
-    if record['existing_emulator_pids']:
+    if record['existing_emulator_pids'] or os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1':
         try:
             runner.collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
         except Exception as error:
             record['display_diagnostic_error']=f'{type(error).__name__}: {error}'
+    if record['existing_emulator_pids']:
         raise RuntimeError('AN_EMULATOR_STILL_HAS_LIVE_OR_UNREADABLE_THREADS')
     record['result']='PASS'
 except Exception as error:
@@ -104,7 +108,8 @@ fi
 RESULT=0
 for GAME in "${GAMES[@]}"; do
     CAPTURE_SHADERS=0
-    if [[ "$GAME" == "${GAMES[0]}" && "${SHADPS4_TEST_CAPTURE_FIRST_SHADERS:-0}" == 1 ]]; then
+    if [[ "${SHADPS4_TEST_GPU_TRACE:-0}" == 1 ||
+          "$GAME" == "${GAMES[0]}" && "${SHADPS4_TEST_CAPTURE_FIRST_SHADERS:-0}" == 1 ]]; then
         CAPTURE_SHADERS=1
     fi
     printf '\nTESTING=%s MAX_SECONDS=120 AUTOMATIC_INPUT=NO\n' "$GAME"
