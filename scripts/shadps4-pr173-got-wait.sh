@@ -9,7 +9,7 @@ curl --fail --location --retry 3 \
   "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/tools/development/run_universal_verified_graphics.py" \
   -o "$run_dir/run.py"
 printf '%s  %s\n' \
-  8b5df3dc1923044501b879e048d9293ac9813d186956d354ba3a22f584a5b299 \
+  31d34868400a262920ae82b366d217f8f99f2d6d38df12bd045b32a7c37d9940 \
   "$run_dir/run.py" | sha256sum --check -
 unset SHADPS4_PR117_CAPTURE_ONCE
 SHADPS4_TEST_SOURCE_COMMIT="$PIN" \

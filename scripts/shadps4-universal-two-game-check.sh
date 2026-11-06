@@ -49,7 +49,7 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 8b5df3dc1923044501b879e048d9293ac9813d186956d354ba3a22f584a5b299 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 31d34868400a262920ae82b366d217f8f99f2d6d38df12bd045b32a7c37d9940 "$OUT/graphics.py" | sha256sum --check -
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
@@ -90,9 +90,9 @@ sys.exit(0 if record['result']=='PASS' else 2)
 PY
 if [[ "$MODE" == build ]]; then
     curl --fail --location --retry 3 \
-        "https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-upstream-build.sh" \
+        "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/scripts/shadps4-universal-upstream-build.sh" \
         -o "$OUT/build.sh"
-    printf '%s  %s\n' 6f827be5ef09ff9e296a970c7c02d3ebda7b4c05d5d4a1dd79189716968e6416 "$OUT/build.sh" | sha256sum --check -
+    printf '%s  %s\n' 8dceded3ad6bba3df7379e792fcf3bb7339b729b6bf22aea432390eda1ed2ce8 "$OUT/build.sh" | sha256sum --check -
     SHADPS4_PERFORMANCE_DIAGNOSTICS=0 bash "$OUT/build.sh" "$PIN" 2>&1 | tee "$OUT/build-runner.log"
 else
     printf 'REUSING_VERIFIED_NATIVE_BUILD=%s\n' "$PIN"
