@@ -99,7 +99,8 @@ inline void RequireCompleteGcnWaveCheckpoints(
     const GcnCheckpointLayout& layout, u32 expected_epoch,
     std::span<const VerifiedGcnOrderedSite> verified_sites) {
     if (!layout.waves || captures.size() != layout.waves ||
-        state_bytes.size() != layout.total_bytes || verified_sites.empty()) {
+        (!state_bytes.empty() && state_bytes.size() != layout.total_bytes) ||
+        verified_sites.empty()) {
         throw std::invalid_argument("guest wave checkpoint/capture coverage mismatch");
     }
     std::vector<bool> seen(layout.waves, false);
@@ -121,6 +122,9 @@ inline void RequireCompleteGcnWaveCheckpoints(
                 throw std::invalid_argument("forged GCN terminal-bypass checkpoint slot");
             }
             continue;
+        }
+        if (state_bytes.empty()) {
+            throw std::invalid_argument("active guest wave checkpoint is missing");
         }
         const auto match =
             std::find_if(verified_sites.begin(), verified_sites.end(),
