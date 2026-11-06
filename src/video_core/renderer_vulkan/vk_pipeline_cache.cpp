@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <ranges>
 #include <string_view>
+#include "common/performance_diagnostics.h"
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -403,6 +404,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 PipelineCache::~PipelineCache() = default;
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::PipelineLookup};
     draw_indirect_params = params;
     if (!RefreshGraphicsKey()) {
         return nullptr;
@@ -433,6 +436,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
 }
 
 const ComputePipeline* PipelineCache::GetComputePipeline() {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::PipelineLookup};
     if (!RefreshComputeKey()) {
         return nullptr;
     }
@@ -719,6 +724,8 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                                               const std::span<const u32>& code, size_t perm_idx,
                                               Shader::Backend::Bindings& binding,
                                               bool ordered_capture_only) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::ShaderCompile};
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");

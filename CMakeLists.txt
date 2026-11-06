@@ -849,6 +849,8 @@ set(COMMON src/common/logging/classes.cpp
            src/common/func_traits.h
            src/common/native_clock.cpp
            src/common/native_clock.h
+           src/common/performance_diagnostics.cpp
+           src/common/performance_diagnostics.h
            src/common/path_util.cpp
            src/common/path_util.h
            src/common/object_pool.h
