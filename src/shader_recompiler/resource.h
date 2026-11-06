@@ -95,6 +95,8 @@ enum class BufferType : u8 {
     // Independent read-only, host-verified per-wave epoch/token transport.
     // This carries no guest wave ordering or CIK counter seed.
     OrderedGdsEpochAuth,
+    OrderedGdsState,
+    OrderedGdsResume,
 };
 
 struct BufferResource {
