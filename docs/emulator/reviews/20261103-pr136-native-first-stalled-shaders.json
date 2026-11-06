@@ -1,0 +1,533 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-03T20:33:02.591035+00:00",
+  "pr": 137,
+  "parent_pr": 136,
+  "native_evidence": {
+    "archive": "universal-two-games-20261103T200615Z-1152079.tar(1).gz",
+    "bytes": 5735545,
+    "sha256": "9626f81a3c1d9cbf68fc04d166a3c0c65c6b9200753db048c02949463f3d78fe",
+    "library_file_id": "libfile_c425a7437cf08191a3ab21333f969188",
+    "build": {
+      "source_commit": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+      "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+      "binary_sha256": "feb99d2319fa9fa108e5de474579efe0aed74f1df65c096facc66973451b23fd",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "game_launched": false,
+      "installed_binary_changed": false,
+      "exit_code": 0
+    },
+    "tested_games": [
+      "CUSA11456"
+    ],
+    "gow": "NOT_RUN_AFTER_GOT_GPU_CONTEXT_LOSS",
+    "got": {
+      "source_commit": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+      "runner_commit": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+      "binary_sha256": "feb99d2319fa9fa108e5de474579efe0aed74f1df65c096facc66973451b23fd",
+      "native": {
+        "binary_sha256": "feb99d2319fa9fa108e5de474579efe0aed74f1df65c096facc66973451b23fd",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 1291682,
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "elapsed_seconds": 61.484,
+        "srt_rejections": {},
+        "console_lines": 6904,
+        "warning_lines": 423,
+        "error_lines": 1302,
+        "gpu_work_entries": 108,
+        "gpu_work_bytes": 16144,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 150926,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "buffer-readback": 1024,
+          "image-readback": 8,
+          "image-read-demand": 8,
+          "conditional-exec": 8,
+          "image-buffer-write": 64,
+          "draw-preparation-flush": 4,
+          "gpu-wait": 16,
+          "copy-layers": 6
+        },
+        "graphics_diagnostics_bytes": 7801,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 944593,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 6,
+        "srt_source_blocks": {
+          "5508355:5508355": 1,
+          "5508356:5508356": 1,
+          "5508358:5508358": 1,
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 290,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "vram_free_before": 5181845504,
+      "vram_free_at_launch": 21414129664,
+      "ollama_unloaded": [
+        "qwen3.8-greek:latest"
+      ],
+      "ollama_attempts": [
+        {
+          "transport": "http://127.0.0.1:11434",
+          "error": "[Errno 104] Connection reset by peer"
+        },
+        {
+          "transport": "http://172.23.0.3:11434",
+          "error": "<urlopen error [Errno 111] Connection refused>"
+        },
+        {
+          "transport": "http://172.23.0.2:11434",
+          "result": "SUCCESS"
+        }
+      ],
+      "ollama_restore_leases": [
+        {
+          "endpoint": "http://172.23.0.2:11434",
+          "model": "qwen3.8-greek:latest",
+          "context_length": 16384,
+          "expires_at": "2319-02-13T20:05:23.391756+00:00",
+          "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+          "size_vram": 17361985862,
+          "status": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+        }
+      ],
+      "configured_readbacks_mode": 0,
+      "stop_remaining_tests": true,
+      "ordered_gds_capture_requested": false,
+      "graphics_diagnostics_requested": true,
+      "vulkan_diagnostics_requested": true,
+      "screenshots": [
+        {
+          "file": "frame-008s.png",
+          "bytes": 34145,
+          "sha256": "a7d2a841f19d01a9864db20f5e7afe8acfd97869f3c172b0f4f3300e960be8f4",
+          "observation": "Emulator loading screen: Ghost of Tsushima / Waiting for game video;0:07 elapsed,30FPS overlay. The two captured images are byte-identical; no game video/menu/gameplay observed."
+        },
+        {
+          "file": "frame-025s.png",
+          "bytes": 34145,
+          "sha256": "a7d2a841f19d01a9864db20f5e7afe8acfd97869f3c172b0f4f3300e960be8f4",
+          "observation": "Emulator loading screen: Ghost of Tsushima / Waiting for game video;0:07 elapsed,30FPS overlay. The two captured images are byte-identical; no game video/menu/gameplay observed."
+        }
+      ],
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "audio": "NOT_AUDITED",
+      "automatic_coherence_enabled": true,
+      "captured_spirv": {
+        "modules": 15,
+        "result": "PASS spirv-val --target-env vulkan1.3; structural validity only, not proof of execution or guest correctness.",
+        "files": [
+          {
+            "file": "cs_0x00000000bd2dcc80_0.spv",
+            "bytes": 52060,
+            "sha256": "78ea9580438bb13bd7bfafa83dc676e76809f9a9ccd1b498fcfe7f6bf0b8787d"
+          },
+          {
+            "file": "cs_0x0000000062ffd078_0.spv",
+            "bytes": 73680,
+            "sha256": "9c1bdfb649066a15ee8d0e5efd7ab042d6282774567155efcc89f5a5b4609dc0"
+          },
+          {
+            "file": "cs_0x00000000684aca30_0.spv",
+            "bytes": 12184,
+            "sha256": "e13a6c5a2343d0a8ceb7e0f909b8d3b3971ff2299599bf67c88c828921468b9c"
+          },
+          {
+            "file": "cs_0x000000001bf86811_0.spv",
+            "bytes": 11696,
+            "sha256": "c0fd5fe8e928df15b45a2169a80b2cf4a044d5b9ffd9c0f4e494a166b59c7dd8"
+          },
+          {
+            "file": "cs_0x00000000e64d44b6_0.spv",
+            "bytes": 26956,
+            "sha256": "52bb40e7c063386af82c59914a0f838f503b4388bb564fa1df6509c3d36438e5"
+          },
+          {
+            "file": "cs_0x0000000059302a6e_0.spv",
+            "bytes": 26492,
+            "sha256": "bcbdad079aa59b0203a023853c50e892f0090dbfbddc7e28339e3fba61061fa3"
+          },
+          {
+            "file": "cs_0x000000008a690ff9_1.spv",
+            "bytes": 3656,
+            "sha256": "b345fc95c1f9453316d4395a8d4990ae0720774df3921f80abcbee943d53ccfa"
+          },
+          {
+            "file": "cs_0x00000000030ec076_0.spv",
+            "bytes": 2580,
+            "sha256": "68e59900873aa6d8c1e3da6a5ea4029559cf87940c1e765f76566aac320f932c"
+          },
+          {
+            "file": "vs_0x0000000061cf8491_4.spv",
+            "bytes": 3944,
+            "sha256": "b77c2adde21de55cc17d7f70f68a444bf17ab9b340acacec6c239bcf73f3cb0b"
+          },
+          {
+            "file": "fs_0x00000000b80f7eb2_4.spv",
+            "bytes": 2764,
+            "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149"
+          },
+          {
+            "file": "fs_0x000000008d32401e_0.spv",
+            "bytes": 109948,
+            "sha256": "81ec20dc31a0cde40b1d956dd82bb630e73e1483f05caab3ca5be6bd90d0444e"
+          },
+          {
+            "file": "vs_0x000000000a894bb5_10.spv",
+            "bytes": 4416,
+            "sha256": "e820c6400740dc5c19b8b4422b4993ae9403630c36b89c0bd5ec5c8b85314374"
+          },
+          {
+            "file": "fs_0x0000000096aa3f2e_0.spv",
+            "bytes": 4936,
+            "sha256": "1d31756ac623602bdcd07533486222e022057c181203440bcd4e150aad02679c"
+          },
+          {
+            "file": "fs_0x00000000361a48f5_0.spv",
+            "bytes": 10440,
+            "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23"
+          },
+          {
+            "file": "cs_0x000000005e89a8b4_0.spv",
+            "bytes": 9732,
+            "sha256": "a5511e3a4b49c2a18eaca5ef9e200bbc64aedbf7628de34614d1476428cc3285"
+          }
+        ]
+      },
+      "gpu_work": {
+        "file": "capture/gpu-work.log",
+        "bytes": 16144,
+        "sha256": "afe4eb314be2501ea83b86f6f769925ba1433c08cee99c2ffa48b6d5292c7961",
+        "lines": [
+          "GRAPHICS_WORK_BEGIN reason=wait-timeout semaphore=0x55dbd5eeb758 completed=3648 requested=3650 recorded=150495 overwritten=148447",
+          "GRAPHICS_WORK seq=150473 ms=37583 semaphore=0x55dbd5eeb758 tick=3649 kind=detile address=153c4c0000 bytes=2097152 groups=8192 bpp=32",
+          "GRAPHICS_WORK seq=150474 ms=37583 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=153c4c0000 bytes=2097152 format=122 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150475 ms=37584 semaphore=0x55dbd5eeb758 tick=3649 kind=detile address=153c2c0000 bytes=2097152 groups=8192 bpp=32",
+          "GRAPHICS_WORK seq=150476 ms=37584 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=153c2c0000 bytes=2097152 format=122 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150477 ms=37584 semaphore=0x55dbd5eeb758 tick=3649 kind=dispatch shader=745c455a groups=1,32,16 threads=4,4,4",
+          "GRAPHICS_WORK seq=150478 ms=37587 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=110a326400 bytes=1181952 format=100 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150479 ms=37587 semaphore=0x55dbd5eeb758 tick=3649 kind=detile address=200fb08100 bytes=549120 groups=4290 bpp=16",
+          "GRAPHICS_WORK seq=150480 ms=37587 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=200fb08100 bytes=549120 format=70 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150481 ms=37587 semaphore=0x55dbd5eeb758 tick=3649 kind=dispatch shader=e1fb67ac groups=65,65,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=150482 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=detile address=200fb8e200 bytes=282880 groups=4420 bpp=8",
+          "GRAPHICS_WORK seq=150483 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=200fb8e200 bytes=282880 format=13 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150484 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=image-upload address=110a446d00 bytes=393984 format=9 layers=1 mips=1",
+          "GRAPHICS_WORK seq=150485 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=shader stage=0 shader=361a48f5 flatbuf-words=48",
+          "GRAPHICS_WORK seq=150486 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=shader stage=1 shader=9911cadd flatbuf-words=16",
+          "GRAPHICS_WORK seq=150487 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=draw indexed=0 vertices=4 instances=1",
+          "GRAPHICS_WORK seq=150488 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=shader stage=0 shader=96aa3f2e flatbuf-words=28",
+          "GRAPHICS_WORK seq=150489 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=shader stage=1 shader=a894bb5 flatbuf-words=16",
+          "GRAPHICS_WORK seq=150490 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=draw indexed=0 vertices=3 instances=1",
+          "GRAPHICS_WORK seq=150491 ms=37591 semaphore=0x55dbd5eeb758 tick=3649 kind=submit command-buffers=1 waits=0",
+          "GRAPHICS_WORK seq=150492 ms=37595 semaphore=0x55dbd5eeb758 tick=3650 kind=buffer-copy src=0x55dbd6953730 dst=0x7f153c582940 src-offset=1186988032 dst-offset=8188480 bytes=458752",
+          "GRAPHICS_WORK seq=150493 ms=37595 semaphore=0x55dbd5eeb758 tick=3650 kind=buffer-copy src=0x55dbd6953730 dst=0x7f153c582940 src-offset=1187446788 dst-offset=8647232 bytes=4",
+          "GRAPHICS_WORK seq=150494 ms=37595 semaphore=0x55dbd5eeb758 tick=3650 kind=submit command-buffers=1 waits=0",
+          "GRAPHICS_WORK_END reason=wait-timeout",
+          "GRAPHICS_WORK_BEGIN reason=wait-timeout semaphore=0x55dbd5eeb758 completed=3711 requested=3712 recorded=152908 overwritten=150860",
+          "GRAPHICS_WORK seq=152889 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=0 shader=b80f7eb2 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152890 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=1 shader=61cf8491 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152891 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=draw indexed=0 vertices=3 instances=1",
+          "GRAPHICS_WORK seq=152892 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=0 shader=b80f7eb2 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152893 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=1 shader=61cf8491 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152894 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=draw indexed=0 vertices=3 instances=1",
+          "GRAPHICS_WORK seq=152895 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=0 shader=b80f7eb2 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152896 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=1 shader=61cf8491 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152897 ms=48095 semaphore=0x55dbd5eeb758 tick=3712 kind=draw indexed=0 vertices=3 instances=1",
+          "GRAPHICS_WORK seq=152898 ms=48125 semaphore=0x55dbd5eeb758 tick=3712 kind=image-upload address=1106c8f000 bytes=8388608 format=16 layers=1 mips=1",
+          "GRAPHICS_WORK seq=152899 ms=48126 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=0 shader=8d32401e flatbuf-words=70",
+          "GRAPHICS_WORK seq=152900 ms=48126 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=1 shader=3bb29d09 flatbuf-words=24",
+          "GRAPHICS_WORK seq=152901 ms=48126 semaphore=0x55dbd5eeb758 tick=3712 kind=draw indexed=0 vertices=4 instances=1",
+          "GRAPHICS_WORK seq=152902 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=0 shader=b80f7eb2 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152903 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=shader stage=1 shader=61cf8491 flatbuf-words=16",
+          "GRAPHICS_WORK seq=152904 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=draw indexed=0 vertices=3 instances=1",
+          "GRAPHICS_WORK seq=152905 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=buffer-copy src=0x55dbd69536e0 dst=0x7f153c582940 src-offset=186256128 dst-offset=16686720 bytes=256",
+          "GRAPHICS_WORK seq=152906 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=buffer-copy src=0x55dbd69536e0 dst=0x7f153c582940 src-offset=186256640 dst-offset=16686976 bytes=256",
+          "GRAPHICS_WORK seq=152907 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=buffer-copy src=0x55dbd69536e0 dst=0x7f153c582940 src-offset=186321472 dst-offset=16687232 bytes=36",
+          "GRAPHICS_WORK seq=152908 ms=48127 semaphore=0x55dbd5eeb758 tick=3712 kind=submit command-buffers=1 waits=0",
+          "GRAPHICS_WORK_END reason=wait-timeout",
+          "GRAPHICS_WORK_BEGIN reason=wait-error semaphore=0x55dbd5eeb758 completed=3712 requested=3713 recorded=152974 overwritten=150926",
+          "GRAPHICS_WORK seq=152909 ms=58256 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd69536e0 src-offset=14729216 dst-offset=92831744 bytes=4096",
+          "GRAPHICS_WORK seq=152910 ms=58256 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd69536e0 src-offset=14733312 dst-offset=92999680 bytes=528384",
+          "GRAPHICS_WORK seq=152911 ms=58256 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=15261696 dst-offset=38132368 bytes=1360",
+          "GRAPHICS_WORK seq=152912 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=0 dst-offset=785678336 bytes=2785280",
+          "GRAPHICS_WORK seq=152913 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=10912,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152914 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2785280 dst-offset=38127192 bytes=8",
+          "GRAPHICS_WORK seq=152915 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2785288 dst-offset=775081984 bytes=8192",
+          "GRAPHICS_WORK seq=152916 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=20,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152917 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2793480 dst-offset=38127104 bytes=8",
+          "GRAPHICS_WORK seq=152918 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2793488 dst-offset=774897664 bytes=16384",
+          "GRAPHICS_WORK seq=152919 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152920 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2809872 dst-offset=38126416 bytes=16",
+          "GRAPHICS_WORK seq=152921 ms=58257 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2809888 dst-offset=773496832 bytes=12288",
+          "GRAPHICS_WORK seq=152922 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=32,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152923 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2822176 dst-offset=38126352 bytes=8",
+          "GRAPHICS_WORK seq=152924 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2822184 dst-offset=773361664 bytes=12288",
+          "GRAPHICS_WORK seq=152925 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152926 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2834472 dst-offset=38126184 bytes=8",
+          "GRAPHICS_WORK seq=152927 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2834480 dst-offset=773013504 bytes=8192",
+          "GRAPHICS_WORK seq=152928 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=20,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152929 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2842672 dst-offset=38126088 bytes=16",
+          "GRAPHICS_WORK seq=152930 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2842688 dst-offset=772829184 bytes=12288",
+          "GRAPHICS_WORK seq=152931 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152932 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2854976 dst-offset=38125408 bytes=8",
+          "GRAPHICS_WORK seq=152933 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2854984 dst-offset=771428352 bytes=12288",
+          "GRAPHICS_WORK seq=152934 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152935 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2867272 dst-offset=38125232 bytes=16",
+          "GRAPHICS_WORK seq=152936 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2867288 dst-offset=771076096 bytes=8192",
+          "GRAPHICS_WORK seq=152937 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=20,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152938 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2875480 dst-offset=38124896 bytes=8",
+          "GRAPHICS_WORK seq=152939 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2875488 dst-offset=770375680 bytes=8192",
+          "GRAPHICS_WORK seq=152940 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=20,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152941 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2883680 dst-offset=38124552 bytes=8",
+          "GRAPHICS_WORK seq=152942 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2883688 dst-offset=769671168 bytes=12288",
+          "GRAPHICS_WORK seq=152943 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152944 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2895976 dst-offset=38123864 bytes=8",
+          "GRAPHICS_WORK seq=152945 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2895984 dst-offset=768266240 bytes=12288",
+          "GRAPHICS_WORK seq=152946 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152947 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2908272 dst-offset=38123848 bytes=16",
+          "GRAPHICS_WORK seq=152948 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2908288 dst-offset=768241664 bytes=12288",
+          "GRAPHICS_WORK seq=152949 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152950 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2920576 dst-offset=38123840 bytes=8",
+          "GRAPHICS_WORK seq=152951 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2920584 dst-offset=768212992 bytes=12288",
+          "GRAPHICS_WORK seq=152952 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152953 ms=58258 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2932872 dst-offset=38123824 bytes=16",
+          "GRAPHICS_WORK seq=152954 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2932888 dst-offset=768188416 bytes=12288",
+          "GRAPHICS_WORK seq=152955 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152956 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2945176 dst-offset=38123776 bytes=16",
+          "GRAPHICS_WORK seq=152957 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2945192 dst-offset=768094208 bytes=12288",
+          "GRAPHICS_WORK seq=152958 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152959 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd763b2b0 src-offset=2957480 dst-offset=38123736 bytes=8",
+          "GRAPHICS_WORK seq=152960 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953690 src-offset=2957488 dst-offset=768004096 bytes=12288",
+          "GRAPHICS_WORK seq=152961 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=30ec076 groups=40,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152962 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=8a690ff9 groups=240,135,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152963 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=8a690ff9 groups=240,135,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152964 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=59302a6e groups=32,32,1 threads=16,16,1",
+          "GRAPHICS_WORK seq=152965 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=e64d44b6 groups=32,32,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152966 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=1bf86811 groups=16,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152967 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=684aca30 groups=32,4,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152968 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=1bf86811 groups=16,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152969 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=684aca30 groups=32,4,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152970 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=62ffd078 groups=8,8,1 threads=8,8,1",
+          "GRAPHICS_WORK seq=152971 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x7f153c9dfce0 dst=0x55dbd6953730 src-offset=2969776 dst-offset=108527616 bytes=4096",
+          "GRAPHICS_WORK seq=152972 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=dispatch shader=bd2dcc80 groups=1,1,1 threads=64,1,1",
+          "GRAPHICS_WORK seq=152973 ms=58259 semaphore=0x55dbd5eeb758 tick=3713 kind=buffer-copy src=0x55dbd6953730 dst=0x7f153c582940 src-offset=69260032 dst-offset=16687296 bytes=20",
+          "GRAPHICS_WORK seq=152974 ms=58261 semaphore=0x55dbd5eeb758 tick=3713 kind=submit command-buffers=1 waits=1",
+          "GRAPHICS_WORK_END reason=wait-error"
+        ],
+        "interpretation": "Pending command recordings and submit calls only. Global ring overwritten count150926; output not truncated. Later semaphore progress is observed but no kernel reset/causal GPU instruction is established."
+      },
+      "diagnostic_log": {
+        "file": "capture/graphics-diagnostics.log",
+        "bytes": 7801,
+        "sha256": "0e30f549fdfbdde9b835cee7b9364647673c8bef10da1216679de876272b0f54",
+        "lines": [
+          "GRAPHICS_DIAG ms=0 event=enabled count=1 counter-pairs=8",
+          "GRAPHICS_DIAG ms=13091 event=buffer-readback count=1 address=0x1506780000 bytes=128 async=0",
+          "GRAPHICS_DIAG ms=13137 event=buffer-readback count=2 address=0x1506780000 bytes=128 async=0",
+          "GRAPHICS_DIAG ms=13382 event=buffer-readback count=3 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=14450 event=buffer-readback count=4 address=0x110b180000 bytes=576 async=0",
+          "GRAPHICS_DIAG ms=14457 event=buffer-readback count=5 address=0x1506780000 bytes=87680 async=0",
+          "GRAPHICS_DIAG ms=14460 event=buffer-readback count=6 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=14472 event=buffer-readback count=7 address=0x110b180000 bytes=576 async=0",
+          "GRAPHICS_DIAG ms=14475 event=buffer-readback count=8 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=14561 event=buffer-readback count=16 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=14771 event=buffer-readback count=32 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=15129 event=buffer-readback count=64 address=0x1506780000 bytes=87680 async=0",
+          "GRAPHICS_DIAG ms=15858 event=buffer-readback count=128 address=0x110b180000 bytes=576 async=0",
+          "GRAPHICS_DIAG ms=17299 event=buffer-readback count=256 address=0x1504200000 bytes=896 async=0",
+          "GRAPHICS_DIAG ms=20302 event=buffer-readback count=512 address=0x1506780000 bytes=87680 async=0",
+          "GRAPHICS_DIAG ms=25825 event=image-readback count=1 address=0x110af43d00 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=25825 event=image-read-demand count=1 address=0x110b098a00 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=26324 event=buffer-readback count=1024 address=0x110b180000 bytes=1152 async=0",
+          "GRAPHICS_DIAG ms=31262 event=conditional-exec count=1 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31308 event=conditional-exec count=2 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31342 event=conditional-exec count=3 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31371 event=conditional-exec count=4 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31415 event=conditional-exec count=5 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31433 event=conditional-exec count=6 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31466 event=conditional-exec count=7 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=31500 event=conditional-exec count=8 skip=1 exec-count=0",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=1 address=0x151afffb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=2 address=0x151b00fb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=3 address=0x151b01fb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=4 address=0x151b02fb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=5 address=0x151b03fb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=6 address=0x151b04fb00 bytes=65536 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=7 address=0x151b7ffb00 bytes=16384 images=1",
+          "GRAPHICS_DIAG ms=36729 event=image-buffer-write count=8 address=0x151b803b00 bytes=16384 images=1",
+          "GRAPHICS_DIAG ms=36730 event=image-buffer-write count=16 address=0x151ba02b00 bytes=4096 images=1",
+          "GRAPHICS_DIAG ms=36730 event=image-buffer-write count=32 address=0x151babff00 bytes=1024 images=1",
+          "GRAPHICS_DIAG ms=36751 event=image-buffer-write count=64 address=0x151baa1f00 bytes=1024 images=1",
+          "GRAPHICS_DIAG ms=37267 event=image-readback count=2 address=0x110af43d00 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=37267 event=image-read-demand count=2 address=0x110afa2850 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=37500 event=draw-preparation-flush count=1 begin-tick=3645 draw-tick=3646 indexed=0",
+          "GRAPHICS_DIAG ms=38607 event=gpu-wait count=1 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=1009 timeouts=1 complete=0",
+          "GRAPHICS_DIAG ms=39634 event=gpu-wait count=2 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=2037 timeouts=2 complete=0",
+          "GRAPHICS_DIAG ms=40654 event=gpu-wait count=3 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=3057 timeouts=3 complete=0",
+          "GRAPHICS_DIAG ms=41678 event=gpu-wait count=4 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=4081 timeouts=4 complete=0",
+          "GRAPHICS_DIAG ms=42706 event=gpu-wait count=5 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=5109 timeouts=5 complete=0",
+          "GRAPHICS_DIAG ms=43726 event=gpu-wait count=6 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=6129 timeouts=6 complete=0",
+          "GRAPHICS_DIAG ms=44750 event=gpu-wait count=7 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=7153 timeouts=7 complete=0",
+          "GRAPHICS_DIAG ms=45778 event=gpu-wait count=8 semaphore=0x55dbd5eeb758 requested=3650 known=3648 elapsed_ms=8181 timeouts=8 complete=0",
+          "GRAPHICS_DIAG ms=47792 event=image-readback count=3 address=0x110adef000 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=47792 event=image-read-demand count=3 address=0x110ae4db50 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=47814 event=image-readback count=4 address=0x110a326400 bytes=1181952 sync=0",
+          "GRAPHICS_DIAG ms=47814 event=image-read-demand count=4 address=0x110a3dec00 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=47815 event=copy-layers count=1 src-address=1510960000 dst-address=1510960000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=1 dst-layers=2 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=47819 event=copy-layers count=2 src-address=1518160000 dst-address=1518160000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=1 dst-layers=2 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=47824 event=draw-preparation-flush count=2 begin-tick=3657 draw-tick=3658 indexed=0",
+          "GRAPHICS_DIAG ms=47862 event=image-readback count=5 address=0x110af43d00 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=47862 event=image-read-demand count=5 address=0x110afa2850 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=47871 event=image-readback count=6 address=0x110a446d00 bytes=393984 sync=0",
+          "GRAPHICS_DIAG ms=47871 event=image-read-demand count=6 address=0x110a47a966 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=47909 event=copy-layers count=3 src-address=1510960000 dst-address=1510960000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=2 dst-layers=3 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=47913 event=copy-layers count=4 src-address=1518160000 dst-address=1518160000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=2 dst-layers=3 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=47921 event=draw-preparation-flush count=3 begin-tick=3672 draw-tick=3673 indexed=0",
+          "GRAPHICS_DIAG ms=47958 event=image-readback count=7 address=0x110adef000 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=47958 event=image-read-demand count=7 address=0x110ae4db50 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=47985 event=draw-preparation-flush count=4 begin-tick=3686 draw-tick=3687 indexed=0",
+          "GRAPHICS_DIAG ms=48034 event=image-readback count=8 address=0x110af43d00 bytes=1395968 sync=0",
+          "GRAPHICS_DIAG ms=48034 event=image-read-demand count=8 address=0x110afa2850 bytes=8 images=1",
+          "GRAPHICS_DIAG ms=48043 event=copy-layers count=5 src-address=1510960000 dst-address=1510960000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=3 dst-layers=4 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=48045 event=copy-layers count=6 src-address=1518160000 dst-address=1518160000 src-type=9 dst-type=9 src-format=16 dst-format=16 src-mips=1 dst-mips=1 src-layers=3 dst-layers=4 src-depth=1 dst-depth=1 copy-depth=1 src-is-depth=0 dst-is-depth=0",
+          "GRAPHICS_DIAG ms=54258 event=gpu-wait count=16 semaphore=0x55dbd5eeb758 requested=3712 known=3711 elapsed_ms=6129 timeouts=6 complete=0"
+        ]
+      }
+    }
+  },
+  "diagnosis": {
+    "first_wait": {
+      "completed_tick": 3648,
+      "requested_tick": 3650,
+      "recorded_work_ticks": [
+        3649,
+        3650
+      ],
+      "shaders_in_recording_order": [
+        "00000000745c455a",
+        "00000000e1fb67ac",
+        "00000000361a48f5",
+        "000000009911cadd",
+        "0000000096aa3f2e",
+        "000000000a894bb5"
+      ],
+      "operations": "Two detile/upload pairs, compute dispatches745c455a/e1fb67ac, two fullscreen draws, then buffer copies and submissions. Shader identities are evidence, not runtime selectors."
+    },
+    "next_wait": {
+      "completed_tick": 3711,
+      "requested_tick": 3712,
+      "operations": "Fullscreen draws, image upload and buffer readback copies. Later final wait has known3712/requested3713 and returns ErrorDeviceLost."
+    },
+    "collector_defect": "Latest16 waiting-work hashes evict both compute shaders from the first wait when later wait windows append newer identities. Reproduced with exact native console and synthetic dump filenames; parent drops both, candidate preserves first-window identities separately.",
+    "fetch_binary_defect": "Original archive includes vs_0x000000009911cadd.fetch.bin and vs_0x000000003bb29d09.fetch.bin, without matching compiled SPIR-V. Latest-mtime variant ordering selects fetch-only files first and the old representation check accepts any file. Prioritize complete GCN/SPIR-V pairs and require a same-stem pair for representation.",
+    "root_cause": "UNPROVEN. Long waits, actual draw-preparation submissions and final GPU context loss are observed; their cause is not established.",
+    "source_review": "Reviewed draw/dispatch binding order, image download/transition state and stream-buffer watches. No new emulation correction accepted from these hypotheses. Preserve PR135 and all earlier fixes; four preparation-flush events now exercise its path, without proving game recovery."
+  },
+  "implementation_changes": [
+    "Preserve first pending wait shader hashes independently of rolling latest16; bounded64 with explicit truncation and first-window metadata.",
+    "Prioritize complete same-stem GCN/SPIR-V pairs over fetch-only files; preserve8MiB bound and raise file count to128 to retain more permutations. Report missing first-window compiled pairs.",
+    "Read-only retained-run recovery verifies source/build/launch/binary and collector identity; scans existing dumps, packages new evidence and appends the journal. Does not launch games/use GPU/change model state or old artifacts."
+  ],
+  "validation": {
+    "native_provenance": "graphics.py, observer.py and build.sh byte-match published8a6ab293; source/build/binary hashes consistent. No misuse of historical retained-source archives as candidate source.",
+    "build": "Emulator C++ and CMake unchanged from the uploaded8a6ab293 native build/CPU/startup PASS; no redundant emulator rebuild for Python-only changes.",
+    "new_checks": {
+      "count": 104,
+      "result": "PASS",
+      "collector": "Actual native console replay with synthetic binary fixtures; first-window retention,64-hash cap,8MiB/128-file cap, complete-pair priority, fetch-only missing status, extra permutations and empty waits.",
+      "recovery": "11 scenarios:complete,missing shader,missing dumps,source mismatch,binary changed,binary absent,symlink runtime,bad collector,console-tail fallback,empty wait,symlink console. Assert original bytes unchanged,archive+journal produced,no copied emulator binary. Subprocess and network calls forbidden.",
+      "limitations": "Fixture bytes are not missing native shaders. Actual user-host retained-dump recovery remains pending."
+    },
+    "retained_trace": "PASS45 production-header ASan/UBSan and collector checks; no C++ changes. detect_leaks=0 due previously recorded environment limitation.",
+    "retained_observer": "PASS20 assertions",
+    "wrapper": "PASS actual wrapper build/existing control flow with only external boundaries stubbed; both games, mandatory diagnostics,pins,archive and journal retained.",
+    "syntax_diff": "PASS Python compile,bash -n,git diff --check",
+    "new_repository_tests": false,
+    "logs": {
+      "nov3o-check.log": {
+        "bytes": 574,
+        "sha256": "93d4523d7a80c486ace4b832f36e13d298fd5cbcbd42862680080202bed6057c"
+      },
+      "nov3o-check-final.log": {
+        "bytes": 574,
+        "sha256": "315018d3952b14c7e6d6e64342e4051bc156a6a3f63f8b910c607cd822935793"
+      },
+      "nov3o-retained-trace-final.log": {
+        "bytes": 288,
+        "sha256": "15c64e03d1a756d5fa3300b641f2110ba87312d59da3ee1cd589486292fab11d"
+      },
+      "nov3o-wrapper-final.log": {
+        "bytes": 310,
+        "sha256": "4a7f1e8aba46f8ca2a481dc65a271b360704e68cea088ecd7bf1a5e2ec9e4099"
+      }
+    },
+    "temporary_harness": {
+      "bytes": 10929,
+      "sha256": "1854b59cda9d425b4e21cf1cfed49f877634f9ccbcd2cb253a0d9d5087880689"
+    },
+    "initial_successful_iteration": "100 focused checks passed; review of actual native filenames identified fetch-only representation too. Added pair-priority fix and4 checks; final104 pass. No failed check or build in this iteration.",
+    "onepaste": {
+      "result": "ONEPASTE_END_TO_END=PASS pinned download paths/hash checks, spaces in project path, actual recovery CLI, archive+journal, original byte preservation; only network download boundary stubbed; GPU_NOT_RUN",
+      "log_sha256": "b4ce70e83051278f430b95acf08bb0602be6bf655ed650498da9a5dafcc5a643",
+      "template_sha256": "0ca3d6af6f9a63a083bcc7bfeb872419fd48479f6d330ae48a9e71440c78b15a"
+    }
+  },
+  "preservation": {
+    "prior_journal_rows": 453,
+    "prior_journal_sha256": "5b9979d98dd0761717fd5ed666737b10c18bcc033c4bb0cc41d5a5ce1f42329a",
+    "parent": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+    "implementation": "da9cd063ba984b45a5a0cb64ab98f5b3e0798672",
+    "implementation_tree": "2e720c1bb7960b341d7e7f7656c11009837c6f61",
+    "live_upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "fork_main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "emulator_source_diff": "EMPTY",
+    "source_files": {
+      "tools/development/recover_universal_gpu_work.py": "dab0f0671bd65ac5e7417f2024a9e889bd30304020578b60f8f832c4c486a321",
+      "tools/development/run_universal_verified_graphics.py": "3dc7b64a23c10a55ee4e6fb580e4a92e94ef53bded15db08dfb75247128dbfa0",
+      "scripts/shadps4-universal-two-game-check.sh": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6"
+    }
+  },
+  "next_step": {
+    "mode": "READ_ONLY_RETAINED_SHADER_RECOVERY_NO_BUILD_OR_GAME_RUN",
+    "original_record": "universal-graphics-20261103T202034Z-1291590",
+    "expected_source": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+    "goals": [
+      "Recover complete compiled pairs for the first recorded pending wait, especially745c455a/e1fb67ac, and available permutations.",
+      "Do not equate fetch-only GCN with a complete shader capture; report missing files explicitly.",
+      "Inspect recovered code before selecting a generic emulator correction; no repeated identical native crash run."
+    ],
+    "safety": "No GPU launch/model operation/process kill/service restart. Old evidence unchanged; new archive and append-only journal only.",
+    "remaining": "Game recovery,causal GPU instruction,exact executed shader permutation,DS dedicated seed and guest re-entry remain unproven."
+  },
+  "model_status": "Original model/context/digest/expiry were captured via Docker-private local API; unload succeeded. Native GPU failure correctly deferred restoration. Successful restore after a safe game exit remains untested; model was not restored by this review.",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION"
+}

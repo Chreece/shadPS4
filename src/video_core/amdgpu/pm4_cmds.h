@@ -954,6 +954,9 @@ struct PM4CmdReleaseMem {
 
     void SignalFence(auto&& signal_irq, auto&& gds_to_mem) const {
         switch (data_sel.Value()) {
+        case DataSelect::None: {
+            break;
+        }
         case DataSelect::Data32Low: {
             *Address<u32*>() = DataDWord();
             break;
@@ -975,7 +978,8 @@ struct PM4CmdReleaseMem {
             break;
         }
         default: {
-            UNREACHABLE();
+            UNREACHABLE_MSG("Unsupported RELEASE_MEM data_sel={} int_sel={} control={:#x}",
+                            u32(data_sel.Value()), u32(int_sel.Value()), dw2);
         }
         }
 
@@ -984,6 +988,9 @@ struct PM4CmdReleaseMem {
             // No interrupt
             break;
         }
+        case InterruptSelect::IrqOnly:
+            ASSERT(data_sel == DataSelect::None);
+            [[fallthrough]];
         case InterruptSelect::IrqUndocumented:
             [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm: {
@@ -991,7 +998,8 @@ struct PM4CmdReleaseMem {
             break;
         }
         default: {
-            UNREACHABLE();
+            UNREACHABLE_MSG("Unsupported RELEASE_MEM int_sel={} data_sel={} control={:#x}",
+                            u32(int_sel.Value()), u32(data_sel.Value()), dw2);
         }
         }
     }

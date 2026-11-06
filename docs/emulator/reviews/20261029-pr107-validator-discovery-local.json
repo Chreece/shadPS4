@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "record_id": "pr107-offline-validator-discovery-completion-local-20261029",
+  "recorded_on": "2026-10-29",
+  "record_type": "OFFLINE_RUNNER_CORRECTION_LOCAL_TESTED_ACTUAL_MODULE_VALIDATION_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "related_prs": [107],
+  "prior_native_review": "20261029T053938612839Z-indirect-materials-native.json",
+  "separate_gow_review": "20261029T053642Z-gow-validation-wrapper-only.json",
+  "confirmed_tooling_failure": "The material runner looked under scripts/got-spirv-offline.*/**/spirv-val instead of the existing scripts/spirv-tools-private-<package SHA>/unpacked-<pid>/usr/bin/spirv-val extraction. All42 shader-validation rows were skipped, despite successful native translation. The earlier successful audit records the correct extraction path. Do not label missing validation as PASS or infer a broken GPU shader from it.",
+  "runner_commit": "8af9358763d57c92f0e9fe7bd3aaff69b5014846",
+  "runner_path": "tools/development/c925_indirect_materials/complete_indirect_validation.py",
+  "runner_sha256": "3e4e214a61743c5e643122040caaa5782828b22fa554fd553b4e6d8ef5201ee3",
+  "runner_git_blob": "6a5a18006e0b1e69f709f1d884bba31686889b3f",
+  "tests_path": "tools/development/c925_indirect_materials/test_complete_indirect_validation.py",
+  "tests_git_blob": "97062458deafb685ecb2dd8eda9a4158ccd16172",
+  "scope": [
+    "Read immutable PR107 capture after verifying archive SHA256; deduplicate21 recorded modules to three distinct byte sequences while retaining every origin.",
+    "Find the existing checksum-pinned private validator in its actual directory or recorded extraction path; fall back to an installed PATH tool with explicit version/feature checks. Missing or mismatched tools fail, not pass. No download or package installation.",
+    "Run universal, strict Vulkan1.3, and separately labelled maintenance8/scalar-layout validation; retain every return code and diagnostic. Optional-feature diagnostics are not silently erased.",
+    "Copy only exact already-existing GoW053642 wrapper/game log and bounded textual members from its named archive. No unrelated log search or game replay. Record missing files explicitly.",
+    "No emulator build/launch, renderer/source/config writes, cache deletion, GPU or Ollama access, service restart or system permission change. Record current ELF before/after; validating immutable captured shaders does not require an obsolete current-ELF hash."
+  ],
+  "local_tests": {
+    "syntax": "PASS",
+    "unittest": "12/12 PASS; final rerun1.023seconds with ResourceWarning treated as error",
+    "coverage": "Actual private-directory lookup; mismatched private binary refused before execution; recorded external path refused; installed-tool version check; missing validator failure; byte dedup/origin preservation; unsafe archive-member filtering; invalid SPIR-V container rejection; separate feature modes; exact GoW run collection; real child exit and timeout cleanup; end-to-end mocked validator/archive test preserving original source files.",
+    "qualification": "Mock validator responses test orchestration, not actual shader semantic correctness. No real SPIRV-Tools executable is available in the model environment, so current modules remain semantically unvalidated here.",
+    "publication_parity": "Fetched runner Git blob equals the locally tested bytes. Downloadable script SHA256 is pinned above."
+  },
+  "actual_shader_validation": "PENDING_USER_HOST_OFFLINE_TOOL_EXECUTION",
+  "native_game_execution": "NOT_RUN_NOT_REQUESTED",
+  "pr107_status": "KEPT_FOR_DEMONSTRATED_NATIVE_DESCRIPTOR_SELECTION; DRAFT_UNMERGED_PENDING_REVIEWED_VALIDATION",
+  "graphics": "MENU_MATERIAL_FILLS_AND_OVERLAYS_STILL_UNRESOLVED",
+  "decision": "KEEP_NATIVE_PROGRESS; REPAIR_SKIPPED_VALIDATION_WITHOUT_ANOTHER_BUILD_OR_GAME_RUN; NO_SPECULATIVE_ZERO_RECORD_EXPANSION",
+  "next": "Review the three real-module validator results and the exact separately collected GoW VUID. Passing module structure alone does not establish Vulkan resource binding or visible material output. Do not infer freezes from identical menu images or merge unrelated outcomes.",
+  "raw_game_shader_data_published": false
+}

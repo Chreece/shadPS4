@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <bit>
 #include <unordered_map>
+#include <unordered_set>
 #include <boost/container/flat_map.hpp>
 #include <queue>
 #include <xbyak/xbyak.h>
@@ -134,10 +136,13 @@ struct PassInfo {
             } else if (!a.IsImmediate() && !b.IsImmediate()) {
                 auto a_inst = a.Inst();
                 auto b_inst = b.Inst();
+                if (a_inst == b_inst) {
+                    return false;
+                }
                 auto a_block = a_inst->GetParent();
                 auto b_block = b_inst->GetParent();
                 if (a_block != b_block) {
-                    return a_block < b_block; // Sort by block address
+                    return std::less<IR::Block*>{}(a_block, b_block);
                 }
 
                 auto it = a_block->Instructions().iterator_to(*a_inst);
@@ -169,6 +174,8 @@ struct PassInfo {
 
     // Bumped during codegen to assign offsets to readconsts
     u16 dst_off_dw;
+    std::unordered_set<const IR::Inst*> active_srt_pointers;
+    u32 deferred_reads{};
 
     PtrUserList* GetUsesAsPointer(IR::Inst* inst) {
         auto it = pointer_uses.find(inst);
@@ -295,7 +302,7 @@ static bool EmitComputeOffsetShiftLeftLogical32(Xbyak::CodeGenerator& c, Xbyak::
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(1)));
-        c.shl(reg, inst->Arg(0).U32());
+        // Keep the resolved shift count unchanged until it is in CL.
         c.mov(ecx, reg);
         c.mov(reg, inst->Arg(0).U32());
         c.shl(reg, cl);
@@ -448,7 +455,6 @@ static bool EmitComputeOffsetUMax32(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, P
 
 static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg,
                                               PassInfo& pass_info, IR::Inst* inst) {
-    // We asume that the count is always less than 32, Is this correct?
     ASSERT(!inst->AreAllArgsImmediates());
     if (inst->Arg(0).IsImmediate()) {
         c.mov(reg, inst->Arg(0).U32());
@@ -469,16 +475,24 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
         if (in_stack) {
             c.pop(reg.cvt64());
         }
-        c.and_(reg, (1U << inst->Arg(2).U32()) - 1);
+        const u32 width = inst->Arg(2).U32();
+        if (width < 32) {
+            c.and_(reg, (1U << width) - 1);
+        }
     } else {
         if (!in_stack) {
             c.push(reg.cvt64());
         }
         POP_ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, inst->Arg(2)));
         c.mov(ecx, reg);
+        Xbyak::Label full_width;
+        c.mov(edx, 0xffffffffu);
+        c.cmp(ecx, 32);
+        c.jae(full_width);
         c.mov(edx, 1);
         c.shl(edx, cl);
         c.dec(edx);
+        c.L(full_width);
         c.and_(dword[rsp], edx);
         c.pop(reg.cvt64());
     }
@@ -487,6 +501,8 @@ static bool EmitComputeOffsetBitFieldUExtract(Xbyak::CodeGenerator& c, Xbyak::Re
 
 static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     switch (inst->GetOpcode()) {
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
     case IR::Opcode::GetUserData:
     case IR::Opcode::ReadConst:
     case IR::Opcode::ReadConstBuffer:
@@ -502,15 +518,76 @@ static bool IsAllowedOffsetInstruction(const IR::Inst* inst) {
     case IR::Opcode::UMin32:
     case IR::Opcode::UMax32:
     case IR::Opcode::BitFieldUExtract:
+    case IR::Opcode::FindILsb32:
         return true;
     default:
         return false;
     }
 }
 
+static bool IsHostUniformSrtOffset(const IR::Value& off_dw) {
+    std::unordered_set<const IR::Inst*> active;
+    size_t remaining = 4096;
+    const auto check = [&active, &remaining](const auto& self, const IR::Value& value) -> bool {
+        if (remaining == 0 || active.size() >= 128) {
+            return false;
+        }
+        --remaining;
+        if (value.IsImmediate()) {
+            return true;
+        }
+        const IR::Inst* inst = value.TryInst();
+        if (inst == nullptr || !IsAllowedOffsetInstruction(inst) || !active.insert(inst).second) {
+            return false;
+        }
+        bool uniform = true;
+        switch (inst->GetOpcode()) {
+        case IR::Opcode::GetUserData:
+            break;
+        case IR::Opcode::ReadConst:
+        case IR::Opcode::ReadConstBuffer: {
+            const IR::Inst* const handle = inst->Arg(0).TryInst();
+            if (!handle ||
+                (handle->GetOpcode() != IR::Opcode::CompositeConstructU32x2 &&
+                 handle->GetOpcode() != IR::Opcode::CompositeConstructU32x4)) {
+                uniform = false;
+                break;
+            }
+            uniform = self(self, inst->Arg(1));
+            for (size_t word = 0; word < handle->NumArgs() && uniform; ++word) {
+                uniform = self(self, handle->Arg(word));
+            }
+            break;
+        }
+        case IR::Opcode::ReadLane:
+        case IR::Opcode::ReadFirstLane:
+            uniform = self(self, inst->Arg(0));
+            break;
+        default:
+            for (std::size_t i = 0; i < inst->NumArgs(); ++i) {
+                if (!self(self, inst->Arg(i))) {
+                    uniform = false;
+                    break;
+                }
+            }
+            break;
+        }
+        active.erase(inst);
+        return uniform;
+    };
+    return check(check, off_dw);
+}
+
 static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& pass_info,
                           const IR::Value& off_dw) {
     ASSERT(reg != ecx && reg != edx);
+    if (off_dw.IsImmediate()) {
+        if (off_dw.Type() != IR::Type::U32) {
+            return false;
+        }
+        c.mov(reg, off_dw.U32());
+        return true;
+    }
     auto inst = off_dw.Inst();
     switch (inst->GetOpcode()) {
     case IR::Opcode::GetUserData:
@@ -523,6 +600,12 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
             return true;
         }
         return false;
+    case IR::Opcode::ReadLane:
+    case IR::Opcode::ReadFirstLane:
+        if (!IsHostUniformSrtOffset(inst->Arg(0))) {
+            return false;
+        }
+        return ComputeOffset(c, reg, pass_info, inst->Arg(0));
     case IR::Opcode::IAdd32:
         ABORT_ON_FAILURE(EmitComputeOffsetIAdd32(c, reg, pass_info, inst));
         return true;
@@ -559,6 +642,19 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
     case IR::Opcode::BitFieldUExtract:
         ABORT_ON_FAILURE(EmitComputeOffsetBitFieldUExtract(c, reg, pass_info, inst));
         return true;
+    case IR::Opcode::FindILsb32: {
+        const IR::Value input = inst->Arg(0);
+        if (input.IsImmediate()) {
+            const u32 value = input.U32();
+            c.mov(reg, value ? std::countr_zero(value) : ~u32{0});
+        } else {
+            ABORT_ON_FAILURE(ComputeOffset(c, reg, pass_info, input));
+            c.bsf(reg, reg);
+            c.mov(ecx, ~u32{0}); // Preserve BSF's ZF for the zero-input sentinel.
+            c.cmovz(reg, ecx);
+        }
+        return true;
+    }
     default:
         LOG_ERROR(Render_Recompiler, "Unexpected instruction for offset computation, {}",
                   magic_enum::enum_name(inst->GetOpcode()));
@@ -567,11 +663,17 @@ static bool ComputeOffset(Xbyak::CodeGenerator& c, Xbyak::Reg32 reg, PassInfo& p
 }
 
 static inline bool PushPtr(Xbyak::CodeGenerator& c, PassInfo& pass_info, const IR::Value& off_dw) {
+    // A rejected GPU-dynamic offset must not leave an unmatched push in the
+    // generated host walker. Roll back emitted bytes, not the guest index.
+    const size_t checkpoint = c.getSize();
     c.push(rdi);
     if (off_dw.IsImmediate()) {
         c.mov(rdi, ptr[rdi + (off_dw.U32() << 2)]);
     } else {
-        ABORT_ON_FAILURE(ComputeOffset(c, r10d, pass_info, off_dw));
+        if (!ComputeOffset(c, r10d, pass_info, off_dw)) {
+            c.setSize(checkpoint);
+            return false;
+        }
         c.shl(r10d, 2);
         c.mov(r10d, r10d);
         c.mov(rdi, ptr[rdi + r10]);
@@ -587,39 +689,66 @@ static inline void PopPtr(Xbyak::CodeGenerator& c) {
 
 static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& pass_info,
                          Xbyak::CodeGenerator& c) {
-    if (subtree->GetOpcode() == IR::Opcode::ReadConst && subtree->Flags<u16>() == 0 ||
-        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer &&
-            subtree->Flags<IR::BufferInstInfo>().flatbuf_off_dw == 0) {
+    if (!IsHostUniformSrtOffset(off_dw)) {
         return;
     }
-
+    if (subtree->GetOpcode() == IR::Opcode::ReadConst ||
+        subtree->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+        const auto* canonical = pass_info.DeduplicateInstruction(subtree);
+        const u16 slot = GetFlatbufOffset(canonical);
+        if (slot == 0) {
+            ++pass_info.deferred_reads;
+            return;
+        }
+        SetFlatbufOffset(subtree, slot);
+    }
+    if (!pass_info.active_srt_pointers.insert(subtree).second) {
+        ++pass_info.deferred_reads;
+        return;
+    }
     if (!PushPtr(c, pass_info, off_dw)) {
-        LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+        pass_info.active_srt_pointers.erase(subtree);
+        ++pass_info.deferred_reads;
         return;
     }
     PassInfo::PtrUserList* use_list = pass_info.GetUsesAsPointer(subtree);
     ASSERT(use_list);
 
-    // First copy all the src data from this tree level
-    // That way, all data that was contiguous in the guest SRT is also contiguous in the
-    // flattened buffer.
-    // TODO src and dst are contiguous. Optimize with wider loads/stores
-    // TODO if this subtree is dynamically indexed, don't compact it (keep it sparse)
     for (auto [src_off_dw, use] : *use_list) {
+        IR::Inst* canonical = pass_info.DeduplicateInstruction(use);
+        if (const u16 slot = GetFlatbufOffset(canonical); slot != 0) {
+            SetFlatbufOffset(use, slot);
+            continue;
+        }
+        if (!IsHostUniformSrtOffset(src_off_dw)) {
+            continue;
+        }
+        if (pass_info.dst_off_dw == std::numeric_limits<u16>::max()) {
+            ++pass_info.deferred_reads;
+            continue;
+        }
         if (src_off_dw.IsImmediate()) {
+            c.lea(r11, ptr[rdi + (src_off_dw.U32() << 2)]);
             c.mov(r10d, ptr[rdi + (src_off_dw.U32() << 2)]);
         } else {
+            // ComputeOffset may emit partial expressions before discovering
+            // an unsupported GPU-dependent opcode. Do not execute that code.
+            const size_t checkpoint = c.getSize();
             if (!ComputeOffset(c, r10d, pass_info, src_off_dw)) {
-                LOG_ERROR(Render_Recompiler, "Failed to compute offset for SRT walker");
+                c.setSize(checkpoint);
+                ++pass_info.deferred_reads;
                 continue;
             }
             c.shl(r10d, 2);
             c.mov(r10d, r10d);
+            c.lea(r11, ptr[rdi + r10]);
             c.mov(r10d, dword[rdi + r10]);
         }
         c.mov(ptr[rsi + (pass_info.dst_off_dw << 2)], r10d);
+        c.mov(ptr[r8 + (pass_info.dst_off_dw * sizeof(VAddr))], r11);
 
         SetFlatbufOffset(use, pass_info.dst_off_dw);
+        SetFlatbufOffset(canonical, pass_info.dst_off_dw);
         pass_info.dst_off_dw++;
     }
 
@@ -631,6 +760,7 @@ static void VisitPointer(const IR::Value& off_dw, IR::Inst* subtree, PassInfo& p
     }
 
     PopPtr(c);
+    pass_info.active_srt_pointers.erase(subtree);
 }
 
 static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
@@ -650,11 +780,28 @@ static void GenerateSrtProgram(Info& info, PassInfo& pass_info) {
     }
 
     info.srt_info.walker_func = c.getCurr<PFN_SrtWalker>();
+    c.mov(r8, rdx);
     pass_info.dst_off_dw = NUM_USER_DATA_REGS;
     ASSERT(pass_info.dst_off_dw == info.srt_info.flattened_bufsize_dw);
 
-    for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
-        VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+    for (;;) {
+        const size_t checkpoint = c.getSize();
+        const u16 before = pass_info.dst_off_dw;
+        pass_info.deferred_reads = 0;
+        for (const auto& [sgpr_base, root] : pass_info.srt_roots) {
+            VisitPointer(IR::Value(static_cast<u32>(sgpr_base)), root, pass_info, c);
+        }
+        if (pass_info.dst_off_dw == before) {
+            c.setSize(checkpoint);
+            break;
+        }
+        if (pass_info.deferred_reads == 0) {
+            break;
+        }
+    }
+    if (pass_info.deferred_reads != 0) {
+        LOG_WARNING(Render_Recompiler, "SRT dependencies unresolved: shader={:#x} reads={}",
+                    info.pgm_hash, pass_info.deferred_reads);
     }
 
     c.ret();
@@ -825,14 +972,23 @@ void FlattenExtendedUserdataPass(IR::Program& program) {
         }
 
         IR::Inst* base = inst->Arg(0).Inst();
-        if (auto* inst = base->Arg(0).TryInst();
-            inst && inst->GetOpcode() == IR::Opcode::ReadFirstLane) {
+        const auto unwrap_uniform_lane_read = [](IR::Value value) {
+            while (const IR::Inst* lane = value.TryInst()) {
+                if (lane->GetOpcode() != IR::Opcode::ReadFirstLane ||
+                    !IsHostUniformSrtOffset(lane->Arg(0))) {
+                    break;
+                }
+                value = lane->Arg(0);
+            }
+            return value;
+        };
+        const IR::Value ptr_low = unwrap_uniform_lane_read(base->Arg(0));
+        const IR::Value ptr_high = unwrap_uniform_lane_read(base->Arg(1));
+        if (!IsReadConstSource(ptr_low) || !IsReadConstSource(ptr_high)) {
             continue;
         }
-        ASSERT_MSG(IsReadConstSource(base->Arg(0)), "ReadConst base low not from constant memory");
-        ASSERT_MSG(IsReadConstSource(base->Arg(1)), "ReadConst base high not from constant memory");
 
-        IR::Inst* ptr_lo = base->Arg(0).Inst();
+        IR::Inst* ptr_lo = ptr_low.Inst();
         ptr_lo = pass_info.DeduplicateInstruction(ptr_lo);
 
         auto ptr_uses_kv = pass_info.pointer_uses.try_emplace(ptr_lo, PassInfo::PtrUserList{});

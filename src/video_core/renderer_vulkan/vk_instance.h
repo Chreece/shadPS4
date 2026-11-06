@@ -67,12 +67,20 @@ public:
         return queue_family_index;
     }
 
+    u32 GetSparseQueueFamilyIndex() const {
+        return sparse_queue_family_index;
+    }
+
     vk::Queue GetGraphicsQueue() const {
         return graphics_queue;
     }
 
     vk::Queue GetPresentQueue() const {
         return present_queue;
+    }
+
+    vk::Queue GetSparseQueue() const {
+        return sparse_queue;
     }
 
     TracyVkCtx GetProfilerContext() const {
@@ -82,6 +90,14 @@ public:
     /// Returns true if anisotropic filtering is supported
     bool IsAnisotropicFilteringSupported() const {
         return features.samplerAnisotropy;
+    }
+
+    bool IsPreciseOcclusionSupported() const {
+        return features.occlusionQueryPrecise;
+    }
+
+    bool IsHostQueryResetSupported() const {
+        return vk12_features.hostQueryReset;
     }
 
     /// Returns true if depth bounds testing is supported
@@ -201,6 +217,16 @@ public:
     /// Returns true when VK_AMD_shader_image_load_store_lod is supported.
     bool IsImageLoadStoreLodSupported() const {
         return image_load_store_lod;
+    }
+
+    bool IsSampledImageNonUniformIndexingSupported() const {
+        return bool(vk12_features.descriptorIndexing) &&
+               bool(vk12_features.shaderSampledImageArrayNonUniformIndexing) &&
+               bool(features.shaderSampledImageArrayDynamicIndexing);
+    }
+
+    bool IsSamplerArrayNonUniformIndexingSupported() const {
+        return IsSampledImageNonUniformIndexingSupported();
     }
 
     /// Returns true when VK_AMD_gcn_shader is supported.
@@ -380,6 +406,15 @@ public:
         return vk11_props.maxMemoryAllocationSize;
     }
 
+    /// Maximum legal VkBuffer size, including sparse virtual buffers.
+    vk::DeviceSize MaxBufferSize() const noexcept {
+        return vk13_props.maxBufferSize;
+    }
+
+    bool IsSparseResidencyAliasedSupported() const noexcept {
+        return features.sparseResidencyAliased;
+    }
+
     /// Returns the vulkan 1.2 physical device properties.
     const vk::PhysicalDeviceVulkan12Properties& GetVk12Properties() const noexcept {
         return vk12_props;
@@ -454,6 +489,15 @@ public:
                image_2d_view_of_3d_features.sampler2DViewOf3D;
     }
 
+    // Creating a 3D image which permits 2D views requires either the storage
+    // feature or the sampled feature. Do not grant sampling when only storage
+    // is supported; descriptor usage is checked separately.
+    bool CanCreate2dViewOf3dImage() const {
+        return image_2d_view_of_3d &&
+               (image_2d_view_of_3d_features.image2DViewOf3D ||
+                image_2d_view_of_3d_features.sampler2DViewOf3D);
+    }
+
     /// Returns whether VK_EXT_image_view_min_lod is supported.
     bool IsImageViewMinLodSupported() const {
         return image_view_min_lod;
@@ -522,11 +566,13 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue sparse_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
     TracyVkCtx profiler_context{};
     u32 queue_family_index{0};
+    u32 sparse_queue_family_index{0};
     bool custom_border_color{};
     bool fragment_shader_barycentric{};
     bool amd_shader_explicit_vertex_parameter{};

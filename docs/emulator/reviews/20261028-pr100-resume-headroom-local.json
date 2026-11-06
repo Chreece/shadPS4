@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "record_id": "pr100-resume-confirmed-model-release-local-20261028",
+  "recorded_on": "2026-10-28",
+  "record_type": "RESUME_RUNNER_CORRECTION_LOCAL_TESTS_HOST_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "pr": 100,
+  "prior_native_review": "20261028T171004960983Z-finite-raw-native.json",
+  "reason": "The full PR100 shader build and focused tests passed, but the6-second post-unload memory check stopped the game while VRAM remained141.121MiB below8GiB. The old archive has neither unload-response status nor post-request /api/ps snapshots. Delay, active/reloaded model or another allocation cannot be distinguished. No renderer rejection or rebuild is justified.",
+  "runner_commit": "9504f10af235f28842cbb103044edb362f550d1a",
+  "runner_path": "tools/development/c925_finite_raw/resume_finite_raw.py",
+  "runner_sha256": "c6017d0d96e83341315e6a05dafb3fb5478239b384b41e510c475b6d89884a0b",
+  "runner_git_blob": "c02b33c8997097a83c6845c76df1715ed7f71ec2",
+  "tests_path": "tools/development/c925_finite_raw/test_resume_finite_raw.py",
+  "tests_git_blob": "f9a6e4085bc2e417d7455728458793dd1a011ca2",
+  "candidate_elf": "9f0f6c9fe83f15aec6dea1dcf3f23226d944472daa0bdb6258cff13a95f219d3",
+  "source_policy": "No emulator source write, configuration edit, rebuild, rebase, or working-binary installation. Check all ten native PR100 source SHA256 values plus both accepted PR69/68 renderer SHA256 values before launch. Preserve original save/config/executable hashes and use the existing isolated diagnostic profile.",
+  "headroom_changes": [
+    "Skip every Ollama API operation when free VRAM is already >=8GiB; unknown counters cause a stop without unloading.",
+    "Try the actual evidenced local API at127.0.0.1:7869 first; retain existing proxy-free local/Docker discovery if needed, without service/container restarts.",
+    "Validate all original model names, context lengths and expiries before mutation; record restoration intent before sending a request whose reply might be lost.",
+    "Send explicit empty prompt, keep_alive0 and the captured num_ctx to the same server; store actual response status/done_reason, not generated prompt content.",
+    "Observe /api/ps together with GPU memory for at most45seconds after each request. Require requested-model absence and >=8GiB in two consecutive observations. Keep the threshold unchanged and recheck immediately before launch.",
+    "Never repeatedly unload a model that reappears, stop a GPU process, or infer free memory from a successful HTTP reply. If still blocked, archive model/memory sequence and available read-only GPU-process diagnostics before restoration.",
+    "Preserve same-server original model context and expiry restoration after the test or prelaunch failure through the already-pinned runtime helper.",
+    "Run the already-built finite-raw correction only after checks pass, no input, own-process118+2second bound, timestamped menu captures, fresh matching shader IR/SPIR-V and complete game log. Failure archives are also produced."
+  ],
+  "local_validation": {
+    "python_syntax": "PASS",
+    "unittest": "32/32 PASS in0.118s; focused mocked API/time/memory and mocked host execution, not actual Ollama or GPU acceptance",
+    "covered": "Sufficient/unknown memory; delayed release beyond old6second wait; correct empty prompt/context; transient high-memory sample; successful HTTP but model remains; model absent but VRAM low; lost POST reply; missing/malformed metadata; CPU-only model; no loaded model; externally reappearing/aliased model; missing /api/ps; same-endpoint fallback; counter loss; bounded wait; source/profile/symlink protection; existing versus fresh dumps; mocked resume success with no source writes; changed ELF/source refusal; gate failure restoration; diagnostic failure still restores; final memory drop refusal; restoration failure affects exit.",
+    "publication_correction": "First test-file publication accidentally called the recorded game-call list in one assertion. Blob verification/source review caught this; commit9504f10a restores the exact locally passed test bytes. Runner code was unchanged. This was a test-publication typo, not a host run/compiler or GPU failure.",
+    "hash_parity": "Remote runner blobc02b33c8... and corrected test blobf9a6e408... match the locally tested files."
+  },
+  "native_resume": "NOT_RUN",
+  "game_effect": "UNVERIFIED_NO_NEW_GRAPHICS_CLAIM",
+  "decision": "KEEP_VERIFIED_PR100_NATIVE_SHADER_BUILD; RESUME_WITH_MEASURED_HEADROOM; NO_NEW_RENDERER_CHANGE_OR_MAIN_PROMOTION",
+  "next_test": "Run the pinned resume once; if model release/headroom succeeds inspect FiniteRawImageRead and FiniteRawImageSharp events, translated modules and actual menu frames. If memory remains blocked, use recorded unload response/residency/memory evidence rather than another blind unload or lowering8GiB.",
+  "historical_ledger": "../TRIALS.jsonl",
+  "raw_game_data_published": false
+}

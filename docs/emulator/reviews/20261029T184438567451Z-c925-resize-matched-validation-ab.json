@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "date": "2026-10-29",
+  "experiment": "C925 GPU image resize matched-Vulkan validation A/B",
+  "evidence": "got-c925-image-resize-matched-ab-20261029T184438567451Z.tar.gz",
+  "goal": "Determine whether black menu in PR5303 candidate was caused by the resize code or confounded by enabled Vulkan validation layers",
+  "proven": {
+    "sha256": "89ffa07ab49d0df36b3a4c4295e0cff8f42bb7e167cbced3d5879b1e5c2f5aec",
+    "seconds": 118.5,
+    "frame_bytes": [
+      1389385,
+      1282173,
+      1272823,
+      1300227
+    ],
+    "material_rejects": 7,
+    "sharp_warnings": 313,
+    "device_lost": false
+  },
+  "candidate": {
+    "sha256": "1019ab33fb45338039f39b2bad44f627cd2a72ade92a73bc1117d73752c39b7a",
+    "seconds": 118.498,
+    "frame_bytes": [
+      1416090,
+      1259528,
+      1259528,
+      1259528
+    ],
+    "resize_events": 0,
+    "material_rejects": 7,
+    "sharp_warnings": 305,
+    "device_lost": false
+  },
+  "vulkan_flags": "Both copied from prior successful private profile, all four Vulkan validation flags disabled; both arm profiles verified identical flag values; no host settings changed",
+  "result": "Both runs display the menu, clouds, UI and black sword silhouette. Candidate no longer produces black screen with original flags; earlier validation-enabled run yielded 10 SYNC-HAZARD-WRITE-AFTER-PRESENT and blank output. Strict causality not proven; no resize event triggered.",
+  "qualification": "Candidate frames 55/85/112 have identical PNG hashes including FPS overlay; do not assert emulator frozen or failed based on identical menu captures alone. Earlier visible menu persisted; new geometry/color fill not recovered.",
+  "policy": "Keep general source-correctness candidate and immutable ELF even without visible improvement. Do not promote a combination with black menu under validation; keep baseline and test isolated changes with original video settings.",
+  "disposition": "RETAIN_CANDIDATE_SOURCE_AND_ELF; NO_REGRESSION_WITH_MATCHED_VULKAN_ON_MENU_VISIBILITY; NOT_YET_GOT_MATERIAL_FIX; RESTORE_KEEP_PROVEN_BASELINE",
+  "restoration": "Proven ELF, experimental ELF, protected integrated ELF, six protected source files all UNCHANGED_VERIFIED; no Ollama unload (VRAM 8,629,399,552 bytes).",
+  "next": "Test general same-base GPU-rendered sub-view coherence using legal partial CopyMip on proven stack and isolated candidate; do not invent material record lengths; no additional validation-enabled A/B needed."
+}

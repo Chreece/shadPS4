@@ -1,0 +1,258 @@
+{
+  "schema_version": 2,
+  "record_id": "pr133-native-diagnostics-omission-20261103",
+  "reviewed_at": "2026-11-03T18:59:44.798482+00:00",
+  "pr": 134,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/134",
+  "runner_implementation_commit": "14be58fe509b735927d4e829fd0e90a318f008c6",
+  "runner_implementation_tree": "aa18cd3fe365cb0109e5e61c13ab21c2b4a2e2a0",
+  "emulator_source_commit": "7fb734fc992ca97a62a6ddb305ca831856dc6e00",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "result": "COLLECTOR_FIXED_NATIVE_GAME_RECOVERY_UNPROVEN",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "native_evidence": {
+    "archive": "universal-two-games-20261103T183245Z-474205.tar.gz",
+    "sha256": "d695efa540439a671ce9de76d7f5716ced450993efd1dcd5ec2e377b37ec12c5",
+    "library_file_id": "libfile_871cb6033ce08191b37d31b79d7ed1e0",
+    "source_commit": "7fb734fc992ca97a62a6ddb305ca831856dc6e00",
+    "binary_sha256": "8e0d458a21e75446962f84cd8323bc695ac62323578c5e16dea3994727556e12",
+    "native_build": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "tested_games": [
+      "CUSA34384"
+    ],
+    "got": "NOT_RUN_AFTER_UNCONFIRMED_GOW_EXIT",
+    "gow": {
+      "elapsed_seconds": 120.0,
+      "exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+      "exit_code": null,
+      "owned_child_pid": 591711,
+      "owned_child_terminated": false,
+      "gpu_failure": null,
+      "console_lines": 5652,
+      "warning_lines": 322,
+      "error_lines": 256,
+      "full_console_bytes": 848306,
+      "validation_layer_active": false,
+      "first_validation_failure": null,
+      "srt_source_preparations": 34,
+      "gpu_memory_fault_reports": 0,
+      "screenshot": {
+        "file": "frame-110s.png",
+        "sha256": "ff596a87c8561fa80f2c1e51da5b07f4bd3ed0cbf3108dcacee93cbe31c50fd9",
+        "observation": "Emulator loading screen for God of War Ragnarok / Waiting for game video;60FPS overlay,1:40 frontend elapsed. No visible game video/menu/gameplay."
+      },
+      "menu": "NOT_OBSERVED",
+      "gameplay": "NOT_OBSERVED",
+      "audio": "NOT_AUDITED"
+    },
+    "vulkan_diagnostics_requested": false,
+    "graphics_diagnostics_events": 0,
+    "automatic_coherence_enabled": true,
+    "configured_readbacks_mode": 0,
+    "descriptor_exact_pool_fallbacks": 0,
+    "descriptor_comparison_limit": "PR132 had36 fallback probes; PR133 has none in its complete console. Validation was disabled for PR133, so validation warning counts are not comparable. This is not a game recovery pass.",
+    "thread_snapshots": [
+      {
+        "file": "owned-process-state-008s.json",
+        "sha256": "6b27a96ef60b75a7f08a923f3b9050e2c5699cf445f84d746874235e400e03e4",
+        "thread_count": 46,
+        "drm_waiters": [
+          {
+            "tid": 591771,
+            "name": "shadPS4:GpuComm",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591778,
+            "name": "WSI swapchain q",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591781,
+            "name": "shadPS4:Present",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          }
+        ]
+      },
+      {
+        "file": "owned-process-state-025s.json",
+        "sha256": "8e134fbe7cdb12517781ef0637751a19e81202c9a30a241e940b38fda91977fe",
+        "thread_count": 46,
+        "drm_waiters": [
+          {
+            "tid": 591771,
+            "name": "shadPS4:GpuComm",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591778,
+            "name": "WSI swapchain q",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591781,
+            "name": "shadPS4:Present",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          }
+        ]
+      },
+      {
+        "file": "owned-process-state-080s.json",
+        "sha256": "facb558a491acef1c62bac426d0089071977a24c4f92cc697de13969d2e1968a",
+        "thread_count": 46,
+        "drm_waiters": [
+          {
+            "tid": 591771,
+            "name": "shadPS4:GpuComm",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591778,
+            "name": "WSI swapchain q",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591781,
+            "name": "shadPS4:Present",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          }
+        ]
+      },
+      {
+        "file": "owned-process-state-110s.json",
+        "sha256": "1b7361a72671a12a963a5da5421d5178f3157a01f7079b1e8eeca79c73287186",
+        "thread_count": 46,
+        "drm_waiters": [
+          {
+            "tid": 591771,
+            "name": "shadPS4:GpuComm",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591778,
+            "name": "WSI swapchain q",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          },
+          {
+            "tid": 591781,
+            "name": "shadPS4:Present",
+            "wchan": "drm_syncobj_array_wait_timeout.constprop.0"
+          }
+        ]
+      }
+    ],
+    "stop_threads": [
+      {
+        "tid": 591711,
+        "name": "shadPS4:Main",
+        "state": "Z (zombie)",
+        "wchan": "0"
+      },
+      {
+        "tid": 592292,
+        "name": "SDLAudioP35",
+        "state": "D (disk sleep)",
+        "wchan": "drm_sched_entity_flush"
+      }
+    ],
+    "stop_state_limitation": "The remaining SDLAudioP35 task is sampled during teardown, not proof that audio caused the original stall.",
+    "vram_free_before": 5182668800,
+    "vram_free_at_launch": 25597632512,
+    "ollama_unloaded": [
+      "qwen3.8-greek:latest"
+    ],
+    "ollama_attempts": [
+      {
+        "transport": "direct-local-http",
+        "error": "[Errno 104] Connection reset by peer"
+      },
+      {
+        "transport": "ollama-0d489daca772-before",
+        "exit_code": 127
+      },
+      {
+        "transport": "docker:8f919e1ace79",
+        "listed_models": [
+          "qwen3.8-greek:latest"
+        ],
+        "post_unload_query_succeeded": true
+      }
+    ],
+    "ordered_gds_capture_requested": false,
+    "ordered_gds_captures": 0,
+    "captured_spirv": {
+      "modules": 16,
+      "validation": "PASS spirv-val --target-env vulkan1.3. Does not prove guest correctness or GPU execution."
+    }
+  },
+  "root_cause_of_missing_evidence": "The supplied one-paste command did not enable SHADPS4_VULKAN_DIAGNOSTICS. The verified runner previously enabled SHADPS4_GRAPHICS_DIAGNOSTICS only when Vulkan diagnostics were requested. The new GPU-wait instrumentation therefore produced no events. This is a confirmed collector wiring error; it does not explain the stalled GPU command.",
+  "changes": [
+    "Enable graphics diagnostics for every verified capture and graphics/Vulkan diagnostics in the common wrapper.",
+    "Record the requested graphics mode and require the observed startup marker; missing diagnostics fail capture and stop remaining games.",
+    "Preserve a separate bounded4MiB graphics-diagnostics.log, sampled maximum event counts and truncation status."
+  ],
+  "validation": {
+    "observer_assertions": 20,
+    "stop_policy_cases": 4,
+    "observer_result": "PASS actual fixture-child launch/exit, absent and partial startup markers fail, active marker passes, dedicated event log and4MiB cap, sampled counts continue after truncation, latest native console confirms no diagnostics.",
+    "wrapper_integration": "PASS build and existing modes; both titles receive graphics/Vulkan diagnostics even if inherited values are0. Separate source/runner pins, GoT-first order, journal and archive/UPLOAD_THIS verified with only download/proc/build/game boundaries stubbed.",
+    "initial_stop_policy_harness_failure": "The first AST selector selected an existing unconditional preflight-stop assignment instead of the final bool expression. Corrected only the temporary selector and reran all four production-expression cases successfully.",
+    "python_compile": "PASS",
+    "shell_syntax": "PASS",
+    "diff_check": "PASS",
+    "release_build": "PASS GCC14 Release; emulator C++ unchanged from native-tested7fb734fc",
+    "actual_binary_startup": "PASS scenarios3 GPU_NOT_RUN",
+    "new_repository_tests": false,
+    "logs": {
+      "nov3l-build.log": {
+        "bytes": 14528,
+        "sha256": "8efac430e0fbea85be07278304796beff6dda5185474a70dc18d39e8f6624c22"
+      },
+      "nov3l-cli.log": {
+        "bytes": 57,
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9"
+      },
+      "nov3l-runner-check.log": {
+        "bytes": 310,
+        "sha256": "4a7f1e8aba46f8ca2a481dc65a271b360704e68cea088ecd7bf1a5e2ec9e4099"
+      },
+      "nov3l-spirv.log": {
+        "bytes": 40,
+        "sha256": "f00bbbf0c2f083c4df352633603db1feee519d2d74831fae2716ebd99fa6876f"
+      },
+      "nov3l-stop-policy.log": {
+        "bytes": 46,
+        "sha256": "f50996ffb98192735ea1e201d14124ac5e5e945ba764971344d9fc112347a955"
+      }
+    }
+  },
+  "preservation": {
+    "prior_journal_rows": 442,
+    "prior_journal_sha256": "6e2c778d9140021f5d37cf44373d90a21bde1ab74280d7122baf3d18296e79bb",
+    "emulator_cpp_diff_from_native_source": "EMPTY",
+    "wrapper_sha256": "2e009c421782c49c4504e78e252e0a55e66020b7cde7e8085fe6cd975770cbfe",
+    "graphics_runner_sha256": "da410056250594d87a477376bd9200b0ac15b5f423689b81d210225d7b668566",
+    "observer_sha256": "6e7cb1d3ee21dbe0aef06a4f2529c6f7ddd7b725b60096f1a5afee1b1c3a48b3"
+  },
+  "source_audit_followups": [
+    "The two presentation fence wait loops still only distinguish device loss from other errors; graphics/sparse submission paths check device loss only. No captured return code establishes these as this stall cause. Left unchanged; identify the blocked call/command using the existing wait diagnostics before changing renderer behavior."
+  ],
+  "limits": [
+    "No graphics recovery, playable state, native cross-game or platform acceptance. Main remains unchanged.",
+    "No per-title/shader/vendor exceptions, readback-setting changes, forced completion or new guest emulation semantics. No new OpenOrbis probe needed for this collector-only change.",
+    "Validation changes timing; the next run is for correctness/stall evidence, not a controlled FPS comparison.",
+    "Previous eligible-image coherence limits and unfinished DS dedicated seed/guest re-entry remain."
+  ],
+  "next_test": {
+    "source_commit": "7fb734fc992ca97a62a6ddb305ca831856dc6e00",
+    "binary_sha256": "8e0d458a21e75446962f84cd8323bc695ac62323578c5e16dea3994727556e12",
+    "build_mode": "existing",
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "reason": "Two consecutive GoW stalls prevented GoT testing; swap observation order only.",
+    "policy": "Use the existing source/binary verified from the native build record, with this corrected collector. Check current upstream, live emulator workers, display and>=8GiB VRAM before launch; conditional Ollama unload. No automatic input. <=120s per game, stop remaining games after GPU failure, unconfirmed exit or missing required diagnostics. No service resets or forced recovery."
+  }
+}
