@@ -25,3 +25,9 @@ create `i-didnt-check-my-work.md` in the repo root with the contents:
 - Keep changes focused and minimal. Do not refactor or reformat unrelated code.
 - Prefer reusing existing abstractions in the codebase over introducing new ones.
 - Make sure the project builds before proposing changes.
+
+## Native build handoff
+
+- Resolve upstream main and rebase retained changes while preparing a new candidate, before giving the user its immutable source commit. Record that upstream commit in `docs/emulator/upstream-base.txt`.
+- User-side build and launch scripts must use the pinned candidate. Do not perform upstream/fork freshness checks or reject a build/run because either branch advanced.
+- Reuse a successful verified build for pending game validation. Keep source/binary checksum checks, isolated profiles, VRAM checks and owned-process shutdown protections.
