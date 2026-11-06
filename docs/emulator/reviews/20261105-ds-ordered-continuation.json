@@ -1,0 +1,218 @@
+{
+  "schema_version": 2,
+  "record_id": "ds-continuation-20261105-review",
+  "timestamp_utc": "2026-11-05T14:45:35.849288+00:00",
+  "scope": "DS_ORDERED_COUNT",
+  "pr": 163,
+  "source": {
+    "source": "bcd081f1bb90cd5491c6544734ce0a6504274cc4",
+    "tree": "a2d397b2429bc9b1134efe3e774ffaad56565ad7",
+    "upstream": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+    "pr": 163,
+    "binary_sha256": "ac1508ff6c6bdd2c94d87bf7bfce9f39a22a3c961c97cd2949f6bd1eaac7b874",
+    "binary_embedded_source_verified": true,
+    "execution": "Actual production-compiled SPIR-V interpreted by an independent integer-subset fixture, with actual C++ checkpoint validator, ordered resolver and handoff validator. Not GPU execution.",
+    "basic": {
+      "checks": 13566,
+      "cases": [
+        {
+          "exec": "0xffffffffffffffff",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x8000000000000000",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x1",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0xaaaaaaaaaaaaaaaa",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x5555555555555555",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x0",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        }
+      ],
+      "execution": "independent integer SPIR-V interpreter, not GPU execution"
+    },
+    "repeat": {
+      "checks": 13818,
+      "cases": [
+        {
+          "exec": "0xffffffffffffffff",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x8000000000000000",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x1",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0xaaaaaaaaaaaaaaaa",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x5555555555555555",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x0",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        }
+      ],
+      "execution": "independent integer SPIR-V interpreter, not GPU execution"
+    },
+    "edges": {
+      "sparse_completion": "PASS 3 masks, 7 independently retiring waves, 8 phases, 6720 lane-field comparisons",
+      "first_instruction_ds": "PASS real PC zero is distinct from initial entry; 64 counter results",
+      "invalid_resume": "PASS 7 tag, epoch, site, flags, slot, token mutations; no writes"
+    },
+    "radv_matrix": [
+      {
+        "family": "vega10",
+        "kernel": "continuation",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "vega10",
+        "kernel": "continuation-loop",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "vega10",
+        "kernel": "continuation-sparse",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "vega10",
+        "kernel": "continuation-pc-zero",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "navi31",
+        "kernel": "continuation",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "navi31",
+        "kernel": "continuation-loop",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "navi31",
+        "kernel": "continuation-sparse",
+        "exit": 0,
+        "GPU_RUN": false
+      },
+      {
+        "family": "navi31",
+        "kernel": "continuation-pc-zero",
+        "exit": 0,
+        "GPU_RUN": false
+      }
+    ],
+    "captured_gcn": {
+      "compile": "PASS",
+      "spirv_validation": "PASS_VULKAN1_2",
+      "radv_navi31": "PASS",
+      "resources": "Zero/unbound userdata with BDA reads; compiler coverage only, not exact native resource replay.",
+      "gpu_execution": false,
+      "included_in_package": false
+    },
+    "full_build": "PASS",
+    "cpu_regressions": "PASS",
+    "cli_cases": 3,
+    "native_handoff_cases": 3,
+    "openorbis": {
+      "original_kernels": 2,
+      "assembly": "PASS_LLVM19_BONAIRE",
+      "host_c_syntax": "PASS_WALL_WEXTRA_WERROR",
+      "sdk_link": "NOT_RUN",
+      "ps4_execution": "NOT_RUN"
+    },
+    "limits": [
+      "Compute only, host subgroup64 and complete guest waves with no ballot scratch.",
+      "First epoch requires all waves to reach DS and provide a complete CIK M0 identity permutation; zero crawler stride.",
+      "Add/Exchange release+done forms; unsupported encodings still rejected.",
+      "Multiwave workgroup barriers need coordinated suspension; single-wave barriers can complete.",
+      "512MiB combined dispatch memory cap, 8192-wave cap, 65536-phase cap.",
+      "No physical GPU or native GoW/GoT execution available here; no menu/gameplay/audio/FPS recovery claim."
+    ],
+    "failed_attempts": [
+      "Initial interpreter decimal float constant parser rejected 6.28318548; fixed fixture and reran.",
+      "Auth packet tag corrected in the fixture before final semantic execution.",
+      "Loop fixture changed from subtraction carry predicate to explicit nonzero comparison before validation.",
+      "Build2 failed because new state header used UNREACHABLE_MSG before assert.h; added required include, subsequent full builds pass.",
+      "LLVM19 Bonaire objdump is unsupported and aborts; not used as proof. Assembly succeeds.",
+      "Initial clang-format invocation lacked libclang-cpp19; isolated dependency supplied and changed lines formatted.",
+      "New branch update_ref returned reference-not-found; created branch explicitly, fetched and verified exact source tree.",
+      "CLI test script does not accept --help; correct binary invocation passes three cases."
+    ],
+    "main_changed": false,
+    "main": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "native_game_run": "NOT_RUN",
+    "timestamp_utc": "2026-11-05T14:45:35.849288+00:00"
+  },
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/ds-ordered-continuation-validation-20261105.zip",
+    "sha256": "e415400fadde7a48ca1e366f1055b1f3a94414841fca0e8417b147db8f1ddf1a",
+    "bytes": 308605,
+    "files": 107,
+    "library_file_id": "libfile_0979a2cee7e48191b2e4eafa3d64c993",
+    "url": "https://chatgpt.com/library?file_id=libfile_0979a2cee7e48191b2e4eafa3d64c993&account_id=personal"
+  },
+  "native_handoff": {
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=bcd081f1bb90cd5491c6544734ce0a6504274cc4\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "capture_only_flag": "Explicitly unset",
+    "bounds": "Unchanged 118s TERM+2s KILL, >=8GiB free VRAM, exact conditional model restoration, stop/defer on GPU loss or live child, no automatic input."
+  },
+  "decision": "RETAIN_DRAFT_NATIVE_TEST_PENDING",
+  "tested_games": [],
+  "context_games": [
+    "CUSA34384",
+    "CUSA11456"
+  ],
+  "main_changed": false
+}
