@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <limits>
 #include <xxhash.h>
+#include "common/performance_diagnostics.h"
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -108,6 +109,8 @@ void TextureCache::TrackGpuImage(ImageId image_id) {
 }
 
 void TextureCache::ReadMemory(VAddr addr, u64 size) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::ImageReadback, size};
     if (size == 0) {
         return;
     }

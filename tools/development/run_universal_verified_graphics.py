@@ -20,7 +20,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '316df1e2ac4bd5c0a3609eefb7238f843730abb183bccb0af3539876dff35eaf'
+OBSERVER_SHA256 = 'b28b072abf6561f0f674d68702d189e576dc4409b12f30abf3fbb7b570257432'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -547,7 +547,14 @@ def copy_profile(old, new, diagnostics=False):
         data.setdefault('GPU', {})['dump_shaders'] = True
     else:
         data = {'GPU': {'dump_shaders': True}}
-    if diagnostics:
+    if os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1':
+        data.setdefault('GPU', {})['dump_shaders'] = False
+        data.setdefault('Vulkan', {}).update(
+            vkvalidation_enabled=False, vkvalidation_core_enabled=False,
+            vkvalidation_sync_enabled=False, vkvalidation_gpu_enabled=False,
+            vkhost_markers=False, vkcrash_diagnostic_enabled=False)
+        data.setdefault('Log', {}).update(sync=False)
+    elif diagnostics:
         data.setdefault('Vulkan', {}).update(
             vkvalidation_enabled=True, vkvalidation_core_enabled=True,
             vkvalidation_sync_enabled=True, vkvalidation_gpu_enabled=False,
@@ -655,6 +662,8 @@ def main():
     record['runner_sha256'] = digest(Path(__file__))
     diagnostics = os.environ.get('SHADPS4_VULKAN_DIAGNOSTICS') == '1'
     record['vulkan_diagnostics_requested'] = diagnostics
+    record['performance_diagnostics_requested'] = (
+        os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1')
     rc = 1
     game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
     record['context_games'] = [game.parent.name]
