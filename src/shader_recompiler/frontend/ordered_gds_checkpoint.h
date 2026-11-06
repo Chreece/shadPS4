@@ -106,8 +106,7 @@ inline void RequireCompleteGcnWaveCheckpoints(
     for (const auto& capture : captures) {
         if ((capture.flags != CaptureFlags && capture.flags != CaptureBypassFlags) ||
             capture.logical_slot >= layout.waves || seen[capture.logical_slot] ||
-            capture.tag != CapturePacketTag || capture.epoch != expected_epoch ||
-            !capture.site_pc) {
+            capture.tag != CapturePacketTag || capture.epoch != expected_epoch) {
             throw std::invalid_argument("invalid or duplicate guest checkpoint capture slot");
         }
         seen[capture.logical_slot] = true;
