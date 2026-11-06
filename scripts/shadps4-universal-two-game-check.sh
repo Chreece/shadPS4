@@ -49,7 +49,7 @@ trap finish EXIT
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 31d34868400a262920ae82b366d217f8f99f2d6d38df12bd045b32a7c37d9940 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 5ed3d2c773d4e981b22bd9bf7d87384bd9da0df6ed8d509c28cf0e547a86391c "$OUT/graphics.py" | sha256sum --check -
 curl --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
@@ -99,8 +99,13 @@ else
 fi
 RESULT=0
 for GAME in "${GAMES[@]}"; do
+    CAPTURE_SHADERS=0
+    if [[ "$GAME" == "${GAMES[0]}" && "${SHADPS4_TEST_CAPTURE_FIRST_SHADERS:-0}" == 1 ]]; then
+        CAPTURE_SHADERS=1
+    fi
     printf '\nTESTING=%s MAX_SECONDS=120 AUTOMATIC_INPUT=NO\n' "$GAME"
     set +e
+    SHADPS4_CAPTURE_SHADER_DIAGNOSTICS="$CAPTURE_SHADERS" \
     SHADPS4_TEST_SOURCE_COMMIT="$PIN" \
     SHADPS4_TEST_RUNNER_COMMIT="$RUNNER_PIN" \
     SHADPS4_TEST_GAME="/mnt/roms-all/ps4-games/$GAME/eboot.bin" \
