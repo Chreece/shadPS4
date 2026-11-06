@@ -380,7 +380,12 @@ GraphicsPipeline::GraphicsPipeline(
         if (control.enable && (color_scaled_min_max || alpha_scaled_min_max)) {
             LOG_WARNING(
                 Render_Vulkan,
-                "Unimplemented use of min/max blend op with blend factor not equal to one.");
+                "Unimplemented scaled min/max blend: attachment={} format={} "
+                "color-op={} color-src={} color-dst={} alpha-op={} alpha-src={} alpha-dst={}",
+                i, u32(key.color_buffers[i].num_format), u32(attachment.colorBlendOp),
+                u32(attachment.srcColorBlendFactor), u32(attachment.dstColorBlendFactor),
+                u32(attachment.alphaBlendOp), u32(attachment.srcAlphaBlendFactor),
+                u32(attachment.dstAlphaBlendFactor));
         }
     }
 

@@ -2821,11 +2821,12 @@ void Rasterizer::UpdateViewportScissorState() const {
     }
 
     const auto& vp_ctl = regs.viewport_control;
+    u32 zero_scale_mask{};
     for (u32 i = 0; i < AmdGpu::NUM_VIEWPORTS; i++) {
         const auto& vp = regs.viewports[i];
         const auto& vp_d = regs.viewport_depths[i];
         if (vp.xscale == 0) {
-            continue;
+            zero_scale_mask |= 1u << i;
         }
 
         const auto zoffset = vp_ctl.zoffset_enable ? vp.zoffset : 0.f;
@@ -2867,7 +2868,7 @@ void Rasterizer::UpdateViewportScissorState() const {
 
             viewport.x = xoffset - xscale;
             viewport.y = yoffset - yscale;
-            viewport.width = xscale * 2.0f;
+            viewport.width = xscale == 0.f ? std::numeric_limits<float>::min() : xscale * 2.0f;
             viewport.height = yscale * 2.0f;
         }
 
@@ -2890,22 +2891,13 @@ void Rasterizer::UpdateViewportScissorState() const {
         });
     }
 
-    if (viewports.empty()) {
-        // Vulkan requires providing at least one viewport.
-        constexpr vk::Viewport empty_viewport = {
-            .x = -1.0f,
-            .y = -1.0f,
-            .width = 1.0f,
-            .height = 1.0f,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-        };
-        constexpr vk::Rect2D empty_scissor = {
-            .offset = {0, 0},
-            .extent = {1, 1},
-        };
-        viewports.push_back(empty_viewport);
-        scissors.push_back(empty_scissor);
+    if (zero_scale_mask != 0) {
+        const auto& first = viewports.front();
+        VideoCore::GraphicsDiagnostics::Emit(
+            VideoCore::GraphicsDiagnostics::Event::ViewportLayout,
+            "zero-scale-mask=%#x clip-disabled=%u xscale-enabled=%u viewport0=%g,%g,%g,%g",
+            zero_scale_mask, u32(regs.IsClipDisabled()), u32(vp_ctl.xscale_enable), first.x,
+            first.y, first.width, first.height);
     }
 
     auto& dynamic_state = scheduler.GetDynamicState();

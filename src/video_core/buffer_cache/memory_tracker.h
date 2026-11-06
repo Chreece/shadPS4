@@ -69,8 +69,7 @@ public:
             manager->Lock(bounds);
             const bool modified = manager->template IsRegionModified<Type::GPU>(offset, size);
             if (!modified) {
-                manager->template ChangeRegionState<StateOp::Set, StateOp::None, false>(offset,
-                                                                                        size);
+                manager->MarkCpuWrite(offset, size);
             }
             should_flush |= modified;
             manager->Unlock(bounds);
