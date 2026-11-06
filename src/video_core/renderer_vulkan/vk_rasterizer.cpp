@@ -1937,7 +1937,7 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
                                            static_cast<u32>(source.num_records),
                                            Shader::MaxGuestIndexedImageEntries))
                     : 0u;
-            ASSERT_MSG(represented_entries == count - 1u,
+            ASSERT_MSG(represented_entries <= count - 1u,
                        "Indexed image table changed after shader specialization");
             const u64 record_bytes = record_stride ? record_stride : sizeof(AmdGpu::Image);
             const bool table_layout_valid =

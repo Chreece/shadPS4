@@ -220,7 +220,8 @@ struct Info : InfoPersistent {
                           image.indexed_descriptor_offset_bytes, limit)
                     : Optimization::CompleteGuestTsharpTableEntries(table.stride, table.num_records,
                                                                     limit);
-            if (entries != image.indexed_guest_entries) {
+            if (Optimization::GuestTsharpBindingCapacity(entries, limit) !=
+                image.indexed_guest_entries) {
                 return false;
             }
         }

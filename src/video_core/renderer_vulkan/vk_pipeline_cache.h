@@ -53,6 +53,7 @@ struct Program {
 
     Shader::Info info;
     ModuleList modules{};
+    size_t last_used_module{};
 
     Program() = default;
     Program(Shader::HwStage stage, Shader::SwStage l_stage, Shader::ShaderParams params)
@@ -61,6 +62,7 @@ struct Program {
     void AddPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec,
                    std::unique_ptr<Shader::Info> own_info = {}) {
         modules.emplace_back(Module{module, std::move(spec), std::move(own_info)});
+        last_used_module = modules.size() - 1;
     }
 
     void InsertPermut(vk::ShaderModule module, Shader::StageSpecialization&& spec, size_t perm_idx,
