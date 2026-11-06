@@ -1,0 +1,145 @@
+{
+  "schema_version": 2,
+  "record_id": "ds-native-packet-rejection-20261105-review",
+  "timestamp_utc": "2026-11-05T16:17:26.200509+00:00",
+  "pr": 163,
+  "scope": "DS_ORDERED_COUNT native failure and diagnostic evidence preservation",
+  "source_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+  "source_tree": "1288a99a92a42409062027b8a0573e259b4f93f8",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "native_results": [
+    {
+      "record_id": "universal-graphics-20261105T151633Z-1967034",
+      "source_commit": "bcd081f1bb90cd5491c6544734ce0a6504274cc4",
+      "games": [
+        "CUSA11456"
+      ],
+      "runner_result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "native": {
+        "elapsed_seconds": 119.914,
+        "exit_code": -9,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null,
+        "gpu_memory_fault_reports": 0,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED"
+      },
+      "ordered_gds_capture_requested": false,
+      "ordered_gds_evidence": [],
+      "binary_sha256": "0499df5c20c3878d5ff554dea227842c13eebd6b59afd13d900b01493cc957cc",
+      "visual_review": "LOADING_OVERLAY_THEN_BLACK_NO_MENU",
+      "acceptance": "FAILED_VISUAL_RECOVERY_TEST_LIMIT_NOT_SPONTANEOUS_CRASH"
+    },
+    {
+      "record_id": "universal-graphics-20261105T151548Z-1960619",
+      "source_commit": "bcd081f1bb90cd5491c6544734ce0a6504274cc4",
+      "games": [
+        "CUSA34384"
+      ],
+      "runner_result": "GAME_OR_OBSERVER_FAILED",
+      "native": {
+        "elapsed_seconds": 21.767,
+        "exit_code": -11,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null,
+        "gpu_memory_fault_reports": 0,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED"
+      },
+      "ordered_gds_capture_requested": false,
+      "ordered_gds_evidence": [],
+      "binary_sha256": "0499df5c20c3878d5ff554dea227842c13eebd6b59afd13d900b01493cc957cc",
+      "visual_review": "LOADING_OVERLAY_ONLY_NO_GAME_IMAGE",
+      "acceptance": "FAILED_DS_GPU_CAPTURE_VALIDATION"
+    }
+  ],
+  "validation": {
+    "source_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "binary_sha256": "6d019e40b1202a40cc151e9304c48193b10097d2896dfb1dfdc67e52d16f0f47",
+    "binary_embedded_source_verified": true,
+    "full_build": "PASS",
+    "CPU": "PASS",
+    "CLI": "PASS_3_SCENARIOS",
+    "shader_execution": "NOT_RUN",
+    "native_games": "NOT_RUN"
+  },
+  "failure_path_checks": {
+    "scope": "Production validation and diagnostic block, simulated transfers; no GPU execution",
+    "scenarios": [
+      "valid terminal",
+      "zero packets",
+      "duplicate slot",
+      "stale epoch",
+      "invalid checkpoint",
+      "40-wave bounded capture",
+      "unwritable output preserves rejection"
+    ],
+    "results": [
+      {
+        "version": "before",
+        "exit_code": 0
+      },
+      {
+        "version": "after",
+        "exit_code": 0
+      }
+    ]
+  },
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/ds-ordered-native-rejection-20261105.zip",
+    "sha256": "ea41ed0e5926f4b21c6f4a61172bf780a6b40ffcf896675dc508a1a112790cde",
+    "bytes": 26085,
+    "files": 31,
+    "library_file_id": "libfile_9ff398a5fce081919066220c135a08c0",
+    "url": "https://chatgpt.com/library?file_id=libfile_9ff398a5fce081919066220c135a08c0&account_id=personal"
+  },
+  "native_root_cause": "UNRESOLVED",
+  "main_changed": false,
+  "merge_eligible": false,
+  "gameplay_acceptance": false,
+  "changes": [
+    "Save failed raw packets/checkpoints before propagating invalid_argument, even when capture flag is unset.",
+    "Log at most 32 rejected packet records. Preserve original validation errors if file writing fails.",
+    "Save matching host authority, GPU authority and GPU resume records as a separate bounded inputs file.",
+    "Use the same synchronized readback for typed 32-byte authority and 64-byte packet records.",
+    "Collector records evidence type and leaves continuation execution unknown instead of falsely setting it to false. Update dependent runner checksums."
+  ],
+  "unchanged": [
+    "Guest shader compilation and continuation semantics",
+    "Strict packet/checkpoint authentication",
+    "No game/hash/vendor or per-game settings",
+    "118s TERM plus 2s KILL, 8 GiB VRAM gate, conditional model leases, stop/defer after GPU loss or live child, no input"
+  ],
+  "next_run": {
+    "kind": "DIAGNOSTIC_NORMAL_EXECUTION_NOT_GAMEPLAY_ACCEPTANCE",
+    "source_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "capture_requested": false,
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "expectation": "The native packet rejection may recur. Save the previously missing failed GPU bytes; this is not a claimed game fix or a deliberate capture-only stop."
+  },
+  "limitations": [
+    "No raw rejected packets exist in the uploaded native archive.",
+    "No physical wave64 GPU or game execution is available in this workspace.",
+    "The source change fixes evidence loss, not the unproven cause of the native DS rejection.",
+    "GoT shows no ordered-GDS activity in this run and its rendering regression remains unresolved.",
+    "Existing PR163 implementation bounds remain; no universal compatibility claim."
+  ],
+  "rejected_attempts": [
+    {
+      "kind": "CPU runner invocation",
+      "result": "USAGE_ERROR_MISSING_OUTPUT_DIRECTORY",
+      "resolution": "Reran established suite with absolute output directory; passed."
+    },
+    {
+      "kind": "Intermediate diagnostics build",
+      "result": "NODISCARD_WARNING",
+      "resolution": "Used CheckedPacketBytes return in bounded typed byte calculation; clean published build passed."
+    }
+  ]
+}
