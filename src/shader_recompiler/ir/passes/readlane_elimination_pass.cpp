@@ -10,7 +10,7 @@ namespace Shader::Optimization {
 static IR::Value SearchChain(IR::Value value, u32 lane) {
     for (auto* inst = value.TryInst(); inst && inst->GetOpcode() == IR::Opcode::WriteLane;
          inst = value.TryInst()) {
-        if (inst->Arg(2).U32() == lane) {
+        if (!inst->Arg(2).IsImmediate() || inst->Arg(2).U32() == lane) {
             // We found a possible write lane source, return it.
             return value;
         }
@@ -37,6 +37,9 @@ static bool IsPossibleToEliminate(IR::Inst* inst, u32 lane) {
         }
         inst = source.Inst();
         if (inst->GetOpcode() == IR::Opcode::WriteLane) {
+            if (!inst->Arg(2).IsImmediate()) {
+                return false;
+            }
             // We found a possible write lane source, stop looking here.
             continue;
         }
@@ -129,7 +132,7 @@ void ReadLaneEliminationPass(IR::Program& program) {
             // Check simple case of no control flow and phis
             if (source.IsImmediate()) {
                 replacement = source;
-            } else if (prod->GetOpcode() == IR::Opcode::WriteLane) {
+            } else if (prod->GetOpcode() == IR::Opcode::WriteLane && prod->Arg(2).IsImmediate()) {
                 replacement = prod->Arg(1);
             } else if (prod->GetOpcode() == IR::Opcode::Phi && IsPossibleToEliminate(prod, lane)) {
                 replacement = GetRealValue(phi_map, prod, lane);

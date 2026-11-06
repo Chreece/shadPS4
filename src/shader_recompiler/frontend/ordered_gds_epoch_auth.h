@@ -89,7 +89,7 @@ static_assert(offsetof(GpuGcnOrderedEpochAuth, flags) == 24);
 // physical guest wave *slots* of a specific, newly accepted dispatch; they
 // never encode or assume guest wave creation rank, guest M0, or GPU arrival
 // order. The host still has to prove a complete CIK creation permutation,
-// dedicated counter seed and executable guest continuation separately.
+// synchronized counter seed and executable guest continuation separately.
 //
 // Failed Vulkan uploads consume their issued tickets: they cannot be reused
 // as a stale authorization on another epoch or buffer owner. Saturation is

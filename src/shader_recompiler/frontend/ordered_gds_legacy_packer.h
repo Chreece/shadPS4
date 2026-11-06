@@ -14,12 +14,10 @@
 
 namespace Shader::Gcn::OrderedGds {
 
-// A raw 64 KiB GDS memory snapshot does not, by itself, establish the
-// current values of dedicated ordered-count registers. Only use explicitly
-// obtained ordered-packer state after tracing its lifetime/initialization.
 enum class OrderedCounterSeedOrigin {
     DedicatedPackerState,
     UnverifiedRawGdsMemory,
+    SynchronizedCikGdsMemory,
 };
 
 struct OrderedCounterSeed {
@@ -29,26 +27,41 @@ struct OrderedCounterSeed {
 
 [[nodiscard]] inline std::map<CounterKey, u32> MakeExplicitOrderedCounterSeed(
     std::span<const OrderedCounterSeed> state, OrderedCounterSeedOrigin origin) {
-    if (origin != OrderedCounterSeedOrigin::DedicatedPackerState) {
-        throw std::invalid_argument(
-            "raw GDS RAM is not verified as the CIK ordered packer register bank");
+    if (origin != OrderedCounterSeedOrigin::DedicatedPackerState &&
+        origin != OrderedCounterSeedOrigin::SynchronizedCikGdsMemory) {
+        throw std::invalid_argument("ordered GDS counter seed has unverified provenance");
     }
     std::map<CounterKey, u32> counters;
     for (const auto& entry : state) {
+        (void)entry.key.ByteOffset();
         if (!counters.emplace(entry.key, entry.value).second) {
-            throw std::invalid_argument("duplicate dedicated GDS packer seed");
+            throw std::invalid_argument("duplicate or aliased ordered GDS counter seed");
         }
     }
     // In particular, do not synthesize a default counter at value zero.
     return counters;
 }
 
-// Typed lifetime of the *actual* CIK ordered packer state across complete
-// GPU capture -> host ordered resolution -> GPU continuation handoffs.
-// This ledger does NOT initialize hardware counters and must not be constructed
-// from raw 64 KiB GDS RAM, a presumed zero or Vulkan invocation arrival order.
-// Only a verified dedicated-packer source can establish the first context.
-// A failed guest epoch burns that epoch number without modifying counters.
+[[nodiscard]] inline std::vector<OrderedCounterSeed> MakeCikGdsCounterSeed(
+    std::span<const u32> synchronized_gds, std::span<const CounterKey> keys) {
+    if (synchronized_gds.size() != GdsPhysicalDwords || keys.size() > GdsPhysicalDwords) {
+        throw std::invalid_argument("CIK ordered GDS seed requires a complete bounded snapshot");
+    }
+    std::map<CounterKey, u32> unique;
+    for (const auto& key : keys) {
+        unique.try_emplace(key, synchronized_gds[key.ByteOffset() / GdsDwordBytes]);
+    }
+    std::vector<OrderedCounterSeed> seed;
+    seed.reserve(unique.size());
+    for (const auto& [key, value] : unique) {
+        seed.push_back({key, value});
+    }
+    return seed;
+}
+
+// This ledger only covers one uninterrupted capture/resolve/resume handoff.
+// Ordinary GDS or CP DMA writes can change counters between dispatches; a new
+// dispatch must seed from synchronized GDS instead of reusing this host copy.
 class VerifiedCikOrderedPackerLedger {
 public:
     void Establish(u64 context_identity, std::span<const OrderedCounterSeed> verified,
@@ -57,7 +70,6 @@ public:
             throw std::invalid_argument("CIK packer state requires new nonzero context identity");
         }
         auto proven = MakeExplicitOrderedCounterSeed(verified, origin);
-        // Do not infer even one dedicated register from a missing seed.
         if (proven.empty() || proven.size() > 4096) {
             throw std::invalid_argument("CIK packer state has no verified or bounded counters");
         }
