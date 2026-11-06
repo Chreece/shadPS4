@@ -336,7 +336,7 @@ enum class InterruptSelect : u32 {
     None = 0,
     IrqOnly = 1,
     IrqWhenWriteConfirm = 2,
-    IrqUndocumented = 3,
+    DataAfterWriteConfirm = 3,
 };
 
 static u64 GetGpuClock64() {
@@ -984,14 +984,13 @@ struct PM4CmdReleaseMem {
         }
 
         switch (int_sel.Value()) {
-        case InterruptSelect::None: {
+        case InterruptSelect::None:
+        case InterruptSelect::DataAfterWriteConfirm: {
             // No interrupt
             break;
         }
         case InterruptSelect::IrqOnly:
             ASSERT(data_sel == DataSelect::None);
-            [[fallthrough]];
-        case InterruptSelect::IrqUndocumented:
             [[fallthrough]];
         case InterruptSelect::IrqWhenWriteConfirm: {
             signal_irq();
