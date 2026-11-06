@@ -562,7 +562,6 @@ static IR::Value SelectSideResult(IR::IREmitter& ir, const IR::U1& condition,
 }
 
 static void SplitBufferAccessBySharpPhi(IR::Block& block, IR::Inst& inst,
-                                        std::size_t& remaining_budget,
                                         std::unordered_map<IR::Inst*, IR::Value>& store_guards) {
     const bool is_store = IsSelectableBufferStore(inst);
     IR::Inst* const handle = inst.Arg(0).TryInst();
@@ -593,7 +592,7 @@ static void SplitBufferAccessBySharpPhi(IR::Block& block, IR::Inst& inst,
         return;
     }
     const size_t num_sides = first_phi->NumArgs();
-    if (num_sides - 1 > remaining_budget) {
+    if (num_sides > NUM_BUFFERS) {
         return;
     }
     boost::container::small_vector<std::array<IR::Value, 4>, 4> sides(num_sides);
@@ -660,7 +659,6 @@ static void SplitBufferAccessBySharpPhi(IR::Block& block, IR::Inst& inst,
     }
     if (is_store) {
         inst.Invalidate();
-        remaining_budget -= num_sides - 1;
         return;
     }
     IR::IREmitter ir{block, insert_point};
@@ -670,7 +668,6 @@ static void SplitBufferAccessBySharpPhi(IR::Block& block, IR::Inst& inst,
         result = SelectSideResult(ir, taken, loads[side], result);
     }
     inst.ReplaceUsesWithAndRemove(result);
-    remaining_budget -= num_sides - 1;
 }
 
 // A read-only image sample whose T#/S# is selected by a finite, direct SSA
@@ -1066,15 +1063,11 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
     // Perform resource splits before discovery; the transforms
     // may erase their original intrusive-list instructions.
     std::size_t original_samples = 0;
-    std::size_t original_buffers = 0;
     for (const IR::Block* const block : program.blocks) {
         for (const IR::Inst& inst : block->Instructions()) {
             original_samples += inst.GetOpcode() == IR::Opcode::ImageSampleRaw;
-            original_buffers += IsBufferInstruction(inst);
         }
     }
-    std::size_t buffer_split_budget =
-        original_buffers + 8u < NUM_BUFFERS ? NUM_BUFFERS - original_buffers - 8u : 0u;
     const std::size_t resource_capacity = std::min<std::size_t>(NUM_IMAGES, NUM_SAMPLERS);
     std::size_t image_split_budget =
         original_samples < resource_capacity ? resource_capacity - original_samples : 0;
@@ -1083,7 +1076,7 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
         for (auto it = block->begin(); it != block->end();) {
             IR::Inst& inst = *it++;
             if (IsSelectableBufferLoad(inst) || IsSelectableBufferStore(inst)) {
-                SplitBufferAccessBySharpPhi(*block, inst, buffer_split_budget, store_guards);
+                SplitBufferAccessBySharpPhi(*block, inst, store_guards);
             } else if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
                 SplitImageSampleBySharpPhi(*block, inst, image_split_budget, program.info);
             }
