@@ -232,6 +232,7 @@ public:
 
     Id shared_u16{};
     Id shared_u32{};
+    Id shared_f32{};
     Id shared_u64{};
 
     Id input_u32{};
@@ -285,10 +286,12 @@ public:
 
     Id shared_memory_u16{};
     Id shared_memory_u32{};
+    Id shared_memory_f32{};
     Id shared_memory_u64{};
 
     Id shared_memory_u16_type{};
     Id shared_memory_u32_type{};
+    Id shared_memory_f32_type{};
     Id shared_memory_u64_type{};
 
     Id bary_coord{};
