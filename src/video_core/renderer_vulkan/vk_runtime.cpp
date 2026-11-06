@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/alignment.h"
+#include "common/div_ceil.h"
 #include "video_core/buffer_cache/buffer.h"
 #include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -97,18 +98,36 @@ static std::pair<u32, u32> SanitizeCopyLayers(const VideoCore::ImageInfo& src_in
     return std::make_pair(src_layers, dst_layers);
 }
 
-static u32 BufferImageCopySize(const vk::BufferImageCopy& copy, const vk::Format pixel_format) {
-    const u32 row_length = copy.bufferRowLength ? copy.bufferRowLength : copy.imageExtent.width;
-    const u32 height = copy.bufferImageHeight ? copy.bufferImageHeight : copy.imageExtent.height;
+static u64 BufferImageCopySize(const vk::BufferImageCopy& copy, vk::Format pixel_format) {
+    if (copy.imageSubresource.aspectMask == vk::ImageAspectFlagBits::eStencil) {
+        pixel_format = vk::Format::eS8Uint;
+    } else if (copy.imageSubresource.aspectMask == vk::ImageAspectFlagBits::eDepth) {
+        switch (pixel_format) {
+        case vk::Format::eD16UnormS8Uint:
+            pixel_format = vk::Format::eD16Unorm;
+            break;
+        case vk::Format::eD24UnormS8Uint:
+            pixel_format = vk::Format::eX8D24UnormPack32;
+            break;
+        case vk::Format::eD32SfloatS8Uint:
+            pixel_format = vk::Format::eD32Sfloat;
+            break;
+        default:
+            break;
+        }
+    }
 
+    const u64 row_length = std::max(copy.bufferRowLength, copy.imageExtent.width);
+    const u64 height = std::max(copy.bufferImageHeight, copy.imageExtent.height);
     const auto block = vk::blockExtent(pixel_format);
     const u32 block_size = vk::blockSize(pixel_format);
-    const u32 row_pitch = (row_length / block[0]) * block_size;
-    const u32 slice_pitch = (height / block[1]) * row_pitch;
+    const u64 row_pitch = Common::DivCeil(row_length, u64{block[0]}) * block_size;
+    const u64 slice_pitch = Common::DivCeil(height, u64{block[1]}) * row_pitch;
 
-    const u32 width_in_blocks = (copy.imageExtent.width + block[0] - 1) / block[0];
-    const u32 height_in_blocks = (copy.imageExtent.height + block[1] - 1) / block[1];
-    const u32 num_slices = copy.imageExtent.depth * copy.imageSubresource.layerCount;
+    const u64 width_in_blocks = Common::DivCeil(u64{copy.imageExtent.width}, u64{block[0]});
+    const u64 height_in_blocks = Common::DivCeil(u64{copy.imageExtent.height}, u64{block[1]});
+    const u64 num_slices =
+        Common::DivCeil(u64{copy.imageExtent.depth}, u64{block[2]}) * copy.imageSubresource.layerCount;
 
     return (num_slices - 1) * slice_pitch + (height_in_blocks - 1) * row_pitch +
            width_in_blocks * block_size;
