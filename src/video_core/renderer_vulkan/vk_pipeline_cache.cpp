@@ -966,12 +966,26 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
 
     auto& program = it_pgm.value();
     const auto first_binding = binding;
-    for (size_t perm_idx = 0; perm_idx < program->modules.size(); ++perm_idx) {
+    bool ordered_search{};
+    for (size_t probe = 0; !program->modules.empty() && probe <= program->modules.size(); ++probe) {
+        const size_t perm_idx = probe == 0 ? program->last_used_module : probe - 1;
+        if (probe != 0 && perm_idx == program->last_used_module && !ordered_search) {
+            continue;
+        }
         auto& saved = program->modules[perm_idx];
         if (!saved.spec.Valid() || !saved.module) {
             continue;
         }
         auto& info = saved.GetInfo(program->info);
+        if (info.sw_stage != SwStage::TessellationControl &&
+            info.sw_stage != SwStage::TessellationEval && saved.spec.runtime_info != runtime_info) {
+            continue;
+        }
+        if ((!saved.spec.buffers.empty() || !saved.spec.images.empty() ||
+             !saved.spec.samplers.empty()) &&
+            saved.spec.start != first_binding) {
+            continue;
+        }
         info.pgm_base = params.Base();
         info.user_data = params.user_data;
         if (!info.UniformBufferBoundsCompatible()) {
@@ -986,6 +1000,12 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
         if (!(saved.spec == current)) {
             continue;
         }
+        if (probe == 0 && perm_idx != 0 &&
+            current.bitset.count() != current.buffers.size() + current.images.size()) {
+            ordered_search = true;
+            continue;
+        }
+        program->last_used_module = perm_idx;
         info.AddBindings(binding);
         if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
             fetch_shader = &fetch;

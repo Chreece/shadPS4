@@ -409,7 +409,6 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                                                       static_cast<u32>(table.num_records),
                                                       indexed_limit);
             if (entries != 0u) {
-                image_res.indexed_guest_entries = entries;
                 image_res.is_guest_indexed = true;
                 // Only use dimension-typed GPU image sampling when the whole
                 // guest table fits real Vulkan descriptor resource limits.
@@ -417,6 +416,12 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                     info.hw_stage == HwStage::Fragment && !inst_info.has_offset &&
                     !inst_info.has_derivatives &&
                     entries <= profile.max_guest_mixed_indexed_image_entries;
+                if (image_res.is_guest_mixed_indexed) {
+                    image_res.indexed_entry_limit =
+                        std::min(indexed_limit, profile.max_guest_mixed_indexed_image_entries);
+                }
+                image_res.indexed_guest_entries =
+                    GuestTsharpBindingCapacity(entries, image_res.indexed_entry_limit);
             }
         }
     }

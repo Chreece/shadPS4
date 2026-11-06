@@ -1,8 +1,18 @@
 // SPDX-FileCopyrightText: Copyright 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
+#include <bit>
 #include <cstdint>
 namespace Shader::Optimization {
+[[nodiscard]] constexpr std::uint32_t GuestTsharpBindingCapacity(std::uint32_t entries,
+                                                                 std::uint32_t limit) noexcept {
+    if (entries == 0 || entries > limit)
+        return 0;
+    const auto granularity =
+        entries <= 256u ? std::uint64_t{1} << std::bit_width(entries - 1u) : 256u;
+    const auto capacity = (std::uint64_t{entries} + granularity - 1u) & ~(granularity - 1u);
+    return static_cast<std::uint32_t>(capacity < limit ? capacity : limit);
+}
 // An indexed Vulkan array must contain ALL real PS4 T# entries and one null
 // entry. A partial table is not a valid emulation of a dynamic GPU index.
 // V# stride sizes the scalar-load range; the shader's index sizes T# records.
