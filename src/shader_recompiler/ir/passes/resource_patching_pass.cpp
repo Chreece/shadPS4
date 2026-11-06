@@ -368,7 +368,14 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         verified_uniform_sampler = fetch.Fetch(info.flattened_ud_buf.data(), &real) && real.Valid();
     }
 
-    if (resource.has_indexed_table && profile.supports_sampled_image_nonuniform_indexing &&
+    const bool uniform_sharps =
+        resource.sharps[0].num_dwords == 8u && resource.sharps[1].num_dwords == 4u &&
+        image_res.sharp_fetch.summary != SharpFetch<AmdGpu::Image>::Summary::Invalid &&
+        ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]).summary !=
+            SharpFetch<AmdGpu::Sampler>::Summary::Invalid;
+
+    if (resource.has_indexed_table && !uniform_sharps &&
+        profile.supports_sampled_image_nonuniform_indexing &&
         (resource.indexed_record_stride_bytes == 0u ||
          (resource.has_indexed_sampler_table &&
           profile.supports_sampler_array_nonuniform_indexing &&
@@ -414,7 +421,7 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
     // Discovery can recognize a valid GPU-selected source while the host
     // cannot bind a real texture table. Report the actual rejection gate,
     // not just the source opcode. This never changes the shader or bindings.
-    if (resource.has_indexed_table && !image_res.is_guest_indexed) {
+    if (resource.has_indexed_table && !uniform_sharps && !image_res.is_guest_indexed) {
         static thread_local std::unordered_map<u64, u32> reports;
         if (reports.size() < 128u || reports.contains(info.pgm_hash)) {
             if (reports[info.pgm_hash]++ < 2u) {
