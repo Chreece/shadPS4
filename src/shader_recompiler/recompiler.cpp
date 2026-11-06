@@ -71,6 +71,9 @@ IR::BlockList GenerateBlocks(const IR::AbstractSyntaxList& syntax_list) {
 
 void EmitControlFlowGraph(IR::Program& program, Pools& pools, Gcn::CFG& cfg,
                           RuntimeInfo& runtime_info, const Profile& profile) {
+    program.info.uses_ordered_gds = std::ranges::any_of(program.ins_list, [](const auto& inst) {
+        return inst.opcode == Gcn::Opcode::DS_ORDERED_COUNT;
+    });
     Gcn::Translator translator{program.info, runtime_info, profile};
     for (auto& block : cfg) {
         const u32 start = block.begin_index;
