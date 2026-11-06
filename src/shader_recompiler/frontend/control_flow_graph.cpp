@@ -161,11 +161,14 @@ void CFG::EmitLabels() {
 }
 
 void CFG::SplitDivergenceScopes() {
-    const auto is_open_scope = [](const GcnInst& inst) {
+    const bool has_ordered_count = std::ranges::any_of(inst_list, [](const GcnInst& inst) {
+        return inst.opcode == Opcode::DS_ORDERED_COUNT;
+    });
+    const auto is_open_scope = [has_ordered_count](const GcnInst& inst) {
         // An open scope instruction is an instruction that modifies EXEC
         // but also saves the previous value to restore later. This indicates
         // we are entering a scope.
-        return inst.opcode == Opcode::DS_ORDERED_COUNT ||
+        return (has_ordered_count && IgnoresExecMask(inst)) ||
                inst.opcode == Opcode::S_AND_SAVEEXEC_B64 ||
                // While this instruction does not save EXEC it is often used paired
                // with SAVEEXEC to mask the threads that didn't pass the condition
@@ -173,11 +176,11 @@ void CFG::SplitDivergenceScopes() {
                (inst.opcode == Opcode::S_ANDN2_B64 && inst.dst[0].field == OperandField::ExecLo) ||
                inst.IsCmpx();
     };
-    const auto is_close_scope = [](const GcnInst& inst) {
+    const auto is_close_scope = [has_ordered_count](const GcnInst& inst) {
         // Closing an EXEC scope can be either a branch instruction
         // (typical case when S_AND_SAVEEXEC_B64 is right before a branch)
         // or by a move instruction to EXEC that restores the backup.
-        return inst.opcode == Opcode::DS_ORDERED_COUNT ||
+        return (has_ordered_count && IgnoresExecMask(inst)) ||
                (inst.opcode == Opcode::S_MOV_B64 && inst.dst[0].field == OperandField::ExecLo) ||
                // Sometimes compiler might insert instructions between the SAVEEXEC and the branch.
                // Those instructions need to be wrapped in the condition as well so allow branch
