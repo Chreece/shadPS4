@@ -229,14 +229,105 @@ def prepare_live_symbols(binary):
     return result
 
 
+def anonymous_executable(region):
+    return bool(region and 'x' in region['permissions'] and (
+        not region['path'] or region['path'].startswith(('/memfd:', '[anon:'))))
+
+
+def capture_reverse_context(read, mapping, threads, deadline):
+    result = {'blocks': [], 'seeds': [], 'references': [], 'references_are_candidates': True,
+              'maximum_scan_bytes': 32 * 1024 * 1024, 'maximum_seeds': 16,
+              'maximum_code_pages': 64, 'maximum_references': 256, 'scanned_bytes': 0}
+    regions, seeds, pages = {}, {}, set()
+    for thread in threads:
+        for sample in thread['samples']:
+            regs = sample['registers']
+            region = mapping(regs['rip'])
+            if not anonymous_executable(region):
+                continue
+            regions[region['start']] = region
+            for name, address in regs.items():
+                target = mapping(address)
+                if name in ('rip', 'rsp', 'rbp') or abs(address - regs['rsp']) < 65536:
+                    continue
+                if target is None or 'r' not in target['permissions'] or 'x' in target['permissions']:
+                    continue
+                if len(seeds) >= result['maximum_seeds']:
+                    result['seeds_truncated'] = True
+                    break
+                start = max(target['start'], address // 512 * 512)
+                seeds[start] = min(start + 512, target['end'])
+                raw = read(address, 64)
+                for offset in range(0, len(raw) - 7, 8):
+                    value = int.from_bytes(raw[offset:offset + 8], 'little')
+                    if anonymous_executable(mapping(value)) and len(seeds) < result['maximum_seeds']:
+                        seeds[value] = value + 1
+    result['seeds'] = [{'start': start, 'end': end} for start, end in sorted(seeds.items())]
+    starts = sorted(seeds)
+    if not starts:
+        return result
+    pattern = re.compile(rb'(?=[\x89\x8b\x8d\xc6\xc7][\x05\x0d\x15\x1d\x25\x2d\x35\x3d])')
+    for region in regions.values():
+        position = region['start']
+        while position < region['end']:
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                return result
+            available = result['maximum_scan_bytes'] - result['scanned_bytes']
+            if available <= 0:
+                result['scan_truncated'] = True
+                return result
+            size = min(1024 * 1024, region['end'] - position, available)
+            raw = read(position, min(size + 16, region['end'] - position))
+            result['scanned_bytes'] += min(size, len(raw))
+            for match in pattern.finditer(raw):
+                if time.monotonic() >= deadline:
+                    result['budget_exhausted'] = True
+                    return result
+                offset = match.start()
+                if offset >= size or offset + 6 > len(raw):
+                    continue
+                immediate = 4 if raw[offset] == 0xc7 else 1 if raw[offset] == 0xc6 else 0
+                if offset + 6 + immediate > len(raw):
+                    continue
+                target = (position + offset + 6 + immediate +
+                          struct.unpack_from('<i', raw, offset + 2)[0]) & ((1 << 64) - 1)
+                index = bisect.bisect_right(starts, target) - 1
+                if index < 0 or target >= seeds[starts[index]]:
+                    continue
+                if len(result['references']) >= result['maximum_references']:
+                    result['references_truncated'] = True
+                    return result
+                instruction = position + offset
+                result['references'].append({'instruction': instruction, 'target': target,
+                                              'opcode_byte': raw[offset]})
+                page = max(region['start'], instruction // 4096 * 4096)
+                if page in pages:
+                    continue
+                if len(pages) >= result['maximum_code_pages']:
+                    result['code_truncated'] = True
+                    continue
+                pages.add(page)
+                result['blocks'].append({'address': page, 'code': True,
+                    'hex': read(page, min(4096, region['end'] - page)).hex()})
+            if not raw:
+                result['read_incomplete'] = True
+                break
+            position += size
+    return result
+
+
 def capture_instruction_context(read, mapping, pointers, deadline):
     result = {'blocks': [], 'references_are_candidates': True,
-              'maximum_code_pages': 128, 'maximum_data_blocks': 256,
+              'maximum_code_pages': 128, 'maximum_data_blocks': 1536,
+              'maximum_data_blocks_per_depth': 512,
               'maximum_code_reference_depth': 2, 'maximum_data_pointer_depth': 2}
     if shutil.which('objdump') is None:
         result['error'] = 'OBJDUMP_UNAVAILABLE'
         return result
     pages, data_blocks = {}, {}
+    pending_data = []
+    data_depth_counts = [0, 0, 0]
 
     def queue(address, origin, depth, data_depth=0):
         region = mapping(address)
@@ -252,12 +343,18 @@ def capture_instruction_context(read, mapping, pointers, deadline):
         collection = pages if code else data_blocks
         if start in collection:
             return
+        if not code and data_depth_counts[data_depth] >= result['maximum_data_blocks_per_depth']:
+            result['data_truncated'] = True
+            return
         if len(collection) >= result['maximum_code_pages' if code else 'maximum_data_blocks']:
             result['code_truncated' if code else 'data_truncated'] = True
             return
         collection[start] = {'address': start, 'origin': origin,
                              'depth': depth if code else data_depth,
                              'code': code, 'size': min(size, region['end'] - start)}
+        if not code:
+            data_depth_counts[data_depth] += 1
+            pending_data.append(collection[start])
 
     for item in pointers:
         if item['code'] and item['depth'] == 0:
@@ -314,20 +411,17 @@ def capture_instruction_context(read, mapping, pointers, deadline):
                 queue((int(relative[1], 16) + adjustment) & ((1 << 64) - 1), origin, depth + 1)
             for immediate in re.findall(r'\$0x([0-9a-f]+)', operands):
                 queue(int(immediate, 16), origin, depth + 1)
-    pending = list(data_blocks.values())
-    for item in pending:
+    for item in pending_data:
         if time.monotonic() >= deadline:
             result['budget_exhausted'] = True
             break
         raw = read(item['address'], item['size'])
         result['blocks'].append(dict(item, hex=raw.hex()))
         if item['depth'] < result['maximum_data_pointer_depth']:
-            before = set(data_blocks)
             for offset in range(0, len(raw) - 7, 8):
                 queue(int.from_bytes(raw[offset:offset + 8], 'little'),
                       f'data:{item["address"] + offset:#x}',
                       result['maximum_code_reference_depth'] + 1, item['depth'] + 1)
-            pending.extend(value for key, value in data_blocks.items() if key not in before)
     result['bytes'] = sum(len(item['hex']) // 2 for item in result['blocks'])
     result['code_pages_captured'] = sum(item['code'] for item in result['blocks'])
     result['data_blocks_captured'] = len(result['blocks']) - result['code_pages_captured']
@@ -458,6 +552,7 @@ def capture_owned_live_memory(pid, out, second, symbols):
                 record['live_performance_error'] = 'COUNTER_MEMORY_UNAVAILABLE'
 
         latest = {}
+        anonymous_sample_tids = set()
         sampler = symbols.get('sampler', {})
         if symbols.get('error') or symbols.get('sampler_error'):
             record['sampler_error'] = symbols.get('error') or symbols['sampler_error']
@@ -486,9 +581,13 @@ def capture_owned_live_memory(pid, out, second, symbols):
                     if not 0 <= age <= 2000:
                         continue
                     entries = latest.setdefault(tid, [])
-                    if len(entries) < 3 and not any(x['registers']['rip'] == values[0] for x in entries):
+                    is_anonymous = anonymous_executable(mapping(values[0]))
+                    if (len(entries) < 3 or (is_anonymous and tid not in anonymous_sample_tids)) and not any(
+                            x['registers']['rip'] == values[0] for x in entries):
                         entries.append({'sample_index': index, 'sample_ms': timestamp,
                                         'age_ms': age, 'registers': dict(zip(names, values))})
+                        if is_anonymous:
+                            anonymous_sample_tids.add(tid)
                     if time.monotonic() >= deadline:
                         break
             except struct.error:
@@ -546,6 +645,7 @@ def capture_owned_live_memory(pid, out, second, symbols):
                                   f'{item["address"]:#x}+{offset}', item['depth'] + 1)
         record['pointer_context_bytes'] = sum(len(item['hex']) // 2
                                                for item in record['pointer_context'])
+        record['reverse_context'] = capture_reverse_context(read, mapping, record['threads'], deadline)
         record['instruction_context'] = capture_instruction_context(read, mapping, pending, deadline)
     except (OSError, RuntimeError, ValueError, StopIteration) as error:
         record['error'] = str(error)
