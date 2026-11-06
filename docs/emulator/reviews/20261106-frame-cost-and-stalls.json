@@ -1,0 +1,773 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+  "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "prs": [
+    169,
+    170,
+    171,
+    172
+  ],
+  "games": [
+    "ALL"
+  ],
+  "context_games": [
+    "CUSA34384",
+    "CUSA11456"
+  ],
+  "tested_games": [],
+  "main_changed": false,
+  "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+  "record_id": "frame-cost-and-stalls-20261106",
+  "evidence": {
+    "path": "/workspace/scratch/e77588f59ff3/frame-cost-and-stall-evidence-20261106.zip",
+    "filename": "frame-cost-and-stall-evidence-20261106.zip",
+    "bytes": 65938,
+    "files": 65,
+    "sha256": "f815cb81241339ea3ffc6ff4c6ae1cbaba992eee3abb398d8dd543b6226e7b77",
+    "library_file_id": "libfile_daaabe7ade248191bc371bf6dbfc16c3",
+    "url": "https://chatgpt.com/library?file_id=libfile_daaabe7ade248191bc371bf6dbfc16c3&account_id=personal"
+  },
+  "native_archive": {
+    "archive": "universal-two-games-20261106T064142Z-4093122.tar.gz",
+    "sha256": "58c557ac87733df84fc345ceaa9b836d52e70b1f5a7bc41b17ab55c08c6430a9",
+    "library_file_id": "libfile_3ce7948e9c648191b7f4fc78cd95a0df"
+  },
+  "validation": {
+    "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+    "source_tree": "be475655da35468d4a73dad5785a9303246ab72d",
+    "upstream": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+    "build": "PASS",
+    "cpu_suite": "PASS",
+    "cli_cases": 3,
+    "profiler_lifecycle_cases": 5,
+    "runner_cases": 40,
+    "handoff_cases": 3,
+    "sanitizers": [
+      "ASan",
+      "UBSan"
+    ],
+    "leak_detection": "DISABLED_UNAVAILABLE_IN_HOST_TRACING_ENVIRONMENT",
+    "binary_bytes": 95804776,
+    "binary_sha256": "d47ab42d3a11262080b695a3fac81ba4fae116ab3f82e9f999fb90c2c2759a1f",
+    "embedded_source_verified": true,
+    "native_gpu_new_source": "NOT_RUN",
+    "root_cause_of_remaining_gow_cost_or_got_stall": "UNPROVEN_PENDING_PROFILE",
+    "guest_shader_changes": false,
+    "emulation_settings_changed": false,
+    "main_changed": false,
+    "wrapper_sha256": "d7e74762bb69625fe35ee16c1432fd148ba0f89f155aee7823758e166775f743",
+    "runner_commit": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+    "build_environment_cases": 2
+  },
+  "records": [
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-native-build",
+      "record_id": "frame-cost-20261106-native-build",
+      "result": "PASS_NATIVE_BUILD_AND_ALL_43_LOGS",
+      "details": {
+        "archive_sha256": "58c557ac87733df84fc345ceaa9b836d52e70b1f5a7bc41b17ab55c08c6430a9",
+        "result": {
+          "schema_version": 2,
+          "record_id": "universal-upstream-20261106T064143Z-4093523",
+          "timestamp_utc": "2026-11-06T06:55:34.285709+00:00",
+          "scope": "UNIVERSAL_SHADPS4",
+          "stage": "COMPLETE_BUILD_ONLY",
+          "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+          "exit_code": 0,
+          "requested_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+          "source_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+          "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+          "game_launched": false,
+          "graphics_verified": false,
+          "installed_binary_changed": false,
+          "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261106T064143Z-4093523.tar.gz",
+          "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+          "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-0e23bd61f838/build/shadps4",
+          "binary_sha256": "f14985b3232d16cd963129ddc8478c0c7652bfebbab1f90add80bf3f15fe07ce"
+        },
+        "log_count": 43,
+        "errors": []
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-gow-native",
+      "record_id": "frame-cost-20261106-gow-native",
+      "result": "USER_CONFIRMED_CONTROL_AND_GAME_START_DS_CONTINUES_FPS_POOR",
+      "details": {
+        "game": "CUSA34384",
+        "source": "0e23bd61f8389d6b81d395f90958306304e67431",
+        "binary_sha256": "f14985b3232d16cd963129ddc8478c0c7652bfebbab1f90add80bf3f15fe07ce",
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 118.417,
+        "completed_ds_dispatches": 459,
+        "max_completed_waves": 2892,
+        "completed_wrapped_dispatches": 189,
+        "completed_phases": [
+          2
+        ],
+        "clamp_messages": 25783,
+        "last_gpu_work_ms": 116164,
+        "gpu_work_total": 3159932,
+        "validation_layer_active": true,
+        "first_validation_failure": null,
+        "gpu_failure": null,
+        "snapshots": {
+          "80": [
+            {
+              "tid": 9646,
+              "name": "shadPS4:GpuComm",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 48145,
+              "nonvoluntary": 4343
+            },
+            {
+              "tid": 10065,
+              "name": "Game:Main",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 385561,
+              "nonvoluntary": 1699
+            },
+            {
+              "tid": 10565,
+              "name": "GpuCullMonitor",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 3632,
+              "nonvoluntary": 1234488
+            },
+            {
+              "tid": 10580,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 395,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 10581,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 397,
+              "nonvoluntary": 1
+            },
+            {
+              "tid": 10582,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 8796,
+              "nonvoluntary": 5
+            }
+          ],
+          "110": [
+            {
+              "tid": 9646,
+              "name": "shadPS4:GpuComm",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 77434,
+              "nonvoluntary": 6110
+            },
+            {
+              "tid": 10065,
+              "name": "Game:Main",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 575124,
+              "nonvoluntary": 2227
+            },
+            {
+              "tid": 10565,
+              "name": "GpuCullMonitor",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 5633,
+              "nonvoluntary": 1753501
+            },
+            {
+              "tid": 10580,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 415,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 10581,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 417,
+              "nonvoluntary": 1
+            },
+            {
+              "tid": 10582,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 12079,
+              "nonvoluntary": 6
+            }
+          ]
+        },
+        "screenshots": {
+          "frame-080s.png": "fb5cf785dba9a00b7d0881cbc701a273f764f85d066897fb96c065dbaef57041",
+          "frame-008s.png": "3e7bd2a90b5b322da90965b618a3122e80011ba71ad16c48a5a04fed1ad8ce0c",
+          "frame-110s.png": "5231e83ca08cc964af40d7bf2660a6bd3c141a572f729725f03849e4a37b9eab",
+          "frame-025s.png": "3e7bd2a90b5b322da90965b618a3122e80011ba71ad16c48a5a04fed1ad8ce0c"
+        },
+        "console_sha256": "47d58c6f33909a73ad9bc89b28b2ad18d42f0f7baaa1b739ee456e8305e82e56",
+        "user_confirmation": "User reports control and starting the game.",
+        "visual_review": {
+          "80s": "Real menu, 4 FPS / 280.5 ms",
+          "110s": "Game loading tips screen, 9 FPS / 108.3 ms"
+        },
+        "gameplay_scene_captured": false
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-got-native",
+      "record_id": "frame-cost-20261106-got-native",
+      "result": "UNRESOLVED_STALL_GPU_SUBMISSIONS_STOP_AROUND_40S",
+      "details": {
+        "game": "CUSA11456",
+        "source": "0e23bd61f8389d6b81d395f90958306304e67431",
+        "binary_sha256": "f14985b3232d16cd963129ddc8478c0c7652bfebbab1f90add80bf3f15fe07ce",
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 118.264,
+        "completed_ds_dispatches": 0,
+        "max_completed_waves": 0,
+        "completed_wrapped_dispatches": 0,
+        "completed_phases": [],
+        "clamp_messages": 0,
+        "last_gpu_work_ms": 40039,
+        "gpu_work_total": 239058,
+        "validation_layer_active": true,
+        "first_validation_failure": null,
+        "gpu_failure": null,
+        "snapshots": {
+          "80": [
+            {
+              "tid": 25475,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 21175,
+              "nonvoluntary": 323
+            },
+            {
+              "tid": 25563,
+              "name": "Game:Main",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 20081,
+              "nonvoluntary": 2277
+            },
+            {
+              "tid": 25988,
+              "name": "Game:Main",
+              "state": "S (sleeping)",
+              "wchan": "do_sys_poll",
+              "voluntary": 1,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25989,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 84,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25990,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 84,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25991,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 5643,
+              "nonvoluntary": 10
+            }
+          ],
+          "110": [
+            {
+              "tid": 25475,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 21180,
+              "nonvoluntary": 323
+            },
+            {
+              "tid": 25563,
+              "name": "Game:Main",
+              "state": "R (running)",
+              "wchan": "0",
+              "voluntary": 20081,
+              "nonvoluntary": 2476
+            },
+            {
+              "tid": 25988,
+              "name": "Game:Main",
+              "state": "S (sleeping)",
+              "wchan": "do_sys_poll",
+              "voluntary": 1,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25989,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 84,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25990,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 84,
+              "nonvoluntary": 0
+            },
+            {
+              "tid": 25991,
+              "name": "shadPS4:GpuComm",
+              "state": "S (sleeping)",
+              "wchan": "futex_wait_queue",
+              "voluntary": 5643,
+              "nonvoluntary": 10
+            }
+          ]
+        },
+        "screenshots": {
+          "frame-080s.png": "361a60befdc4cf11ce87f85c04bf39f0dddeba4ce2c11f0902f0cb7081667b9b",
+          "frame-008s.png": "c26e6f89a25a069d368f2382ea11fefd10920d3c600e9b6f6d12be63eaabf855",
+          "frame-110s.png": "361a60befdc4cf11ce87f85c04bf39f0dddeba4ce2c11f0902f0cb7081667b9b",
+          "frame-025s.png": "c26e6f89a25a069d368f2382ea11fefd10920d3c600e9b6f6d12be63eaabf855"
+        },
+        "console_sha256": "57fe4abb26b1a28b7dfe044a0e8c4419a5dcc5cd80de2905b1312056b33d0074",
+        "visual_review": {
+          "110s": "Black loading spinner, overlay 18 FPS / 56.1 ms; GPU work stopped around 40s."
+        },
+        "root_cause": "NOT_PROVEN; runnable main thread, no userspace samples in upload"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "0e23bd61f8389d6b81d395f90958306304e67431",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-measurement-overhead",
+      "record_id": "frame-cost-20261106-measurement-overhead",
+      "result": "HEAVY_CAPTURE_COST_PRESENT_FPS_CONTRIBUTION_UNMEASURED",
+      "details": {
+        "native_validation": "CORE_AND_SYNCHRONIZATION_ENABLED",
+        "native_synchronous_logging": true,
+        "native_shader_dumping": true,
+        "native_full_gpu_history": true,
+        "gow_gpu_history_records": 3159932,
+        "gow_clamp_messages": 25783,
+        "got_overlay": "18 FPS / 56.1 ms is cached after submissions stop, not proof of continued rendering",
+        "caveat": "Context-switch counts are not thread CPU time. No userspace PCs in the uploaded archive.",
+        "interpretation_correction": "Earlier GoT overlay comparisons cannot establish sustained frame rate after its GPU submissions have stopped."
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-diagnostics",
+      "record_id": "frame-cost-20261106-diagnostics",
+      "result": "IMPLEMENTED_BOUNDED_UNIVERSAL_COST_AND_CPU_STALL_CAPTURE",
+      "details": {
+        "pr": 172,
+        "source_tree": "be475655da35468d4a73dad5785a9303246ab72d",
+        "regions": [
+          "draw",
+          "dispatch",
+          "ordered-ds",
+          "bind-buffers",
+          "bind-textures",
+          "shader-compile",
+          "pipeline-lookup",
+          "image-readback",
+          "buffer-readback",
+          "page-protect",
+          "submit",
+          "gpu-wait",
+          "buffer-clamp"
+        ],
+        "cpu_sampling": {
+          "platform": "Linux x86-64",
+          "process_cpu_interval_us": 20000,
+          "sample_capacity": 32768,
+          "reported_locations": 256,
+          "existing_profiler_preserved": true,
+          "signal_handler_allocation_or_io": false,
+          "publication": "lock-free release/acquire",
+          "errno_preserved": true,
+          "code_reads": "outside handler; process_vm_readv with /proc/self/mem fallback"
+        },
+        "counters": "Inclusive/self wall time, calls, maximum, bytes and last activity; not GPU timestamps or CPU-cycle attribution.",
+        "logging": "Sample repeated buffer clamps using the existing bounded policy; retain full counter.",
+        "shader_changes": false,
+        "readback_or_coherence_changes": false,
+        "game_vendor_hash_selection": false,
+        "shader_tree": "15371b3eb4ca228e8431f47ab2e06c8eeb0fece3"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-host-validation",
+      "record_id": "frame-cost-20261106-host-validation",
+      "result": "PASS_PUBLISHED_BUILD_CPU_CLI_PROFILER_SANITIZERS_AND_RUNNER",
+      "details": {
+        "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+        "source_tree": "be475655da35468d4a73dad5785a9303246ab72d",
+        "upstream": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+        "build": "PASS",
+        "cpu_suite": "PASS",
+        "cli_cases": 3,
+        "profiler_lifecycle_cases": 5,
+        "runner_cases": 40,
+        "handoff_cases": 3,
+        "sanitizers": [
+          "ASan",
+          "UBSan"
+        ],
+        "leak_detection": "DISABLED_UNAVAILABLE_IN_HOST_TRACING_ENVIRONMENT",
+        "binary_bytes": 95804776,
+        "binary_sha256": "d47ab42d3a11262080b695a3fac81ba4fae116ab3f82e9f999fb90c2c2759a1f",
+        "embedded_source_verified": true,
+        "native_gpu_new_source": "NOT_RUN",
+        "root_cause_of_remaining_gow_cost_or_got_stall": "UNPROVEN_PENDING_PROFILE",
+        "guest_shader_changes": false,
+        "emulation_settings_changed": false,
+        "main_changed": false,
+        "wrapper_sha256": "d7e74762bb69625fe35ee16c1432fd148ba0f89f155aee7823758e166775f743",
+        "runner_commit": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+        "build_environment_cases": 2,
+        "profiler_cases": [
+          {
+            "enabled": "0",
+            "mode": "normal",
+            "exit_code": 0,
+            "cpu_samples": 0
+          },
+          {
+            "enabled": "1",
+            "mode": "normal",
+            "exit_code": 0,
+            "cpu_samples": 3
+          },
+          {
+            "enabled": "1",
+            "mode": "handler",
+            "exit_code": 0,
+            "cpu_samples": 0
+          },
+          {
+            "enabled": "1",
+            "mode": "timer",
+            "exit_code": 0,
+            "cpu_samples": 0
+          },
+          {
+            "enabled": "1",
+            "mode": "quick",
+            "exit_code": 0,
+            "cpu_samples": 2
+          }
+        ],
+        "runner": {
+          "checks": 40,
+          "pass_result": true,
+          "profiles": "normal and performance apply identical policy to all games, installed source unchanged",
+          "perf_output_bound": 524288
+        },
+        "overhead_probe": {
+          "enabled_scope_ns": 132.73,
+          "disabled_scope_ns": 1.66,
+          "history_bypass_ns": 6.39,
+          "history_normal_ns": 167.01,
+          "history_bypass_records": 0,
+          "history_normal_records": 100000,
+          "interpretation": "Synthetic host microbenchmark, not a native FPS result"
+        }
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-handoff",
+      "record_id": "frame-cost-20261106-handoff",
+      "result": "PASS_SHARED_PERFORMANCE_POLICY_BUILD_ISOLATION_AND_THREE_HANDOFF_PATHS",
+      "details": {
+        "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=7b61290376949a403402822297baa0300d8120c5\nRUNNER=80e4eae574954f9458d1488a8f4946ec234e82bb\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-profile.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  d7e74762bb69625fe35ee16c1432fd148ba0f89f155aee7823758e166775f743 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 SHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+        "runner": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+        "wrapper_sha256": "d7e74762bb69625fe35ee16c1432fd148ba0f89f155aee7823758e166775f743",
+        "runner_checks": 40,
+        "build_environment_checks": 2,
+        "handoff_paths": [
+          "success",
+          "checksum-mismatch",
+          "download-failure"
+        ],
+        "policy": "Both games: validation, shader dumps, synchronous logging and full GPU history off; readback/coherence and guest execution unchanged.",
+        "build_environment": "SHADPS4_PERFORMANCE_DIAGNOSTICS=0 during build/CPU checks; 1 for game observations",
+        "evidence": "One-second process/GPU utilization, per-thread stat/schedstat/syscall snapshots and bounded 512KiB performance log",
+        "protections": "118s TERM +2s KILL; >=8GiB VRAM; exact conditional Ollama restore; isolated profiles/saves; installed binary unchanged; no automatic input; upstream gate",
+        "native_new_source": "NOT_RUN"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-limits",
+      "record_id": "frame-cost-20261106-limits",
+      "result": "NATIVE_PROFILE_REQUIRED_CROSS_PLATFORM_EXECUTION_UNTESTED",
+      "details": {
+        "initial_code_read": "process_vm_readv unavailable on this host; final /proc/self/mem fallback verified with 64 instruction bytes and errno 0",
+        "leak_detection": "Disabled because unavailable under host tracing; ASan/UBSan pass",
+        "samples": "Process-timer locations are approximate, not exact per-thread CPU percentages",
+        "timing": "Inclusive categories overlap; self subtracts measured children; concurrent totals may exceed elapsed time",
+        "bytes": "Image-readback totals are requested demand sizes; buffer-readback totals are actual staging bytes",
+        "shader_check": "Compiler subtree unchanged; no new SPIR-V comparison run this turn",
+        "homebrew": "No new guest-emulation changes this turn; earlier original OpenOrbis hardware validation remains pending",
+        "root_cause": "Remaining GoW cost and GoT stall are not proven; no speculative synchronization or rendering change"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-06T07:42:44.049585+00:00",
+      "source_commit": "7b61290376949a403402822297baa0300d8120c5",
+      "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+      "prs": [
+        169,
+        170,
+        171,
+        172
+      ],
+      "games": [
+        "ALL"
+      ],
+      "context_games": [
+        "CUSA34384",
+        "CUSA11456"
+      ],
+      "tested_games": [],
+      "main_changed": false,
+      "review_file": "docs/emulator/reviews/20261106-frame-cost-and-stalls.json",
+      "id": "frame-cost-20261106-decision",
+      "record_id": "frame-cost-20261106-decision",
+      "result": "PR171_READY_PR172_DRAFT_MAIN_HELD",
+      "details": {
+        "evidence": {
+          "path": "/workspace/scratch/e77588f59ff3/frame-cost-and-stall-evidence-20261106.zip",
+          "filename": "frame-cost-and-stall-evidence-20261106.zip",
+          "bytes": 65938,
+          "files": 65,
+          "sha256": "f815cb81241339ea3ffc6ff4c6ae1cbaba992eee3abb398d8dd543b6226e7b77",
+          "library_file_id": "libfile_daaabe7ade248191bc371bf6dbfc16c3",
+          "url": "https://chatgpt.com/library?file_id=libfile_daaabe7ade248191bc371bf6dbfc16c3&account_id=personal"
+        },
+        "pr169": "READY_FOR_REVIEW",
+        "pr170": "DRAFT_GOT_UNRESOLVED",
+        "pr171": "READY_FOR_REVIEW_NATIVE_TRANSFER_PATH_CONFIRMED",
+        "pr172": "DRAFT_NATIVE_PROFILE_PENDING",
+        "prior_prs_preserved": [
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171
+        ],
+        "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+        "main_reason": "Do not promote the full experimental ancestry while GoT recovery remains unresolved.",
+        "universal_completion": false,
+        "proven_native_fps_gain": false
+      }
+    }
+  ],
+  "journal": {
+    "previous_rows": 728,
+    "previous_sha256": "986756eba214cdf6c422e7b69016c4b7ba65541d69e4a25b009b938f18596f05",
+    "appended": 9,
+    "rows": 737,
+    "sha256": "8590fc687b1f47d70c5f58f1dacbd14de6891f9fc69ed39ec05c123e904e1aa2"
+  }
+}
