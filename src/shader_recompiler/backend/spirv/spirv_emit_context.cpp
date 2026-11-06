@@ -832,6 +832,12 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
     case BufferType::OrderedGdsEpochAuth:
         Name(id, "ordered_gds_verified_guest_epoch_and_wave_token");
         break;
+    case BufferType::OrderedGdsState:
+        Name(id, "ordered_gds_continuation_values");
+        break;
+    case BufferType::OrderedGdsResume:
+        Name(id, "ordered_gds_resolved_values");
+        break;
     case BufferType::Flatbuf:
         Name(id, "srt_flatbuf");
         break;
@@ -884,6 +890,10 @@ void EmitContext::DefineBuffers() {
             has_ordered_gds_capture_binding = true;
             ASSERT_MSG(desc.is_written && True(desc.used_types & IR::Type::U32),
                        "invalid GCN capture packet SSBO declaration");
+        } else if (desc.buffer_type == BufferType::OrderedGdsState) {
+            ordered_gds_state_index = buffers.size();
+        } else if (desc.buffer_type == BufferType::OrderedGdsResume) {
+            ordered_gds_resume_index = buffers.size();
         } else if (desc.buffer_type == BufferType::OrderedGdsEpochAuth) {
             ASSERT_MSG(!has_ordered_gds_auth_binding,
                        "duplicate GCN epoch authorization SSBO descriptor");

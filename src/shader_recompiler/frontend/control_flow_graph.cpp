@@ -147,6 +147,9 @@ void CFG::EmitLabels() {
                 AddLabel(true_label);
                 AddLabel(false_label);
             }
+        } else if (inst.opcode == Opcode::DS_ORDERED_COUNT) {
+            AddLabel(pc);
+            AddLabel(pc + inst.length);
         } else if (inst.opcode == Opcode::S_ENDPGM) {
             const u32 next_label = pc + inst.length;
             AddLabel(next_label);

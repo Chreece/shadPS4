@@ -265,6 +265,7 @@ public:
 #endif
 
 private:
+    void ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDeviceBuffers> owner);
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
     void Resolve();

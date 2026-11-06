@@ -394,6 +394,23 @@ public:
     OrderedGdsEpochDeviceBuffers(OrderedGdsEpochDeviceBuffers&&) = delete;
     OrderedGdsEpochDeviceBuffers& operator=(OrderedGdsEpochDeviceBuffers&&) = delete;
 
+    void PrepareContinuationState(const Instance& instance, Runtime& runtime, u32 words) {
+        const u64 bytes =
+            u64(words) * plan.waves * Shader::Gcn::OrderedGds::GcnWaveLanes * sizeof(u32);
+        if (!words || bytes > Plan::MaxEpochDeviceBytes - plan.combined_device_bytes) {
+            throw std::invalid_argument("ordered GDS continuation exceeds dispatch memory budget");
+        }
+        if (continuation_state) {
+            if (continuation_state->SizeBytes() != bytes) {
+                throw std::invalid_argument("ordered GDS continuation shader layout changed");
+            }
+            return;
+        }
+        continuation_state.emplace(instance, 0, bytes, VideoCore::MemoryType::DeviceLocal,
+                                   "Ordered GDS persistent compiler state");
+        runtime.FillBuffer(&*continuation_state, 0, bytes, 0);
+    }
+
     // Initialize once before any guest LDS writes. Runtime::FillBuffer
     // tracks transfer-write hazards; BindBuffers later inserts a compute
     // dependency. This must NOT run again at the post-DS continuation,
@@ -520,6 +537,7 @@ public:
     std::optional<VideoCore::Buffer> capture_lds;
     std::optional<VideoCore::Buffer> resume_lds;
     std::optional<VideoCore::Buffer> persistent_lds;
+    std::optional<VideoCore::Buffer> continuation_state;
 
 private:
     std::vector<Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority_;

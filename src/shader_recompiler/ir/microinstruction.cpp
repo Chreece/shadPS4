@@ -42,6 +42,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::DeviceMemoryBarrier:
     case Opcode::SubgroupBarrier:
     case Opcode::ConditionRef:
+    case Opcode::OrderedGdsStoreState:
     case Opcode::Prologue:
     case Opcode::Epilogue:
     case Opcode::Discard:
@@ -150,8 +151,7 @@ bool Inst::AreAllArgsImmediates() const {
 }
 
 IR::Type Inst::Type() const {
-    if (op == Opcode::Phi) {
-        // The type of a phi node is stored in its flags
+    if (op == Opcode::Phi || op == Opcode::OrderedGdsLoadState) {
         return Flags<IR::Type>();
     }
     if (op == Opcode::GetVirtualRegister) {
