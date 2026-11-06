@@ -131,6 +131,10 @@ OPCODE(StoreBufferU32,                                      Void,           Opaq
 OPCODE(StoreBufferU32x2,                                    Void,           Opaque,         Opaque,         U32x2,                                          )
 OPCODE(StoreBufferU32x3,                                    Void,           Opaque,         Opaque,         U32x3,                                          )
 OPCODE(StoreBufferU32x4,                                    Void,           Opaque,         Opaque,         U32x4,                                          )
+OPCODE(StoreBufferU32Guarded,                              Void,           Opaque,         Opaque,         U32,            U1,                                             )
+OPCODE(StoreBufferU32x2Guarded,                            Void,           Opaque,         Opaque,         U32x2,          U1,                                             )
+OPCODE(StoreBufferU32x3Guarded,                            Void,           Opaque,         Opaque,         U32x3,          U1,                                             )
+OPCODE(StoreBufferU32x4Guarded,                            Void,           Opaque,         Opaque,         U32x4,          U1,                                             )
 OPCODE(StoreBufferU64,                                      Void,           Opaque,         Opaque,         U64,                                            )
 OPCODE(StoreBufferF32,                                      Void,           Opaque,         Opaque,         F32,                                            )
 OPCODE(StoreBufferF32x2,                                    Void,           Opaque,         Opaque,         F32x2,                                          )
@@ -427,6 +431,7 @@ OPCODE(ConvertS32S16,                                       U32,            U16,
 OPCODE(ImageHandle,                                         Opaque,         U32x4,          U32x4,                                                          )
 OPCODE(ImageSampleRaw,                                      F32x4,          Opaque,         Opaque,         F32x4,          F32x4,          F32x4,          F32,           )
 OPCODE(ImageSampleImplicitLod,                              F32x4,          Opaque,         F32x4,          F32,            Opaque,                         )
+OPCODE(ImageSampleImplicitLodIndexed,                       F32x4,          Opaque,         F32x4,          F32,            Opaque,         U32,            )
 OPCODE(ImageSampleExplicitLod,                              F32x4,          Opaque,         Opaque,         F32,            Opaque,                         )
 OPCODE(ImageSampleDrefImplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
 OPCODE(ImageSampleDrefExplicitLod,                          F32x4,          Opaque,         Opaque,         F32,            F32,            Opaque,         )
@@ -435,6 +440,7 @@ OPCODE(ImageGatherDref,                                     F32x4,          Opaq
 OPCODE(ImageQueryDimensions,                                U32x4,          Opaque,         U32,            U1,                                             )
 OPCODE(ImageQueryLod,                                       F32x4,          Opaque,         Opaque,                                                         )
 OPCODE(ImageGradient,                                       F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         F32,          )
+OPCODE(ImageGradientIndexed,                                F32x4,          Opaque,         Opaque,         Opaque,         Opaque,         Opaque,         U32,          )
 OPCODE(ImageRead,                                           F32x4,          Opaque,         Opaque,         U32,            U32,                            )
 OPCODE(ImageWrite,                                          Void,           Opaque,         Opaque,         U32,            U32,            F32x4,          )
 
@@ -461,12 +467,14 @@ OPCODE(CubeFaceCoordT,                                      F32,            F32,
 OPCODE(CubeFaceMajorAxis,                                   F32,            F32,            F32,            F32,                                            )
 
 // Warp operations
+OPCODE(GroupReduceUMin,                                     U32,            U32,                                                                            )
+OPCODE(GroupReduceOr,                                       U32,            U32,                                                                            )
 OPCODE(LaneId,                                              U32,                                                                                            )
 OPCODE(WarpId,                                              U32,                                                                                            )
 OPCODE(QuadBroadcast,                                       U32,            U32,            U32                                                             )
 OPCODE(Shuffle,                                             U32,            U32,            U32                                                             )
 OPCODE(ShuffleXor,                                          U32,            U32,            U32,                                                            )
-OPCODE(ReadFirstLane,                                       U32,            U32,                                                                            )
+OPCODE(ReadFirstLane,                                       U32,            U32,            U1,                                                             )
 OPCODE(ReadLane,                                            U32,            U32,            U32                                                             )
 OPCODE(WriteLane,                                           U32,            U32,            U32,            U32                                             )
 OPCODE(Ballot,                                              U64,            U1,                                                                             )
@@ -474,6 +482,14 @@ OPCODE(BallotFindLsb,                                       U32,            U64,
 OPCODE(InverseBallot,                                       U1,             U64,                                                                            )
 OPCODE(DataAppend,                                          U32,            U32,            U1                                                              )
 OPCODE(DataConsume,                                         U32,            U32,            U1                                                              )
+// Wave-ordered GDS counter: live M0, per-lane ADDR, full guest EXEC mask, raw control and site PC.
+// Distinct from SharedAtomicIAdd/Exchange: Vulkan does not order workgroups by creation.
+// Register state at the live GCN ordered-count site, before its old-value return.
+// Bank: 0=SGPR, 1=VGPR, 2=architectural status; index selects the register.
+// Writes must survive SSA/DCE; the Vulkan backend still rejects execution
+// until a genuine wave-aware capture/resume pipeline is wired.
+OPCODE(OrderedGdsCheckpointRegister, Void, U32, U32, U32, U32, U32, U32)
+OPCODE(OrderedGdsCount, U32, U32, U32, U64, U32, U32)
 OPCODE(GroupAny,                                            U1,             U1,                                                                             )
 
 // Time operations

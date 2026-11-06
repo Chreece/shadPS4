@@ -16,25 +16,6 @@ namespace Libraries::Ngs2 {
 
 // Ngs2
 
-s32 PS4_SYSV_ABI sceNgs2CalcWaveformBlock(const OrbisNgs2WaveformFormat* format, u32 samplePos,
-                                          u32 numSamples, OrbisNgs2WaveformBlock* outBlock) {
-    LOG_ERROR(Lib_Ngs2, "samplePos = {}, numSamples = {}", samplePos, numSamples);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2GetWaveformFrameInfo(const OrbisNgs2WaveformFormat* format,
-                                             u32* outFrameSize, u32* outNumFrameSamples,
-                                             u32* outUnitsPerFrame, u32* outNumDelaySamples) {
-    LOG_ERROR(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2ParseWaveformData(const void* data, size_t dataSize,
-                                          OrbisNgs2WaveformInfo* outInfo) {
-    LOG_ERROR(Lib_Ngs2, "dataSize = {}", dataSize);
-    return ORBIS_OK;
-}
-
 s32 PS4_SYSV_ABI sceNgs2ParseWaveformFile(const char* path, u64 offset,
                                           OrbisNgs2WaveformInfo* outInfo) {
     LOG_ERROR(Lib_Ngs2, "path = {}, offset = {}", path, offset);
@@ -47,91 +28,14 @@ s32 PS4_SYSV_ABI sceNgs2ParseWaveformUser(OrbisNgs2ParseReadHandler handler, uin
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceNgs2RackCreate(OrbisNgs2Handle systemHandle, u32 rackId,
-                                   const OrbisNgs2RackOption* option,
-                                   const OrbisNgs2ContextBufferInfo* bufferInfo,
-                                   OrbisNgs2Handle* outHandle) {
-    return Impl::RackCreate(systemHandle, rackId, option, bufferInfo, outHandle);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackCreateWithAllocator(OrbisNgs2Handle systemHandle, u32 rackId,
-                                                const OrbisNgs2RackOption* option,
-                                                const OrbisNgs2BufferAllocator* allocator,
-                                                OrbisNgs2Handle* outHandle) {
-    return Impl::RackCreateWithAllocator(systemHandle, rackId, option, allocator, outHandle);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackDestroy(OrbisNgs2Handle rackHandle,
-                                    OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    return Impl::RackDestroy(rackHandle, outBufferInfo);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackGetInfo(OrbisNgs2Handle rackHandle, OrbisNgs2RackInfo* outInfo,
-                                    size_t infoSize) {
-    return Impl::RackGetInfo(rackHandle, outInfo, infoSize);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackGetUserData(OrbisNgs2Handle rackHandle, uintptr_t* outUserData) {
-    return Impl::RackGetUserData(rackHandle, outUserData);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackGetVoiceHandle(OrbisNgs2Handle rackHandle, u32 voiceIndex,
-                                           OrbisNgs2Handle* outHandle) {
-    return Impl::RackGetVoiceHandle(rackHandle, voiceIndex, outHandle);
-}
-
 s32 PS4_SYSV_ABI sceNgs2RackLock(OrbisNgs2Handle rackHandle) {
     LOG_ERROR(Lib_Ngs2, "called");
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceNgs2RackQueryBufferSize(u32 rackId, const OrbisNgs2RackOption* option,
-                                            OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    return Impl::RackQueryBufferSize(rackId, option, outBufferInfo);
-}
-
-s32 PS4_SYSV_ABI sceNgs2RackSetUserData(OrbisNgs2Handle rackHandle, uintptr_t userData) {
-    return Impl::RackSetUserData(rackHandle, userData);
-}
-
 s32 PS4_SYSV_ABI sceNgs2RackUnlock(OrbisNgs2Handle rackHandle) {
     LOG_ERROR(Lib_Ngs2, "called");
     return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemCreate(const OrbisNgs2SystemOption* option,
-                                     const OrbisNgs2ContextBufferInfo* bufferInfo,
-                                     OrbisNgs2Handle* outHandle) {
-    return Impl::SystemCreate(option, bufferInfo, outHandle);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemCreateWithAllocator(const OrbisNgs2SystemOption* option,
-                                                  const OrbisNgs2BufferAllocator* allocator,
-                                                  OrbisNgs2Handle* outHandle) {
-    return Impl::SystemCreateWithAllocator(option, allocator, outHandle);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemDestroy(OrbisNgs2Handle systemHandle,
-                                      OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    return Impl::SystemDestroy(systemHandle, outBufferInfo);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemEnumHandles(OrbisNgs2Handle* aOutHandle, u32 maxHandles) {
-    return Impl::SystemEnumHandles(aOutHandle, maxHandles);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemEnumRackHandles(OrbisNgs2Handle systemHandle,
-                                              OrbisNgs2Handle* aOutHandle, u32 maxHandles) {
-    return Impl::SystemEnumRackHandles(systemHandle, aOutHandle, maxHandles);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemGetInfo(OrbisNgs2Handle rackHandle, OrbisNgs2SystemInfo* outInfo,
-                                      size_t infoSize) {
-    return Impl::SystemGetInfo(rackHandle, outInfo, infoSize);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemGetUserData(OrbisNgs2Handle systemHandle, uintptr_t* outUserData) {
-    return Impl::SystemGetUserData(systemHandle, outUserData);
 }
 
 s32 PS4_SYSV_ABI sceNgs2SystemLock(OrbisNgs2Handle systemHandle) {
@@ -143,43 +47,6 @@ s32 PS4_SYSV_ABI sceNgs2SystemLock(OrbisNgs2Handle systemHandle) {
     return ORBIS_OK;
 }
 
-s32 PS4_SYSV_ABI sceNgs2SystemQueryBufferSize(const OrbisNgs2SystemOption* option,
-                                              OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    return Impl::SystemQueryBufferSize(option, outBufferInfo);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemRender(OrbisNgs2Handle systemHandle,
-                                     const OrbisNgs2RenderBufferInfo* aBufferInfo,
-                                     u32 numBufferInfo) {
-    return Impl::SystemRender(systemHandle, aBufferInfo, numBufferInfo);
-}
-
-static s32 PS4_SYSV_ABI sceNgs2SystemResetOption(OrbisNgs2SystemOption* outOption) {
-    static const OrbisNgs2SystemOption option = {
-        sizeof(OrbisNgs2SystemOption), "", 0, 512, 256, 48000, {0}};
-
-    if (!outOption) {
-        LOG_ERROR(Lib_Ngs2, "Invalid system option address {}", (void*)outOption);
-        return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
-    }
-    *outOption = option;
-
-    LOG_INFO(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemSetGrainSamples(OrbisNgs2Handle systemHandle, u32 numSamples) {
-    return Impl::SystemSetGrainSamples(systemHandle, numSamples);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemSetSampleRate(OrbisNgs2Handle systemHandle, u32 sampleRate) {
-    return Impl::SystemSetSampleRate(systemHandle, sampleRate);
-}
-
-s32 PS4_SYSV_ABI sceNgs2SystemSetUserData(OrbisNgs2Handle systemHandle, uintptr_t userData) {
-    return Impl::SystemSetUserData(systemHandle, userData);
-}
-
 s32 PS4_SYSV_ABI sceNgs2SystemUnlock(OrbisNgs2Handle systemHandle) {
     if (!systemHandle) {
         LOG_ERROR(Lib_Ngs2, "systemHandle is nullptr");
@@ -187,38 +54,6 @@ s32 PS4_SYSV_ABI sceNgs2SystemUnlock(OrbisNgs2Handle systemHandle) {
     }
     LOG_ERROR(Lib_Ngs2, "called");
     return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceControl(OrbisNgs2Handle voiceHandle,
-                                     const OrbisNgs2VoiceParamHeader* paramList) {
-    LOG_ERROR(Lib_Ngs2, "called");
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetMatrixInfo(OrbisNgs2Handle voiceHandle, u32 matrixId,
-                                           OrbisNgs2VoiceMatrixInfo* outInfo, size_t outInfoSize) {
-    LOG_ERROR(Lib_Ngs2, "matrixId = {}, outInfoSize = {}", matrixId, outInfoSize);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetOwner(OrbisNgs2Handle voiceHandle, OrbisNgs2Handle* outRackHandle,
-                                      u32* outVoiceId) {
-    return Impl::VoiceGetOwner(voiceHandle, outRackHandle, outVoiceId);
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetPortInfo(OrbisNgs2Handle voiceHandle, u32 port,
-                                         OrbisNgs2VoicePortInfo* outInfo, size_t outInfoSize) {
-    LOG_ERROR(Lib_Ngs2, "port = {}, outInfoSize = {}", port, outInfoSize);
-    return ORBIS_OK;
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState,
-                                      size_t stateSize) {
-    return Impl::VoiceGetState(voiceHandle, outState, stateSize);
-}
-
-s32 PS4_SYSV_ABI sceNgs2VoiceGetStateFlags(OrbisNgs2Handle voiceHandle, u32* outStateFlags) {
-    return Impl::VoiceGetStateFlags(voiceHandle, outStateFlags);
 }
 
 // Ngs2Custom

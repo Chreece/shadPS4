@@ -1,0 +1,57 @@
+{
+  "schema_version": 2,
+  "review_date": "2026-10-29",
+  "scope": "universal shadPS4 emulator",
+  "experiment": "GoT C925 raw-bit V_CNDMASK_B32 material selection candidate",
+  "evidence_archive": "got-c925-cndmask-bit-select-20261029T173957378511Z.tar.gz",
+  "game": "CUSA11456",
+  "source_change": "src/shader_recompiler/frontend/translate/vector_alu.cpp: V_CNDMASK_B32 GetSrc<IR::F32> to GetSrc<IR::U32>, preserving raw 32-bit selections",
+  "source_reference": "shadps4-emu/shadPS4 PR #5281 (closed, not merged; upstream reviewer considered F32->U32 a symptom, not root)",
+  "build": "PASS",
+  "native_run": {
+    "seconds": 118.509,
+    "exit_code": 0,
+    "time_limit_reached": true,
+    "headroom_bytes": 8685326336,
+    "ollama": "not unloaded",
+    "vulkan_validation_errors": 0
+  },
+  "candidate_sha256": {
+    "source": "e15313a8241c71c33c630a014832406198081252f828b3c87c863f4fcd37263e",
+    "object": "22d5b7413122c1f9f9c082df9675b4c090f08be3cc5b03a1972291fc57bb45fa",
+    "elf": "0aa521cac149412eb58bf1a2864abe0a70d65683eb58d12a9418cf79d8f475c5"
+  },
+  "shader_recompilation_evidence": {
+    "fragment": "0x7eaf40ad",
+    "baseline_select_f32": 20,
+    "candidate_select_f32": 10,
+    "candidate_select_u32": 10,
+    "baseline_spv_sha256": "cb142312afe7050ce6c97874dcc198e616dd0b757119882734ae7a5c19a0009c",
+    "candidate_spv_sha256": "642a3ee9ad719e2068da1fc852b0df32237f44c8110bf7e7c7bc850e7b47dc0f",
+    "qualification": "Different SPIR-V hashes and opcode mix demonstrate changed compilation; no visual benefit or direct link to sword material."
+  },
+  "graphics": {
+    "visual": "Black katana silhouette and incomplete menu scenery persist; clouds, menu UI and particle effects visible",
+    "improvement": "NOT_CONFIRMED",
+    "do_not_infer_freeze_from_similar_menu_frames": true
+  },
+  "resource_errors": {
+    "zero_record_compute_material_rejections": 7,
+    "sharp_source_unflattened_warnings": 309,
+    "image_overlap_resolve_fail": 0,
+    "validation_errors": 0
+  },
+  "affected_shader_context": {
+    "fragment_gbuffer": "0x551d6087 uses 7 MRTs, 13 images, five indexed image samples backed by 24 accepted 340-byte-strided records; this was seen in earlier draw/binding traces; do not claim it draws the sword without pixel attribution",
+    "large_mixed_tables": "0xb5c898c7 and 0x7eaf40ad bind 27,651 records (27,612 2D /35 3D /4 cube) without overflow"
+  },
+  "prior_experiments": "Texture overlap, GPU-owned invalidation, raw-buffer synchronization, texel-stream bypass, and ExpandImage mip preservation all produced no confirmed menu fill gain; avoid replaying unchanged.",
+  "disposition": "REJECT_AS_GOT_GRAPHICS_FIX",
+  "candidate_storage": "retain for reproducibility",
+  "baseline_restoration": {
+    "source": "RESTORED_VERIFIED",
+    "object": "RESTORED_VERIFIED",
+    "elf": "RESTORED_VERIFIED"
+  },
+  "next_scope": "Prioritize actual G-buffer/deferred-lighting consumer and GPU-produced render-target aliases, not speculative alpha-discard or more guessed material table capacities."
+}

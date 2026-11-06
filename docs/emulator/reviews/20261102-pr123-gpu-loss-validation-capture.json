@@ -1,0 +1,350 @@
+{
+  "native_reviews": [
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-02T20:27:50.056459+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 123,
+      "followup_pull_request": 124,
+      "archive": "universal-two-games-20261102T195315Z-3831712.tar.gz",
+      "archive_sha256": "bba4369cb1a43fe1f80da74ed8e8fafa40f38c07adfa09e1ce11dda15dab0c2e",
+      "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+      "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "record_id": "universal-upstream-20261102T195315Z-3831723-review",
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "game_launched": false,
+      "tested_games": [],
+      "build_log": {
+        "bytes": 366145,
+        "sha256": "e133fcb9b388048054ce989cd032cbdeefc24276246aa294cbdfe792518b92bc",
+        "warning_occurrences": 117,
+        "error_occurrences": 0,
+        "last_line": "[2642/2643] Linking CXX executable shadps4"
+      }
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-02T20:27:50.056459+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 123,
+      "followup_pull_request": 124,
+      "archive": "universal-two-games-20261102T195315Z-3831712.tar.gz",
+      "archive_sha256": "bba4369cb1a43fe1f80da74ed8e8fafa40f38c07adfa09e1ce11dda15dab0c2e",
+      "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+      "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "record_id": "universal-graphics-20261102T200728Z-3943951-review",
+      "result": "INDEXED_INTEGER_BIND_GUARD_PASSED_GPU_CONTEXT_LOST_BEFORE_VIDEO",
+      "game_launched": true,
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "native_observation": {
+        "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 3944659,
+        "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+        "exit_reason": "GPU_CONTEXT_LOST",
+        "elapsed_seconds": 29.354,
+        "srt_rejections": {},
+        "console_lines": 6711,
+        "warning_lines": 440,
+        "error_lines": 188,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1003180,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 26,
+        "srt_source_blocks": {
+          "4203470:4203470": 1,
+          "4203471:4203471": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201304:4201304": 1,
+          "4201316:4201316": 1,
+          "4201305:4201305": 1,
+          "4201306:4201306": 1,
+          "4203473:4203473": 1,
+          "4203482:4203482": 1,
+          "4205669:4205669": 1,
+          "4205671:4205671": 1,
+          "4205672:4205672": 1,
+          "4205673:4205673": 1,
+          "4201297:4201297": 1,
+          "4201317:4201317": 1,
+          "4201315:4201315": 1,
+          "4203493:4203493": 1,
+          "4203491:4203491": 1,
+          "4203492:4203492": 1,
+          "4201289:4201289": 1,
+          "4201301:4201301": 1,
+          "4201299:4201299": 1,
+          "4201300:4201300": 1
+        },
+        "memory_histograms_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "menu_or_gameplay_recovered": false,
+      "ds_first_pass_captured": false,
+      "visual_review": {
+        "file": "frame-025s.png",
+        "sha256": "3580c0ffaa035a2f3af6c18926165a4ca9f7c485aedc64bb6c34e8396f11cf3e",
+        "observed": "Loading game / God of War Ragnarok / Waiting for game video; loading overlay 0:06, FPS overlay 60. No actual game video/menu/world."
+      },
+      "binding_observation": {
+        "mixed_tables": [
+          {
+            "entries": 827,
+            "bound_2d": 823,
+            "bound_3d": 3,
+            "bound_cube": 1,
+            "bound_float": 826,
+            "bound_uint": 1
+          },
+          {
+            "entries": 2310,
+            "bound_2d": 2305,
+            "bound_3d": 3,
+            "bound_cube": 2,
+            "bound_float": 2309,
+            "bound_uint": 1
+          }
+        ],
+        "meaning": "Host binding passed the previous integer-image guard. Does not prove executed sampling, conversions, filtering or rendering correctness."
+      },
+      "runtime_validation": {
+        "enabled_instance_layers": [],
+        "vulkan_runtime_validation_active": false,
+        "captured_spirv_validation": [
+          {
+            "name": "vs_0x0000000003c4ebd5_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "vs_0x000000004b0cbefa_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "fs_0x000000007f710602_1.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "fs_0x00000000eaebd843_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "vs_0x0000000003c4ebd5_1.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "vs_0x000000002b3f2254_1.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "fs_0x000000007f710602_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "fs_0x00000000e2cc90df_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "cs_0x000000007c465e33_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "vs_0x000000002b3f2254_2.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "vs_0x000000002b3f2254_0.spv",
+            "exit_code": 0,
+            "error": ""
+          },
+          {
+            "name": "cs_0x00000000b8b29263_0.spv",
+            "exit_code": 0,
+            "error": ""
+          }
+        ],
+        "limit": "SPIR-V structural validation does not establish runtime resource, synchronization or emulation correctness."
+      },
+      "interpretation": "GPU context lost at 29.354s. Exit code 0 is after the owned observer stop, not successful rendering. No captured GPU-memory fault report does not rule out a GPU memory fault; no DS capture reached. Causal emulator fix not established."
+    },
+    {
+      "schema_version": 2,
+      "timestamp_utc": "2026-11-02T20:27:50.056459+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 123,
+      "followup_pull_request": 124,
+      "archive": "universal-two-games-20261102T195315Z-3831712.tar.gz",
+      "archive_sha256": "bba4369cb1a43fe1f80da74ed8e8fafa40f38c07adfa09e1ce11dda15dab0c2e",
+      "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32",
+      "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+      "installed_binary_changed": false,
+      "main_promoted": false,
+      "record_id": "universal-two-games-20261102T195315Z-3831712-got-skipped-review",
+      "result": "NOT_RUN_AFTER_GOW_GPU_CONTEXT_LOST",
+      "game_launched": false,
+      "tested_games": [],
+      "context_games": [
+        "CUSA11456"
+      ],
+      "interpretation": "No new GoT result. Last actual GoT run remains df253cdc at 19:26 UTC, black at 80/110s after 119.517s bounded execution. Do not label this skip a new crash."
+    }
+  ],
+  "runner_review": {
+    "schema_version": 2,
+    "record_id": "vulkan-validation-capture-20261102",
+    "timestamp_utc": "2026-11-02T20:27:50.056459+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "pull_request": 124,
+    "base_source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+    "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+    "local_code_commit": "af36637a76a3a3442153e282d2dbefed41293c3f",
+    "published_code_commit": "0994813ee02b433593db3180ca31a8b7c81b2a06",
+    "verified_code_tree": "947fa91fa0b871166e6505e1559ae5f972887338",
+    "result": "DIAGNOSTIC_RUNNER_VERIFIED_NATIVE_GPU_RETEST_PENDING",
+    "emulator_semantics_changed": false,
+    "validation": {
+      "full_gcc14_compile_link": "PASS",
+      "local_binary_sha256": "50348c60b67d0ef95505a073dff75e609c57ac404bb7cea83cbf4153a64c7432",
+      "cli_startup_scenarios": 3,
+      "runner": {
+        "result": "PASS",
+        "checks": 24,
+        "cases": [
+          "diagnostic profile enables core and sync, no GPU instrumentation",
+          "original config and unrelated GPU settings preserved",
+          "normal profile does not enable validation",
+          "core_error exit classification",
+          "core_error owned child stopped promptly",
+          "full multiline validation error preserved",
+          "validation named shader prioritized",
+          "sync_error exit classification",
+          "sync_error owned child stopped promptly",
+          "missing_layer exit classification",
+          "missing_layer owned child stopped promptly",
+          "gpu_lost exit classification",
+          "gpu_lost owned child stopped promptly",
+          "normal exit classification",
+          "normal owned child stopped promptly",
+          "active_clean exit classification",
+          "active_clean owned child stopped promptly",
+          "activation_unobserved exit classification",
+          "activation_unobserved owned child stopped promptly",
+          "layer enumeration present",
+          "layer enumeration absent",
+          "layer enumeration unstable",
+          "uploaded normal run correctly has no validation error",
+          "observer hash pin"
+        ],
+        "native_gpu_execution": false
+      },
+      "batch": {
+        "result": "PASS",
+        "cases": [
+          "default",
+          "got-first",
+          "gpu-stop",
+          "unconfirmed-stop",
+          "shared-preflight-stop"
+        ],
+        "case_count": 5,
+        "method": "Real Bash script with only project root relocated; mock curl returns exact checked-in graphics runner for real SHA256 verification; synthetic graphics records, no GPU execution."
+      },
+      "upstream_ancestry_gates": 2,
+      "syntax_python_bash": "PASS",
+      "git_diff_check": "PASS",
+      "new_repository_tests": false,
+      "native_vulkan_validation_run": "NOT_RUN"
+    },
+    "attempts": [
+      {
+        "result": "TEMPORARY_FIXTURE_FAILURE",
+        "details": "Profile fixture and observer scenario both used directory normal; fixture name corrected."
+      },
+      {
+        "result": "TEMPORARY_FIXTURE_FAILURE",
+        "details": "First fixture rename left its config read at the previous path; corrected the remaining path. No production change required."
+      },
+      {
+        "result": "PASS",
+        "details": "All final runner and batch checks passed on final script contents."
+      }
+    ],
+    "changes": [
+      "Opt-in core/synchronization Vulkan validation and host markers in isolated copied profile; GPU-assisted and crash-diagnostic instrumentation disabled.",
+      "Require available Khronos validation layer and verify actual startup activation; stop owned process on runtime validation errors.",
+      "Preserve bounded complete multiline messages and IDs; prioritize shaders named in validation messages rather than only recently compiled shaders.",
+      "Fetch hash-pinned observer independently of immutable native source; existing-build mode still checks binary SHA and source identity.",
+      "Check current upstream ancestry before GPU launch, including existing-build mode; allow test order selection without emulation differences.",
+      "After GPU loss capture read-only kernel/display process evidence without querying an unresponsive X server."
+    ],
+    "limitations": [
+      "No established cause or emulator correction for the GPU context loss. Runtime validation can expose API errors but cannot prove guest emulation semantics.",
+      "GoT latest candidate remains untested. GoW still has no demonstrated video/menu/world recovery.",
+      "Dedicated ordered-counter seed and guest re-entry remain unfinished; prior DS operand capture and source fixes retained.",
+      "Host validation-layer availability is checked before launch; if absent the run archives a preflight failure rather than silently running without validation.",
+      "Validation changes overhead and scheduling; diagnostic frames and FPS are not performance acceptance."
+    ],
+    "decision": "KEEP_DRAFT_DIAGNOSTIC_TOOLING; NO_MAIN_PROMOTION",
+    "main_changed": false,
+    "historical_binaries_changed": false,
+    "next_test": {
+      "source_commit": "c6b126c32acad8b08ecf674176969ba994548c52",
+      "runner_branch": "chore/vulkan-validation-capture-20261102",
+      "runner_sha256": "e8b7ed0d0fe5475cd3e9979bdb211384dee76584d6da3a187cc85a183c538076",
+      "mode": "existing",
+      "game_order": [
+        "CUSA11456",
+        "CUSA34384"
+      ],
+      "vulkan_diagnostics": true,
+      "max_seconds_per_game": 120,
+      "automatic_input": false,
+      "ds_capture_once": true,
+      "native_binary_sha256": "46ed0a99d18976bd626f8a860939f3b1909aceac8cafe80ef550eb14f1d3ac32"
+    }
+  },
+  "journal_prefix_preserved": {
+    "bytes": 829267,
+    "rows": 398,
+    "sha256": "e72a859795d06d3b879e0a7d292447b0ba08056885523439185f9d5e969e832c"
+  },
+  "primary_reference_urls": [
+    "https://vulkan.lunarg.com/doc/view/latest/linux/khronos_validation_layer.html",
+    "https://docs.vulkan.org/refpages/latest/refpages/source/vkEnumerateInstanceLayerProperties.html"
+  ]
+}
