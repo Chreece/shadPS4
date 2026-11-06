@@ -1,0 +1,96 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T22:23:03.121407+00:00",
+  "pull_request": 188,
+  "source_commit": "4b8d2b34a50a783bffbbd9084199910f45a17c36",
+  "runner_commit": "4b8d2b34a50a783bffbbd9084199910f45a17c36",
+  "source_tree": "ceaf057dae794e26b442ccbff9945d9bd45ff58d",
+  "upstream_commit": "50c5c1b4e86e275b2e9df9c33606a934b037684c",
+  "integration_base": "fc91b839175a11c9b848c12ece426c3d0242b10f",
+  "upstream_policy": "Resolved once during preparation; conflict-free rebase of retained PR187 tree; no build/launch moving-ref gate.",
+  "archive": {
+    "name": "universal-two-games-20261106T214030Z-2012210.tar.gz",
+    "sha256": "8afa682515e44ac21c3e11212387f61d00457d8eee14132ce8531ffe8adc7cb8",
+    "source_commit": "47a0c8400509d7cfa89d02fd0f38c1a06f193dfe",
+    "native_binary_sha256": "a2bb1fcfb966f277a36e778ae051c7224588b4ff0b670fa98cd8f25f7f05b3fb"
+  },
+  "got": {
+    "result": "FAILED_BLACK_FRAME_AND_HOST_THREAD_PROGRESS_STOP",
+    "last_recorded_gpu_work_ms": 61895,
+    "last_gpu_tick": 9838,
+    "recorded_work_entries_total": 872041,
+    "screenshots_80_110": "Black except unchanged 10 FPS / 96.7 ms overlay. Not a valid live FPS measurement.",
+    "process_evidence": "Game:Main, shadPS4:GpuComm and shadPS4:Present have zero schedstat CPU progress between 80s and 110s; all are in futex waits. Audio threads continue. No native call stacks, so lock ownership/cycle is not established.",
+    "elapsed_seconds": 118.478,
+    "owned_child_terminated": true,
+    "new_kernel_gpu_timeout": false,
+    "vram_free_at_launch_bytes": 20581302272,
+    "ollama": "RESTORED"
+  },
+  "gow": {
+    "result": "FAILED_CUTSCENE_GPU_RING_TIMEOUT",
+    "screenshot_80": "Snowy forest with Kratos, 9 FPS / 109.4 ms; scene differs from comparison, no improvement claim.",
+    "screenshot_110": "Absent",
+    "wait_windows": [
+      {
+        "completed_tick": 31063,
+        "requested_tick": 31066
+      },
+      {
+        "completed_tick": 31101,
+        "requested_tick": 31104
+      }
+    ],
+    "kernel_timeout_monotonic_seconds": [
+      456970.772749,
+      456981.01281
+    ],
+    "kernel_outcome": "ring gfx_0.0.0 timeout, but soft recovered",
+    "elapsed_seconds": 119.319,
+    "owned_child_terminated": true,
+    "exit_reason": "TEST_118S_DURATION_LIMIT, not proof of spontaneous emulator process crash",
+    "vram_free_at_launch_bytes": 20581355360,
+    "ollama": "RESTORED by old runner; new runner defers restoration on in-run kernel timeout"
+  },
+  "history": {
+    "reference_commit": "8984f89b748ee1f11de2e8caac2af7819e22484e",
+    "ownership_publish_fix": "f64db12e4726c8f141e576c5a4e76f0bea000ebc",
+    "finding": "Nonblocking host idle acquisition/exclusive FIFO ownership and genuine guest-frame predicate present in historical source are absent in PR187 and the retained integration. Restore without historical verbose tracing.",
+    "causality_limit": "This omission predates the latest image-copy-footprint change. It does not prove the cause of either current freeze. Earlier successful cutscene/UFFD runs do not establish that this AMD GPU timeout was resolved.",
+    "copy_footprint_status": "Retained as independently validated host copy arithmetic; native regression cause remains unproven. Do not claim native acceptance."
+  },
+  "changes": [
+    "Host idle redraws try-lock the shared free-frame pool and probe fences without waiting.",
+    "Acquire only a ready FIFO head, including an exact previous-frame match for redraw; remove it before recording work.",
+    "Publish last-frame pointer and release together under the pool mutex; host redraws return the acquired frame.",
+    "Host overlays/redraws do not advance genuine guest-frame telemetry or first-frame readback.",
+    "Classify AMD ring timeouts within the capture monotonic interval; old errors and denied reads cannot match; stop remaining tests and defer model restoration on failure."
+  ],
+  "validation": {
+    "release_build": "PASS GCC14",
+    "host_binary_sha256": "0bb1383f033a9e659389401ecf1c9868e21984fc0b6b3bac06d3a5aaba58a198",
+    "build_source_files_match": 1066,
+    "build_test_files_match": 96,
+    "actual_binary_startup_cases": 3,
+    "ctests": 31,
+    "renderer_contracts": 7,
+    "srt_checks": 10418,
+    "cpu_suite": "PASS",
+    "historical_ownership_cases_external": 9,
+    "kernel_classifier": "Exactly two current GoW ring timeouts; none for an earlier interval, missing interval or failed journal read.",
+    "handoff_cases_external": [
+      "pass",
+      "bad checksum",
+      "download failure",
+      "sudo failure"
+    ],
+    "warnings": "Existing printf.h stringop-overflow warnings emitted when libc_internal_io recompiles; no new presentation compile warning observed.",
+    "native_gpu_or_games_run_here": false,
+    "openorbis_probe": "No new PS4 instruction semantics: host Vulkan frame-pool/runner changes, validated with host ownership cases instead.",
+    "tests_added_to_repository": false
+  },
+  "acceptance": "NATIVE_PENDING; GOT_GRAPHICS_FPS_AND_GOW_CUTSCENE_NOT_FIXED_OR_VERIFIED",
+  "protection": "Pinned IPv4 bootstrap, isolated candidate/profile, manual input, 118s TERM/120s cap, minimum 8 GiB free VRAM, exact model lease restoration unless observed GPU failure/live owned process, no restarts/install/broad kills/Sunshine or SSH action.",
+  "next_step": "Build changed candidate once, GoT then GoW using command history and asynchronous logging with Vulkan validation disabled; reuse a successful build for pending validation. Do not promote on compilation alone.",
+  "one_paste": "bash <<'SHADPS4'\nset -Eeuo pipefail\nPIN=4b8d2b34a50a783bffbbd9084199910f45a17c36\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/idle-ownership.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' 64e2bfc0cbcf580186c744d1d29370977cbff6ee5af6c9c43236bbd888148f5e \"$run_dir/run.sh\" | sha256sum --check -\nsudo -v\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_GPU_TRACE=1 \\\nSHADPS4_TEST_PERFORMANCE=0 \\\nSHADPS4_KERNEL_JOURNAL_SUDO=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  bash \"$run_dir/run.sh\" \"$PIN\" build \"$PIN\"\nSHADPS4\n"
+}
