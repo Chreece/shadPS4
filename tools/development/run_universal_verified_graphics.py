@@ -616,20 +616,6 @@ def verify_validation_layer(out, record):
         raise
 
 
-def verify_upstream(source, record):
-    upstream = subprocess.check_output(
-        ['git', 'ls-remote', 'https://github.com/shadps4-emu/shadPS4.git', 'refs/heads/main'],
-        text=True, timeout=30).split()
-    if len(upstream) != 2 or not re.fullmatch(r'[0-9a-f]{40}', upstream[0]):
-        raise RuntimeError('UPSTREAM_MAIN_CHECK_FAILED')
-    record['upstream_main_checked'] = upstream[0]
-    result = subprocess.run(['git', '-C', str(source), 'merge-base', '--is-ancestor',
-                             upstream[0], PIN], capture_output=True, timeout=15)
-    if result.returncode:
-        record['stop_remaining_tests'] = True
-        raise RuntimeError('BLOCKED_UPSTREAM_ADVANCED: integrate latest upstream before testing')
-
-
 def recover_incomplete_captures(project, out, observer):
     recovered = []
     for prior in sorted((project / 'logs').glob('universal-graphics-*/result.json'), reverse=True):
@@ -669,6 +655,7 @@ def main():
               'evidence': str(out) + '.tar.gz', 'result': 'PREFLIGHT_FAILED'}
     record['runner_commit'] = os.environ.get('SHADPS4_TEST_RUNNER_COMMIT', PIN)
     record['runner_sha256'] = digest(Path(__file__))
+    record['upstream_policy'] = 'resolved_during_candidate_preparation'
     diagnostics = os.environ.get('SHADPS4_VULKAN_DIAGNOSTICS') == '1'
     record['vulkan_diagnostics_requested'] = diagnostics
     record['performance_diagnostics_requested'] = (
@@ -702,12 +689,12 @@ def main():
             expected_elf = build_record['binary_sha256']
             record['build_record'] = str(result_path)
             record['binary_sha256'] = expected_elf
+            record['upstream_commit'] = build_record.get('upstream_commit')
         if digest(binary) != expected_elf:
             raise RuntimeError('VERIFIED_BINARY_CHANGED')
         head = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         if head != PIN:
             raise RuntimeError('VERIFIED_SOURCE_CHANGED')
-        verify_upstream(source, record)
         observer = source / 'tools/development/shadps4_native_120_observer_20261026.py'
         committed = subprocess.check_output(['git', '-C', str(source), 'show', PIN + ':' + str(observer.relative_to(source))])
         if observer.read_bytes() != committed:

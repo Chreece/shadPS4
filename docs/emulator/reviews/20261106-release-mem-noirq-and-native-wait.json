@@ -1,0 +1,713 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T12:12:17.773690+00:00",
+  "candidate_source_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+  "upstream_commit": "7201424ece9b39795759239d9405ff88be85055b",
+  "previous_source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "capture_runner_commit": "de894b11dd5ceb674902ef26c4a9dfb670026d4f",
+  "archive": {
+    "filename": "universal-graphics-20261106T115147Z-2174643.tar.gz",
+    "library_file_id": "libfile_d6c7e0f7eb048191bda2d03ff1bb30bb",
+    "size_bytes": 2047192,
+    "sha256": "cb5db014b2f01aa73c8e3aff9de4af9c1f386eafc4fe9fe5900890f31ab8f028"
+  },
+  "native_before_fix": {
+    "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+    "screenshots": "Identical late black screenshots, 29 FPS overlay; no menu or gameplay acceptance.",
+    "installed_binary_changed": false,
+    "elapsed_seconds": 118.765,
+    "exit_code": 0,
+    "owned_child_terminated": true,
+    "stop_reason": "TEST_118S_DURATION_LIMIT",
+    "gpu_failure": null,
+    "gpu_memory_fault_reports": 0,
+    "vulkan_validation_active": false,
+    "ollama_restored": true
+  },
+  "snapshots": [
+    {
+      "second": 80,
+      "elapsed_seconds": 0.6909614390460774,
+      "threads": 52,
+      "main_cpu_seconds": 61.173080164,
+      "reverse_scanned_bytes": 20168704,
+      "reverse_reference_candidates": 116,
+      "reverse_retained_pages": 17,
+      "reverse_retained_bytes": 69632,
+      "reverse_truncation_flags": {},
+      "forward_code_pages": 128,
+      "forward_data_blocks": 1536,
+      "forward_truncated": true,
+      "live_regions": [
+        {
+          "name": "draw",
+          "calls": 18275,
+          "inclusive_ns": 464000697,
+          "self_ns": 223216618,
+          "max_ns": 7524926,
+          "bytes": 0,
+          "last_ns": 22500245919
+        },
+        {
+          "name": "dispatch",
+          "calls": 34048,
+          "inclusive_ns": 1978365272,
+          "self_ns": 111673531,
+          "max_ns": 33297357,
+          "bytes": 0,
+          "last_ns": 22500381875
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 70598,
+          "inclusive_ns": 83497214,
+          "self_ns": 57059115,
+          "max_ns": 3921847,
+          "bytes": 0,
+          "last_ns": 22500379926
+        },
+        {
+          "name": "bind-textures",
+          "calls": 70598,
+          "inclusive_ns": 333189011,
+          "self_ns": 321383175,
+          "max_ns": 26400438,
+          "bytes": 0,
+          "last_ns": 22500381215
+        },
+        {
+          "name": "shader-compile",
+          "calls": 118,
+          "inclusive_ns": 153498307,
+          "self_ns": 133172194,
+          "max_ns": 22552360,
+          "bytes": 0,
+          "last_ns": 22449583958
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 52323,
+          "inclusive_ns": 1667416506,
+          "self_ns": 117850735,
+          "max_ns": 22719104,
+          "bytes": 0,
+          "last_ns": 22500379786
+        },
+        {
+          "name": "image-readback",
+          "calls": 100680,
+          "inclusive_ns": 9756752,
+          "self_ns": 9756752,
+          "max_ns": 29953,
+          "bytes": 19714589096,
+          "last_ns": 22513800188
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 1395,
+          "inclusive_ns": 1692308886,
+          "self_ns": 16496863,
+          "max_ns": 12596423,
+          "bytes": 42479808,
+          "last_ns": 22500222232
+        },
+        {
+          "name": "page-protect",
+          "calls": 25681,
+          "inclusive_ns": 142680694,
+          "self_ns": 142680694,
+          "max_ns": 440254,
+          "bytes": 3759898624,
+          "last_ns": 22513803429
+        },
+        {
+          "name": "submit",
+          "calls": 3386,
+          "inclusive_ns": 41450062,
+          "self_ns": 41450062,
+          "max_ns": 239132,
+          "bytes": 0,
+          "last_ns": 22533155505
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 1395,
+          "inclusive_ns": 1667411876,
+          "self_ns": 1654733033,
+          "max_ns": 12574978,
+          "bytes": 0,
+          "last_ns": 22500213350
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      ],
+      "screenshot_sha256": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956"
+    },
+    {
+      "second": 110,
+      "elapsed_seconds": 0.6792541930335574,
+      "threads": 52,
+      "main_cpu_seconds": 91.195136298,
+      "reverse_scanned_bytes": 20168704,
+      "reverse_reference_candidates": 116,
+      "reverse_retained_pages": 17,
+      "reverse_retained_bytes": 69632,
+      "reverse_truncation_flags": {},
+      "forward_code_pages": 128,
+      "forward_data_blocks": 1536,
+      "forward_truncated": true,
+      "live_regions": [
+        {
+          "name": "draw",
+          "calls": 18275,
+          "inclusive_ns": 464000697,
+          "self_ns": 223216618,
+          "max_ns": 7524926,
+          "bytes": 0,
+          "last_ns": 22500245919
+        },
+        {
+          "name": "dispatch",
+          "calls": 34048,
+          "inclusive_ns": 1978365272,
+          "self_ns": 111673531,
+          "max_ns": 33297357,
+          "bytes": 0,
+          "last_ns": 22500381875
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 70598,
+          "inclusive_ns": 83497214,
+          "self_ns": 57059115,
+          "max_ns": 3921847,
+          "bytes": 0,
+          "last_ns": 22500379926
+        },
+        {
+          "name": "bind-textures",
+          "calls": 70598,
+          "inclusive_ns": 333189011,
+          "self_ns": 321383175,
+          "max_ns": 26400438,
+          "bytes": 0,
+          "last_ns": 22500381215
+        },
+        {
+          "name": "shader-compile",
+          "calls": 118,
+          "inclusive_ns": 153498307,
+          "self_ns": 133172194,
+          "max_ns": 22552360,
+          "bytes": 0,
+          "last_ns": 22449583958
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 52323,
+          "inclusive_ns": 1667416506,
+          "self_ns": 117850735,
+          "max_ns": 22719104,
+          "bytes": 0,
+          "last_ns": 22500379786
+        },
+        {
+          "name": "image-readback",
+          "calls": 100680,
+          "inclusive_ns": 9756752,
+          "self_ns": 9756752,
+          "max_ns": 29953,
+          "bytes": 19714589096,
+          "last_ns": 22513800188
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 1395,
+          "inclusive_ns": 1692308886,
+          "self_ns": 16496863,
+          "max_ns": 12596423,
+          "bytes": 42479808,
+          "last_ns": 22500222232
+        },
+        {
+          "name": "page-protect",
+          "calls": 25681,
+          "inclusive_ns": 142680694,
+          "self_ns": 142680694,
+          "max_ns": 440254,
+          "bytes": 3759898624,
+          "last_ns": 22513803429
+        },
+        {
+          "name": "submit",
+          "calls": 3386,
+          "inclusive_ns": 41450062,
+          "self_ns": 41450062,
+          "max_ns": 239132,
+          "bytes": 0,
+          "last_ns": 22533155505
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 1395,
+          "inclusive_ns": 1667411876,
+          "self_ns": 1654733033,
+          "max_ns": 12574978,
+          "bytes": 0,
+          "last_ns": 22500213350
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      ],
+      "screenshot_sha256": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956"
+    }
+  ],
+  "derived_wait_chain": {
+    "job_group": "0x3fb6590: state 1, job_count 1, next index 0, first job state 0, callback 0xf60820; both worker queues empty with five sleepers each.",
+    "deferred_group": "Dependency 0x3fb6528 has state 1/count 1 and head/tail 0x3fb6590. It waits on dependency 0x3fb64e0, which has state 1/count -2 and one downstream entry pointing to 0x3fb6528.",
+    "preparation": "0xb04e52 initializes the single callback job. 0xcb82aa passes it to 0xc03b00 on dependency 0x3fb6528, which holds it until dependency release.",
+    "release": "0xc03a00 atomically decrements the dependency count and publishes chained jobs/dependencies only when it reaches zero. A count below zero cannot unblock the pending dependent group by another decrement.",
+    "notification_consumer": "ProxySetSync waits on GraphicsCore event 6. After a wake, it compares slot 23 of the GPU label table against its expected value, then calls 0xc03a00 on dependency 0x3fb64e0. Label and expectation both equal 4 at both late snapshots.",
+    "static_code_limit": "Disassembly establishes code behavior, not a complete execution trace. Live samples and memory reads are non-atomic. The underflow and captured packets support the interrupt hypothesis; native recovery is still unproven."
+  },
+  "captured_packet_observations": {
+    "snapshot_second": 80,
+    "stream_start": "0x110a4fc488",
+    "method": "Walked successive PM4 type-3 packet lengths, including RELEASE_MEM, NOP and WAIT_REG_MEM; did not treat every raw header-like value as an executed packet.",
+    "relevant_packet": "At 0x110a4fc4f8, RELEASE_MEM event 0x2f/index 6, DATA_SEL 2, INT_SEL 3, destination 0x11000000b8 (label slot 23), value 4.",
+    "neighbors": "Two adjacent RELEASE_MEM packets at 0x110a4fc4dc and 0x110a4fc514 also have DATA_SEL 2/INT_SEL 3. Their writes and the slot-23 write must not each generate completion interrupts.",
+    "limit": "Captured command bytes prove the guest generated this mode, not the exact time each packet executed. Raw guest bytes are not published."
+  },
+  "fix": {
+    "path": "src/video_core/amdgpu/pm4_cmds.h",
+    "insertions": 3,
+    "deletions": 4,
+    "behavior": "Rename selector 3 to DataAfterWriteConfirm and handle it without invoking the interrupt callback. Keep the existing data-write path and selector 1/2 interrupt delivery. No global fence, forced dependency counter, title check, shader check or game setting.",
+    "reference": "https://sources.debian.org/src/roct-thunk-interface/3.7.0%2Bdfsg-1/tests/kfdtest/src/PM4Packet.cpp",
+    "reference_scope": "AMD-authored InitPacketCI selects INT_SEL 3 for polling writes and describes waiting for write confirmation without raising an interrupt. PS4 hardware execution remains pending."
+  },
+  "validation": {
+    "release_build": "PASS: all affected translation units rebuilt; final executable linked. Initial link lacked local libuuid/libudev development symlinks; pointed LIBRARY_PATH at existing runtime libraries and relinked successfully without changing source.",
+    "binary_sha256": "7d2163863f11a30fbbfe73e04b783c6dee28775a1c1829c8ed7d0aa61ba5ef31",
+    "source_equivalence": "Built c7365c9f plus the exact seven-line selector diff. The final rebased candidate has identical src/CMake/dependency content; upstream changes only .github/workflows/build.yml. Remote comparison confirms one production header changed from the rebased retained baseline.",
+    "production_header_fixture": "83 checks PASS: data selectors 0..5, interrupt selectors 0/2/3; positive interrupt-only controls; preserved writes/GDS callback and invalid-selector rejection. Clock/log/assert dependencies stubbed; GPU not run.",
+    "baseline_regression": "Old production header fails the DATA_SEL 2 / INT_SEL 3 case: actual interrupt count 1, expected 0.",
+    "sanitizers": "AddressSanitizer and UndefinedBehaviorSanitizer PASS; leak detection disabled.",
+    "startup": "PASS: 3 native CLI user-directory scenarios.",
+    "openorbis": {
+      "library_file_id": "libfile_c00ed7901bc08191bb18c5c25890b263",
+      "filename": "release-mem-noirq-openorbis-20261106.zip",
+      "cases": 8,
+      "syntax": "gcc -std=c11 -Wall -Wextra -Werror -fsyntax-only PASS",
+      "sdk_build": "NOT_RUN: OpenOrbis SDK unavailable",
+      "hardware": "NOT_RUN; original source shared separately, no tests added to emulator repository."
+    }
+  },
+  "rebase": {
+    "old_head": "de894b11dd5ceb674902ef26c4a9dfb670026d4f",
+    "rebased_head": "d746b642077a818a09fd11c256005c76a50a8252",
+    "commits_replayed": 43,
+    "conflicts": 0,
+    "per_commit_tree_check": "Every replayed tree differs from its original only in the new upstream CI workflow; GitHub tree hashes match the local git rebase results.",
+    "mapping": [
+      {
+        "old_sha": "b2067d29b736178b09a974d909c2ab5d3007ddcc",
+        "old_tree": "58818e654caf5e8f2dc13755667190ae2d062d4c",
+        "rebased_tree": "1c0629f818457d0b2c6d746640d9b9bae7a24b70",
+        "local_rebased_sha": "afef27b82f8c27c4ddb5753ea96e9ccb6b86a6b5",
+        "message": "integration: retain reviewed universal fixes on upstream e0558e2a",
+        "published_sha": "6551cee1d99d14052845b8bee5a10e00c9a27e30"
+      },
+      {
+        "old_sha": "8f8525599720600a457bd84297321623262f3c96",
+        "old_tree": "70e0777ed8b5e26a305780eee16ce5df1df64332",
+        "rebased_tree": "2831f26d3df65980e1de72dbb7063093b12f28a1",
+        "local_rebased_sha": "53d3e4f1934216b38deedf651efafc55c14feab1",
+        "message": "shader_recompiler: keep scalar state outside ordered-count EXEC scopes",
+        "published_sha": "f6db5907d7f831bce5af56120b8208193cc47e6a"
+      },
+      {
+        "old_sha": "abd798bd6c76b05012d1f115c0df5a3f2bd8d9fb",
+        "old_tree": "f86557c9c792a2bcd2268a1dcdf7e0c983d79b2c",
+        "rebased_tree": "b9343ecb9f2b18cb9b23ca1412d88c511e5913bf",
+        "local_rebased_sha": "70e7db320f0da48e8f8eef7157b09a2e199ce08c",
+        "message": "shader_recompiler: correct shared float min-max translation and lowering",
+        "published_sha": "f87ead0efd5f6653b06851395219a2cbb2f7099d"
+      },
+      {
+        "old_sha": "40de744f27d5d7b0b973aa51f5a58ad2e36fe498",
+        "old_tree": "d7804d5791501db0706d9e9deda0fdec962290e6",
+        "rebased_tree": "d3dc785d6ad9af15d6242af9aee51608b28050dd",
+        "local_rebased_sha": "67a7f3356963755363db0fbf0d82d0ddbd2c408e",
+        "message": "shader_recompiler: convert spilled LDS byte addresses to element indices",
+        "published_sha": "3ba221ccb785d6234e8c41053a07a765562aa6f3"
+      },
+      {
+        "old_sha": "ae6fb7338faa53b049aab400147fa998ccc2a3f9",
+        "old_tree": "3d2f13e16ba3d91a77737de224eff0046092f837",
+        "rebased_tree": "f0a55be4660e776691fd038476ec64dfb47c9905",
+        "local_rebased_sha": "ebc1786cccaa6cce3f3962f2119fde9e27903988",
+        "message": "docs: record native regressions and DS LDS correction evidence",
+        "published_sha": "1b416a45263ace1f840182e0a969a663a2e4ffc3"
+      },
+      {
+        "old_sha": "2b1ee070aa74fdbf203acaf60aec82010f197bd6",
+        "old_tree": "a4f8ae65b6e31fc9a6f5116472d5030bfc13e9ed",
+        "rebased_tree": "cd9b07644a24df0ba560aad452aeecd3832252e2",
+        "local_rebased_sha": "041dab0b6a29f45343b60a885c6e6ae29baa9c8a",
+        "message": "shader_recompiler: preserve whole-wave control around ordered count",
+        "published_sha": "587548ddd3a5db01e616fc0d58427650974751ae"
+      },
+      {
+        "old_sha": "83c65b8a2c9786481d1bf7837033ad7214fcc058",
+        "old_tree": "4bcebbed67821d298be33361050b7e42202cab9f",
+        "rebased_tree": "a4aab61eacca2cc7b1f882e6b90128a11555f671",
+        "local_rebased_sha": "0ce3dbec69b757e165515e026a3283e2d51257f6",
+        "message": "docs: record real DS capture and whole-wave control validation",
+        "published_sha": "55392bde159a82b90d542d6c12e45c2ea3f09ad5"
+      },
+      {
+        "old_sha": "f7fcd403b90c2335a4a51c04a87d015e98634d97",
+        "old_tree": "e7418e814dfe1b32f899e7a169d6ae7f79652997",
+        "rebased_tree": "5dfa980bbe8be5cebb83b2a1ce9dd5b32dfb417a",
+        "local_rebased_sha": "3cb905ed2b4730c221ba2db6ddd258cf16b3eaf5",
+        "message": "docs: record upstream 98ef621d integration and verified handoff",
+        "published_sha": "22ff616e8b327b528cfefce5a7be1cf73151c8dc"
+      },
+      {
+        "old_sha": "91ca7cb883a9916e42ccd286d734187358d6ef95",
+        "old_tree": "6b6bd6b664ab656a517d07b283409a70903087d7",
+        "rebased_tree": "898bc71a86cd4681be52547e26046c29386f3d05",
+        "local_rebased_sha": "a427bf769e36bd89d42def0e265cc5913b308d72",
+        "message": "shader_recompiler: correct DS-path lane masks and legacy GDS counter aliases",
+        "published_sha": "f38acb8060bc47fba2c49c6f0d1ccea21f6ea3dc"
+      },
+      {
+        "old_sha": "6444ab29876c80932ce7497c42f8fbc07086eda3",
+        "old_tree": "408629e1e4c21aec3927b0b033165f8968ae6dbf",
+        "rebased_tree": "81f0e44fc27986c943c42d1735a00a7ff0d1912b",
+        "local_rebased_sha": "64ac7bf7d9ff8786cdb552eb06292a2d6818c3bb",
+        "message": "docs: journal DS compiler crash correction and remaining continuation boundary",
+        "published_sha": "81842f36bc30513e2a621a65eba0c1b553d14964"
+      },
+      {
+        "old_sha": "ce054ae1514bd4e7b3caf84560d30c65217f5208",
+        "old_tree": "c585b6bb38cc0b2faa6207065b518b121009580f",
+        "rebased_tree": "6c89fa7a6d4d5924824b617f1887223ddafb37b0",
+        "local_rebased_sha": "73aadd2d9e8c73bec3429f6bc9a367ccbb7f4ae6",
+        "message": "Execute bounded DS_ORDERED_COUNT continuations with persistent shader state",
+        "published_sha": "78f73101e48656d3bd2591a393a5b2b4964c9f1a"
+      },
+      {
+        "old_sha": "2428504607f364d92bf8f867dcba1c5987854cb8",
+        "old_tree": "2f9870587b95dfda301a474af8a8d4a74251bb52",
+        "rebased_tree": "cf53f984b64e211309ed71af7812108fbbf423f0",
+        "local_rebased_sha": "90f1e69d57748d8300284ab1f58771d6ac330f4c",
+        "message": "Record continuation validation and normal GoW/GoT handoff",
+        "published_sha": "d066082cd935fbb4eb43576563feb102582f6f31"
+      },
+      {
+        "old_sha": "51678b489cff3844ef098640e0eb14062c867b06",
+        "old_tree": "703fea40fd53e2a48db99b41a7bd592c738f0352",
+        "rebased_tree": "cfe5a720c519d897b008ea2ff15becade762af3f",
+        "local_rebased_sha": "db25414087ca88b8752fc8348d0f93d79a904f84",
+        "message": "Preserve rejected DS GPU packets and input provenance before aborting",
+        "published_sha": "29597151ac2f8f0dd5c982de699769639235be82"
+      },
+      {
+        "old_sha": "b15fff1d71fbe950bf63bb9721bb737b7206da45",
+        "old_tree": "83a76b2a27e3caf677840f850ed041097e9da868",
+        "rebased_tree": "45d603851ab5efd6ae529631cc5db594fee41385",
+        "local_rebased_sha": "de796bd4dd465ca89973f3d3028391d72f12584a",
+        "message": "Record native DS packet rejection and unresolved GoT visual regression",
+        "published_sha": "ce83a0c9cae92c666d47fa60e1a18871392baeb1"
+      },
+      {
+        "old_sha": "f3824beff60e12995b15637fa0ddb6dfdfce6880",
+        "old_tree": "dd477909db342ad43186e3a2bd50b7c7c0baf61e",
+        "rebased_tree": "d9612c71d0930f5b2e9e7cddd815c92da9bd75f3",
+        "local_rebased_sha": "3061bd9db5e49563071e0da36ec156af19615974",
+        "message": "Recognize comparison scalar masks outside decoded destination count",
+        "published_sha": "c7f8e523e4fde4fba8abe2cd4b0d6908edaa059f"
+      },
+      {
+        "old_sha": "90bb34ab4b0ae23650e70e8e16f0f866a105da87",
+        "old_tree": "72279743a70caf22fcea074190bc2266c191a498",
+        "rebased_tree": "0dd67a0c94530d4688db6e90d610bc6f1ce8b5bc",
+        "local_rebased_sha": "79e3b1c4d7543d2442a371ed3a288459dd667de5",
+        "message": "Record native DS evidence and reproduced comparison mask correction",
+        "published_sha": "e28e07dfc01d4d810a11b8017bfc9c76861217c1"
+      },
+      {
+        "old_sha": "70b8806c0db5a650c72278ea11d6ffdd9db218af",
+        "old_tree": "21e2c18392079015449cbce5a3fcbaeb426238c0",
+        "rebased_tree": "49e22be7bb7fef4338eacbd709fc40e589109887",
+        "local_rebased_sha": "58968562ef57af7d063afa54ea2ae4b9f5bccbcf",
+        "message": "Match rectangle and quad helper interfaces to actual vertex exports",
+        "published_sha": "aa7b1a34019cae96ca346a66cff9545f54078b1c"
+      },
+      {
+        "old_sha": "92b0030b233e583112cde684819769cfa276450e",
+        "old_tree": "a670b45c818b5e8a5e5163083a3a5adee1f63c0c",
+        "rebased_tree": "b381e564c9b24541e0e5b13d596ed7edd92a997e",
+        "local_rebased_sha": "9e43020c752d170dbd78cbecb1dd9324993de362",
+        "message": "Journal native DS progress and rectangle helper validation",
+        "published_sha": "1a01b656e7a5a43b391d4c471531bf310039fe22"
+      },
+      {
+        "old_sha": "fcb5469c5a8d3a3f3c50aad77a8df8f7f3606736",
+        "old_tree": "4df3fdce9511e0359a9a2aea39b40e2c309f96f0",
+        "rebased_tree": "c8f176bf93eff23b64e512b2d7ef771b97bab96f",
+        "local_rebased_sha": "02f601afd75668a86895a1cae34dcd80cdf61496",
+        "message": "Retain measured descriptor pool capacity across layout changes",
+        "published_sha": "dbf9cb2898181582d8a8657ddaa02e8cc0a2fb02"
+      },
+      {
+        "old_sha": "e3ae11e5dc28ddc9dd0125bf9474c5685a4f6e0b",
+        "old_tree": "cb5ec9e8d35ee30a7b536973322f843783da1323",
+        "rebased_tree": "169ae0c0f4cd1e2b993fa6aeae2e3c6a1b3ce0c3",
+        "local_rebased_sha": "5fe71d97d9e81507f68c114e38f590ca224a0c06",
+        "message": "Journal native DS and helper success with descriptor capacity replay",
+        "published_sha": "21036efc363000f539be689fb4e8ec25efa8fb34"
+      },
+      {
+        "old_sha": "eed403bdf4d683aa46efd77e2ceb955dd85954be",
+        "old_tree": "9e93827c4484f2b58d07c31bd6a4f5cee626d50a",
+        "rebased_tree": "7f02875cbfc04e0407780742a7fe61d23069e55e",
+        "local_rebased_sha": "8cb24a37e0de81ca0d7d415bb537ff90e230346c",
+        "message": "Bound buffer synchronization by proven shader access prefixes",
+        "published_sha": "5328060a37b24d07a93247692246a96b673f9e76"
+      },
+      {
+        "old_sha": "ad72e2229453e81f3b8c9152dba24f3f7f8085de",
+        "old_tree": "3da6adf611ba11822a39b0783c816b35b405d4e0",
+        "rebased_tree": "e88461bbc57dbd76c0f03779a7cb587cad36111f",
+        "local_rebased_sha": "e4191138aef73011b3acf787f0beae9ad0cf515d",
+        "message": "Record native pool results and validated buffer access bounds candidate",
+        "published_sha": "b8a91861a265c01d8870587c04e5ec84d76ac16e"
+      },
+      {
+        "old_sha": "094e19b871503003cd56f1142e0d3539f57f1075",
+        "old_tree": "256fbf7029bc78dccd99e07c7b47b3c29264b179",
+        "rebased_tree": "f6fc5170bcc029601a5c63cf062390dacb0787c1",
+        "local_rebased_sha": "7a0a136a32b444903f3677c28f1f021f6dfea2c1",
+        "message": "shader_recompiler: bind proven host-uniform texture descriptors directly",
+        "published_sha": "b281f944f33d2c1425cca9eb2261b7fb58d276ce"
+      },
+      {
+        "old_sha": "afa9bed1879f6dcc56d44b14da8b4de8885b5580",
+        "old_tree": "55e9fed273b93930b22503a45983db99da2895c5",
+        "rebased_tree": "c35748809748f65a7d7e891f114e2ee84ab48de5",
+        "local_rebased_sha": "ee1a1f2ea54925b48797e8f6f28e523178beacdf",
+        "message": "docs: record native buffer gain and uniform descriptor validation",
+        "published_sha": "eae4e6d14bfbeceace1f01e2142262d5db981779"
+      },
+      {
+        "old_sha": "899634ebdb710ac5a98ad46b2a2f0695084f39f2",
+        "old_tree": "9da465c2aec7360c976168eeaa61fe2761e99798",
+        "rebased_tree": "fabf61c2164c29fc816ebf2e8d912a336ea560c9",
+        "local_rebased_sha": "4afba2a1d2b54fe9db26707e681cfb7c8327f2f0",
+        "message": "docs: record aligned hardware probe and final evidence version",
+        "published_sha": "e5965ffaeac669f4ed26abbcf2543bdd9a1691d6"
+      },
+      {
+        "old_sha": "2dafcc4a7f6f282670c6bcd1fc5b595eb6e0c481",
+        "old_tree": "306353e9b50e25f37dddb45bfb236f3842bb469d",
+        "rebased_tree": "a70ec21c7a5b4d67c064da72304536dab6a0b1b0",
+        "local_rebased_sha": "48075c358ed9372ef62fa72a2334188b6deab93b",
+        "message": "shader_recompiler: persist only values live at ordered GDS resume points",
+        "published_sha": "98faf434ab44979d03f2717b29df3323628a0e36"
+      },
+      {
+        "old_sha": "d0f3c4418edd8e453a2f60ae3f391db9f48183bf",
+        "old_tree": "cdfc4b69ec90ada120d0d05577f258a13aa28fd0",
+        "rebased_tree": "7ca776ed917f4fd7772866486bc82d8794a6dfa6",
+        "local_rebased_sha": "983b4298a1735dad5126523a856ba4b9416c0531",
+        "message": "docs: record DS memory crash, live-state fix and validation",
+        "published_sha": "308e27d7ca1f6718297babf7f24c7c0a359448aa"
+      },
+      {
+        "old_sha": "b3822cf568acf6e27fe0cd74575282b14c370191",
+        "old_tree": "d463d565202588f115dba72b18e52797187cba20",
+        "rebased_tree": "68c87bc1d0ed67b0b41e248071538608d03c6c9e",
+        "local_rebased_sha": "c0d14cb01561e8e62225b12f54bed521243d7728",
+        "message": "Preserve ordered GDS creation sequence across TG_SIZE wave ID wrap",
+        "published_sha": "0041a5928501d982adc6750099f9c068f3d464d1"
+      },
+      {
+        "old_sha": "6772816165e539e41958c56f02fbc60e91d8e7e5",
+        "old_tree": "65c9739e93779f364a7ac1bb54b9fa9644f424e1",
+        "rebased_tree": "066e70ca45c313024d1d6244fd2689f3510bbcfd",
+        "local_rebased_sha": "04730f909675aa8581832bc0a6d2f5637d1c5a6d",
+        "message": "Record native DS wave-ID wrap failure and PR169 validation",
+        "published_sha": "35bf4dbaeda9e8b11e988ca483225a992063fd0f"
+      },
+      {
+        "old_sha": "3545c23f10790f1e3559dbca1a4083e4ab4980b3",
+        "old_tree": "3997688149c363d8dd3d95f92e25654af718707a",
+        "rebased_tree": "511eda0a7c825230c91c5a849c8aa2a51b806b3b",
+        "local_rebased_sha": "22bee82603899c53b5796f53f427b8d6eb072752",
+        "message": "Record upstream 0d5f integration and retained DS validation",
+        "published_sha": "6781acdbc7981b0e9323f05d16486c8a09ac88aa"
+      },
+      {
+        "old_sha": "0e23bd61f8389d6b81d395f90958306304e67431",
+        "old_tree": "e6ad6d88a3dafc622d4a49a5a02f9b01ad17872b",
+        "rebased_tree": "efffbfff3ae553c5c19c66a7f2c4486c9e71ef7e",
+        "local_rebased_sha": "e6dcc7d6c5c1a5463e6932abc3ad56c0442011d5",
+        "message": "video_core: skip checkpoint readback for completed ordered waves",
+        "published_sha": "1b5e45ff340aabe02438909309a40704bca9dea3"
+      },
+      {
+        "old_sha": "3d065f3159ed623e31c3eb823717189251056d60",
+        "old_tree": "0e9f7d7c9d95005d2f48dc1fc0c837bd50c33fcd",
+        "rebased_tree": "fd0799d6fc892748f72a2ff0a5ab439f4f47ca73",
+        "local_rebased_sha": "da8f1bc45207d304c6f3840413e9aa4a91d71005",
+        "message": "docs: record native DS wrap success and terminal readback validation",
+        "published_sha": "b17bd2cc3bdaf1137fc85e9e596205aa09a9abe9"
+      },
+      {
+        "old_sha": "1493a02fb50d590161ef4272c8cf422541e9f8bb",
+        "old_tree": "42925049a53fa4f838ddfc90472a36a3c7832369",
+        "rebased_tree": "6856cfbafb4c398ce6e4b10da14fc0a63b08a31b",
+        "local_rebased_sha": "8f7a7f00d576062eaa71400ec7abe0660c101327",
+        "message": "diagnostics: measure frame costs and CPU stalls with bounded overhead",
+        "published_sha": "dcffd8f247b032dcdd14ad69d7091a6b21073743"
+      },
+      {
+        "old_sha": "7b61290376949a403402822297baa0300d8120c5",
+        "old_tree": "be475655da35468d4a73dad5785a9303246ab72d",
+        "rebased_tree": "58f109b14b0f63262f67d60fb9e2fad9234098eb",
+        "local_rebased_sha": "17d946d226e6071090ac7e03bd1c291d1acde4f9",
+        "message": "diagnostics: preserve CPU sample bytes and capture utilization",
+        "published_sha": "6bbdaaaabfda0120f123981e5972a9302fcb41ff"
+      },
+      {
+        "old_sha": "80e4eae574954f9458d1488a8f4946ec234e82bb",
+        "old_tree": "ac78d47c1e74df63bcebe0f371dc57cfa27f8053",
+        "rebased_tree": "c365f5c1604fee593edcb81d90e0de6acf27fb26",
+        "local_rebased_sha": "7ebba1134557b8f2bb749439acd792e698e34e84",
+        "message": "runner: confine performance instrumentation to observed game runs",
+        "published_sha": "b1cb861dbbf046ae97b84c931ff5c0d12fe34a1b"
+      },
+      {
+        "old_sha": "39e54c928625a3a38623f72c05306f68449ba834",
+        "old_tree": "a16927895b39348aafae055cb9284515bc66e45f",
+        "rebased_tree": "e074142d686241e3e169170b96d52a46116011b9",
+        "local_rebased_sha": "88264db3ee0e98123ec9cbfc8edf72272e60f47d",
+        "message": "docs: record GoW control and prepare universal frame-cost capture",
+        "published_sha": "c7354046a9c20179dd5e5d4f0d7319e5521bee59"
+      },
+      {
+        "old_sha": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+        "old_tree": "b6e28190a280f55206f4dac73a159a3f55d69a8e",
+        "rebased_tree": "fbcffcb7937518db9cb61515f1bce0775e4788e3",
+        "local_rebased_sha": "62dce4fefc4a9646c9571fd92049f8725b040c6f",
+        "message": "kernel: wait on event deadlines without polling short timers",
+        "published_sha": "8ec341c750939287cbb9b19a7dcadf0cd8bd5611"
+      },
+      {
+        "old_sha": "9e3513fa1e50593e26061ff425ac9827ebff0407",
+        "old_tree": "92b43d252f7184a6e613e53c109225cb52c8b24d",
+        "rebased_tree": "4b12ca04ed58b48906daf8255b79a2a03cf12fc9",
+        "local_rebased_sha": "188da72f44fd2cd31689b1acf93f2d9100a62659",
+        "message": "docs: record native GoW timer hotspot and deadline-wait candidate",
+        "published_sha": "0d130dbb830dc0bf4cac318841137022228c545c"
+      },
+      {
+        "old_sha": "5802d839c1fb39fcd342e2e1add28b9aaecfeef3",
+        "old_tree": "ade50d6d2bc932c81f8bc36ebe15540d2636f256",
+        "rebased_tree": "3d4c00e244d2848035dbc1dbaf1bb373abc9a839",
+        "local_rebased_sha": "4f31ffa51f4d021b7e01d533e02f687fb552a2e2",
+        "message": "docs: record PR173 native timer reduction and prepare GoT trace",
+        "published_sha": "2133be05b6d49dff6e19fb95dc1cf65992179549"
+      },
+      {
+        "old_sha": "03a989b817af231a47a331836c59e7b1dd785741",
+        "old_tree": "22dc9471152831f7e7a3c5dcf562d1364b982267",
+        "rebased_tree": "50b2924204207777ccd8e71464a7be0eff418c11",
+        "local_rebased_sha": "3312970f138dd0fe37bcf5d09a5e42e5fccbd431",
+        "message": "diagnostics: capture live owned-process wait memory without suspending threads",
+        "published_sha": "13d348487bd366cc547b823ec43b0985d1fcf909"
+      },
+      {
+        "old_sha": "997a1a4558e5165f5495471b887052a2333dc2fe",
+        "old_tree": "be4215d04c30d2f962fe31352debdaf07dd49146",
+        "rebased_tree": "ddb6e7f1b9f484aa3795e4d67d9a5f4839da9bca",
+        "local_rebased_sha": "e741f80d26984fbb410c3da313e99317c60cbac2",
+        "message": "diagnostics: retain quiet waiters, bounded queue context and live counters",
+        "published_sha": "56a446856585b76c3a8f143b63a20e6771fef372"
+      },
+      {
+        "old_sha": "9480cb4bd7e3de672661e2882a83d7142712e0b1",
+        "old_tree": "8ad29716850ad70a3f41f139a5450cb4cab34aba",
+        "rebased_tree": "e71b30c65e1e34a11e5abba05a0e6bbd399e83c5",
+        "local_rebased_sha": "0e26dfc3c64727734317d6ccae5667e766529041",
+        "message": "diagnostics: follow bounded instruction references from stalled threads",
+        "published_sha": "05d21bc557471f6790c583a0f389eb2a8ac38a6c"
+      },
+      {
+        "old_sha": "de894b11dd5ceb674902ef26c4a9dfb670026d4f",
+        "old_tree": "5226c7942bd51ef6659d54dff44388859bf9879c",
+        "rebased_tree": "935e0cd51b6280250316689f0c703bb9af015804",
+        "local_rebased_sha": "90c5b4ba1e7690a2278630b608ac0500fc0c1026",
+        "message": "diagnostics: retain guest samples and trace earlier object references",
+        "published_sha": "d746b642077a818a09fd11c256005c76a50a8252"
+      }
+    ],
+    "preservation": "PR173, PR174 and main unchanged; new integration baseline and fix branches retained."
+  },
+  "next_native_run": {
+    "source_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+    "runner_commit": "de894b11dd5ceb674902ef26c4a9dfb670026d4f",
+    "script": "scripts/shadps4-universal-two-game-check.sh",
+    "script_sha256": "720b95684b9ddf32bcd001356ffafab473bf783b26558f71c7461a8b4cc743d7",
+    "mode": "build",
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "per_game_seconds": 120,
+    "automatic_input": false,
+    "performance_diagnostics": true,
+    "vulkan_validation": false,
+    "protections": "Isolated candidate/profile/saves, current-source/upstream checks, at least 8GiB VRAM, conditional model unload/restore, owned-child 118s TERM +2s KILL, no SSH/session/network/Xorg restarts."
+  },
+  "acceptance": {
+    "got_recovery": "PENDING_NATIVE_TEST",
+    "gow_low_fps": "UNRESOLVED; not retested in this archive",
+    "decision": "KEEP_DRAFT; no game success claim or merge"
+  }
+}
