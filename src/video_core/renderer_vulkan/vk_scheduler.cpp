@@ -3,6 +3,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/performance_diagnostics.h"
 #include "common/thread.h"
 #include "imgui/renderer/texture_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -115,6 +116,7 @@ void Scheduler::Flush() {
 }
 
 void Scheduler::Finish() {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::GpuWait};
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
     SubmitInfo info{};
@@ -194,6 +196,7 @@ void Scheduler::EndSession() {
 }
 
 void Scheduler::SubmitExecution(SubmitInfo& info) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Submit};
     std::scoped_lock lk{submit_mutex};
     const u64 signal_value = work_semaphore.NextTick();
 

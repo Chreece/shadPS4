@@ -9,6 +9,7 @@
 #include "common/div_ceil.h"
 #include "common/error.h"
 #include "common/multi_level_page_table.h"
+#include "common/performance_diagnostics.h"
 #include "common/signal_context.h"
 #include "common/thread.h"
 #include "core/emulator_settings.h"
@@ -425,6 +426,8 @@ struct SignalImpl : public PageManager::Impl {
     }
 
     void Protect(VAddr address, size_t size, Core::MemoryPermission perms) override {
+        Common::PerformanceDiagnostics::Scope perf{
+            Common::PerformanceDiagnostics::Region::PageProtect, size};
         RENDERER_TRACE;
         auto* memory = Core::Memory::Instance();
         auto& impl = memory->GetAddressSpace();
