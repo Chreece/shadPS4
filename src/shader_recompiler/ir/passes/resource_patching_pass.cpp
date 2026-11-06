@@ -175,6 +175,9 @@ private:
         if (it != descriptors.end()) {
             return static_cast<u32>(std::distance(descriptors.begin(), it));
         }
+        ASSERT_MSG(descriptors.size() < descriptors.capacity(),
+                   "Shader exceeds the distinct resource binding capacity of {}",
+                   descriptors.capacity());
         descriptors.push_back(desc);
         return static_cast<u32>(descriptors.size()) - 1;
     }
