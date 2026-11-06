@@ -16,6 +16,8 @@ static bool IsSharedAccess(const IR::Inst& inst) {
     case IR::Opcode::WriteSharedU16:
     case IR::Opcode::WriteSharedU32:
     case IR::Opcode::WriteSharedU64:
+    case IR::Opcode::SharedAtomicFMin32:
+    case IR::Opcode::SharedAtomicFMax32:
     case IR::Opcode::SharedAtomicIAdd32:
     case IR::Opcode::SharedAtomicISub32:
     case IR::Opcode::SharedAtomicSMin32:
@@ -57,6 +59,10 @@ IR::Type CalculateSharedMemoryTypes(IR::Program& program) {
             case IR::Opcode::LoadSharedU16:
             case IR::Opcode::WriteSharedU16:
                 used_types |= IR::Type::U16;
+                break;
+            case IR::Opcode::SharedAtomicFMin32:
+            case IR::Opcode::SharedAtomicFMax32:
+                used_types |= IR::Type::F32;
                 break;
             case IR::Opcode::LoadSharedU32:
             case IR::Opcode::WriteSharedU32:
@@ -131,10 +137,14 @@ void SharedMemoryToStoragePass(IR::Program& program, const RuntimeInfo& runtime_
     ASSERT_MSG(program.info.buffers.size() < NUM_BUFFERS,
                "ordered GDS persistent LDS descriptor would overflow buffer slots");
 
+    auto buffer_types = used_types;
+    if (True(buffer_types & IR::Type::F32) && !profile.supports_buffer_fp32_atomic_min_max) {
+        buffer_types = (buffer_types & ~IR::Type::F32) | IR::Type::U32;
+    }
     // Add a buffer binding for shared memory storage buffer.
     const u32 binding = static_cast<u32>(program.info.buffers.size());
     program.info.buffers.push_back(BufferResource{
-        .used_types = used_types,
+        .used_types = buffer_types,
         .buffer_type = BufferType::SharedMemory,
         .is_written = true,
     });
@@ -153,6 +163,14 @@ void SharedMemoryToStoragePass(IR::Program& program, const RuntimeInfo& runtime_
                                            ir.Imm32(shared_memory_size));
             const IR::U32 address = ir.IAdd(IR::U32{inst.Arg(0)}, offset);
             switch (inst.GetOpcode()) {
+            case IR::Opcode::SharedAtomicFMin32:
+                inst.ReplaceUsesWithAndRemove(
+                    ir.BufferAtomicFMin(handle, address, inst.Arg(1), {}));
+                continue;
+            case IR::Opcode::SharedAtomicFMax32:
+                inst.ReplaceUsesWithAndRemove(
+                    ir.BufferAtomicFMax(handle, address, inst.Arg(1), {}));
+                continue;
             case IR::Opcode::SharedAtomicIAdd32:
             case IR::Opcode::SharedAtomicIAdd64:
                 inst.ReplaceUsesWithAndRemove(
