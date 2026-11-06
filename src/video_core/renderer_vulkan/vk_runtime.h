@@ -99,6 +99,7 @@ private:
     };
     BufferBarriers* resource{};
     std::vector<BufferBarriers> resources;
+    size_t num_resources{};
     VideoCore::Image::Barriers image_barriers;
     vk::MemoryBarrier2 memory_barrier{};
     u64 image_upload_count{};

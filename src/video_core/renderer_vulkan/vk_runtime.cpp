@@ -125,6 +125,7 @@ Runtime::Runtime(const Instance& instance_, Scheduler& scheduler_)
 
 void Runtime::TickFrame() {
     staging_pool.TickFrame();
+    resources.resize(num_resources);
 }
 
 void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* dst,
@@ -861,11 +862,11 @@ void Runtime::FlushBarriers() {
     memory_barrier.srcAccessMask = vk::AccessFlagBits2::eNone;
 
     image_barriers.clear();
-    for (auto& resource : resources) {
+    for (auto& resource : std::span{resources}.first(num_resources)) {
         resource.read_ranges.Clear();
         resource.write_ranges.Clear();
     }
-    resources.clear();
+    num_resources = 0;
     resource = nullptr;
 }
 
@@ -873,12 +874,18 @@ void Runtime::MakeCurrent(const VideoCore::Buffer* handle) {
     if (resource && resource->handle == handle) {
         return;
     }
-    auto it = std::ranges::find(resources, handle, &BufferBarriers::handle);
-    if (it != resources.end()) {
+    auto active = std::span{resources}.first(num_resources);
+    auto it = std::ranges::find(active, handle, &BufferBarriers::handle);
+    if (it != active.end()) {
         resource = std::addressof(*it);
         return;
     }
-    resource = &resources.emplace_back(handle);
+    if (num_resources == resources.size()) {
+        resources.emplace_back(handle);
+    } else {
+        resources[num_resources].handle = handle;
+    }
+    resource = &resources[num_resources++];
 }
 
 } // namespace Vulkan
