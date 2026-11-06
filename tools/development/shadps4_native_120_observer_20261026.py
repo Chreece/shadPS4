@@ -173,7 +173,7 @@ def capture_owned_stop_state(pid, out, proc=Path('/proc'),
         state['truncated']=len(tasks)>128
         for task in tasks[:128]:
             item={'tid':int(task.name)}
-            for name in ('status','wchan'):
+            for name in ('status','wchan','stat','schedstat','syscall'):
                 try:
                     item[name]=(task/name).read_text(errors='replace')[:8192]
                 except OSError as error:
@@ -206,10 +206,21 @@ def summarize(console,out):
     gpu_work_entries=0
     gpu_work_truncated=False
     gpu_work_overwritten=0
+    performance=[]
+    performance_bytes=0
+    performance_truncated=False
     with console.open('rb') as stream:
         for raw in stream:
             total+=1
             text=raw.decode('utf-8','replace').strip()
+            if text.startswith('PERF_'):
+                line=text[:8192]+'\n'
+                encoded_size=len(line.encode('utf-8'))
+                if performance_bytes+encoded_size<=512*1024:
+                    performance.append(line)
+                    performance_bytes+=encoded_size
+                else:
+                    performance_truncated=True
             if text.startswith('GRAPHICS_WORK'):
                 gpu_work_entries+=int(text.startswith('GRAPHICS_WORK seq='))
                 gpu_work_truncated|=text.startswith('GRAPHICS_WORK_TRUNCATED')
@@ -272,6 +283,7 @@ def summarize(console,out):
         '\n'.join(important)+'\n',encoding='utf-8')
     (out/'graphics-diagnostics.log').write_text(''.join(graphics_diagnostics),encoding='utf-8')
     (out/'gpu-work.log').write_text(''.join(gpu_work),encoding='utf-8')
+    (out/'performance.log').write_text(''.join(performance),encoding='utf-8')
     with console.open('rb') as stream:
         size=console.stat().st_size
         if size>2*1024*1024:
@@ -283,6 +295,9 @@ def summarize(console,out):
             excerpt=stream.read()
     (out/'console-excerpt.log').write_bytes(excerpt)
     return {'gpu_failure':gpu_failure,'srt_rejections':srt_rejections,'console_lines':total,'warning_lines':warnings,'error_lines':errors,
+            'performance_records':len(performance),
+            'performance_bytes':performance_bytes,
+            'performance_truncated':performance_truncated,
             'gpu_work_entries':gpu_work_entries,
             'gpu_work_bytes':gpu_work_bytes,
             'gpu_work_truncated':gpu_work_truncated,
@@ -309,6 +324,28 @@ def capture_native_mappings(pid, out):
             (out/'last-process-mappings.txt').write_text(content)
     except (OSError, UnicodeError):
         pass
+
+
+def capture_performance_usage(pid, out, elapsed, proc=Path('/proc'),
+                              drm=Path('/sys/class/drm')):
+    record={'elapsed_seconds':round(elapsed,3),'gpus':[]}
+    try:
+        record['process_stat']=(proc/str(pid)/'stat').read_text()[:4096]
+    except OSError as error:
+        record['process_stat_error']=str(error)
+    cards=sorted(p for p in drm.glob('card*') if re.fullmatch(r'card\d+',p.name))
+    for card in cards[:8]:
+        gpu={'card':card.name}
+        for metric in ('gpu_busy_percent','mem_busy_percent','mem_info_vram_used'):
+            try:
+                value=(card/'device'/metric).read_text()[:128].strip()
+                if value.isdecimal():
+                    gpu[metric]=int(value)
+            except OSError:
+                pass
+        record['gpus'].append(gpu)
+    with (out/'performance-usage.jsonl').open('a') as stream:
+        stream.write(json.dumps(record)+'\n')
 
 
 def classify_native_fault(console, out, binary):
@@ -386,7 +423,8 @@ def main():
         'runtime_limit_seconds':120,'signal_at_seconds':118,
         'ordered_gds_capture_requested':env.get('SHADPS4_PR117_CAPTURE_ONCE')=='1',
         'graphics_diagnostics_requested':env.get('SHADPS4_GRAPHICS_DIAGNOSTICS')=='1',
-        'vulkan_diagnostics_requested':env.get('SHADPS4_VULKAN_DIAGNOSTICS')=='1'
+        'vulkan_diagnostics_requested':env.get('SHADPS4_VULKAN_DIAGNOSTICS')=='1',
+        'performance_diagnostics_requested':env.get('SHADPS4_PERFORMANCE_DIAGNOSTICS')=='1'
     }
     result={'binary_sha256':args.sha256,'game':args.game,
             'duration_limit':120,'time_to_sigterm':118,
@@ -435,6 +473,8 @@ def main():
                         break
                 if elapsed-previous_map_capture>=1.0:
                     capture_native_mappings(child.pid,report)
+                    if launch['performance_diagnostics_requested']:
+                        capture_performance_usage(child.pid,report,elapsed)
                     previous_map_capture=elapsed
                 for second in due:
                     if elapsed>=second and second not in taken:

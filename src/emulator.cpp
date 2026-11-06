@@ -11,6 +11,7 @@
 #include <fmt/core.h>
 #include <fmt/xchar.h>
 #include <hwinfo/hwinfo.h>
+#include "common/performance_diagnostics.h"
 
 #include "common/debug.h"
 #include "common/logging/log.h"
@@ -568,6 +569,8 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
 
     // Create stdin/stdout/stderr
     Common::Singleton<FileSys::HandleTable>::Instance()->CreateStdHandles();
+
+    Common::PerformanceDiagnostics::Start();
 
     // Initialize components
     memory = Core::Memory::Instance();
