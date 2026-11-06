@@ -1,1054 +1,557 @@
-// SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
+// SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
+
+#include "hle/guest_memory.h"
+#include "hle/handles.h"
+#include "hle/runtime.h"
+#include "ngs2.h"
+#include "ngs2_error.h"
+#include "ngs2_mastering.h"
+#include "ngs2_sampler.h"
+#include "ngs2_submixer.h"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <memory>
+#include <limits>
+#include <map>
 #include <mutex>
-#include <span>
-#include <unordered_map>
-#include <vector>
+#include <new>
 
-#include "common/logging/log.h"
-#include "core/libraries/error_codes.h"
-#include "core/libraries/ngs2/ngs2_error.h"
-#include "core/libraries/ngs2/ngs2_impl.h"
-#include "core/libraries/ngs2/ngs2_mastering.h"
-#include "core/libraries/ngs2/ngs2_reverb.h"
-#include "core/libraries/ngs2/ngs2_sampler.h"
-#include "core/libraries/ngs2/ngs2_submixer.h"
-
-namespace Libraries::Ngs2::Impl {
+namespace Libraries::Ngs2 {
+namespace Runtime {
+std::mutex runtime_mutex;
+Hle::HandleRegistry registry;
+std::map<OrbisNgs2Handle, Context> systems;
+std::map<OrbisNgs2Handle, Context> racks;
+} // namespace Runtime
 namespace {
+using namespace Hle;
+using namespace Runtime;
 
-enum class HandleType { System, Rack, Voice };
+// The HLE objects live on the host. The caller's context contains only an opaque
+// token, not a reconstruction of the proprietary implementation's work area.
+constexpr size_t ContextBytes = sizeof(OrbisNgs2Handle);
+constexpr OrbisNgs2SystemOption DefaultSystem{
+    sizeof(OrbisNgs2SystemOption), "", 0, 512, 256, 48000, {}};
 
-enum class RackId : u32 {
-    Sampler = 0x1000,
-    Submixer = 0x2000,
-    Reverb = 0x2001,
-    Mastering = 0x3000,
-    CustomSampler = 0x4001,
-    CustomSubmixer = 0x4002,
-    CustomMastering = 0x4003,
-};
-
-enum class RackType : u32 { Sampler = 0, Effect = 1, Mastering = 2 };
-
-enum class RenderWaveformType : u32 {
-    PcmI16LittleEndian = 0x12,
-    PcmI16BigEndian = 0x13,
-    PcmF32LittleEndian = 0x18,
-    PcmF32BigEndian = 0x19,
-};
-
-constexpr u32 MinGrainSamples = 64;
-constexpr u32 MaxGrainSamples = 1024;
-constexpr u32 FirmwareRackOptionFlags = 0xc0000000;
-
-constexpr u32 StateFlagInUse = 1;
-
-struct Voice {
-    OrbisNgs2Handle handle{};
-    u32 state{};
-};
-
-struct RackConfig {
-    OrbisNgs2RackOption option{};
-    RackId id{};
-    RackType type{};
-    u32 maxChannels{8};
-    u32 maxInputs{1};
-    u32 maxChannelWorks{};
-    std::array<u32, 9> extra{};
-};
-
-struct System {
-    std::recursive_mutex mutex;
-    bool alive{true};
-    OrbisNgs2Handle handle{};
-    OrbisNgs2ContextBufferInfo buffer{};
-    OrbisNgs2BufferFreeHandler freeHandler{};
-    OrbisNgs2SystemInfo* info{};
-    uintptr_t userData{};
-    std::vector<OrbisNgs2Handle> racks;
-};
-
-struct Rack {
-    std::shared_ptr<System> system;
-    bool alive{true};
-    OrbisNgs2Handle handle{};
-    OrbisNgs2ContextBufferInfo buffer{};
-    OrbisNgs2BufferFreeHandler freeHandler{};
-    RackConfig config{};
-    OrbisNgs2RackInfo* info{};
-    Voice* voices{};
-    uintptr_t userData{};
-};
-
-struct HandleEntry {
-    HandleType type{};
-    std::shared_ptr<System> system;
-    std::shared_ptr<Rack> rack;
-    u32 voiceIndex{};
-};
-
-std::mutex registryMutex;
-std::unordered_map<OrbisNgs2Handle, HandleEntry> handles;
-OrbisNgs2Handle nextHandle{1};
-u32 nextUid{1};
-
-HandleEntry FindHandle(OrbisNgs2Handle handle, HandleType type) {
-    std::scoped_lock lock{registryMutex};
-    const auto it = handles.find(handle);
-    return it != handles.end() && it->second.type == type ? it->second : HandleEntry{};
+bool ValidGrain(u32 count) {
+    return count >= 64 && count <= 1024 && count % 64 == 0;
 }
-
-struct LockedHandle {
-    HandleEntry entry;
-    std::unique_lock<std::recursive_mutex> lock;
-
-    LockedHandle(OrbisNgs2Handle handle, HandleType type) : entry{FindHandle(handle, type)} {
-        if (entry.system) {
-            lock = std::unique_lock{entry.system->mutex};
-        }
-    }
-
-    explicit operator bool() const {
-        return entry.system && (entry.rack ? entry.rack->alive : entry.system->alive);
-    }
-};
-
-OrbisNgs2Handle InsertHandle(HandleEntry entry) {
-    std::scoped_lock lock{registryMutex};
-    const auto handle = nextHandle++;
-    handles.emplace(handle, std::move(entry));
-    return handle;
-}
-
-u32 AllocateUid() {
-    std::scoped_lock lock{registryMutex};
-    return nextUid++;
-}
-
-template <typename T>
-size_t StorageSize(size_t count = 1) {
-    return count ? sizeof(T) * count + alignof(T) - 1 : 0;
-}
-
-class BufferArena {
-public:
-    explicit BufferArena(const OrbisNgs2ContextBufferInfo& buffer)
-        : current{buffer.hostBuffer}, remaining{buffer.hostBufferSize} {}
-
-    template <typename T>
-    T* Allocate(size_t count = 1) {
-        if (!count) {
-            return nullptr;
-        }
-
-        const size_t bytes = count * sizeof(T);
-        auto* allocation = static_cast<T*>(std::align(alignof(T), bytes, current, remaining));
-        if (!allocation) {
-            return nullptr;
-        }
-
-        current = reinterpret_cast<u8*>(allocation) + bytes;
-        remaining -= bytes;
-        std::uninitialized_value_construct_n(allocation, count);
-        return allocation;
-    }
-
-private:
-    void* current;
-    size_t remaining;
-};
-
-bool ValidGrain(u32 grain) {
-    return grain >= MinGrainSamples && grain <= MaxGrainSamples && grain % MinGrainSamples == 0;
-}
-
-bool ValidSampleRate(u32 rate) {
-    constexpr std::array rates{11025u, 12000u, 22050u, 24000u,  44100u,
-                               48000u, 88200u, 96000u, 176400u, 192000u};
+bool ValidRate(u32 rate) {
+    constexpr std::array<u32, 10> rates{11025, 12000, 22050, 24000,  44100,
+                                        48000, 88200, 96000, 176400, 192000};
     return std::ranges::find(rates, rate) != rates.end();
 }
-
-s32 ReadSystemOption(const OrbisNgs2SystemOption* option, OrbisNgs2SystemOption& result) {
-    result = {sizeof(result), "", 0, 512, 256, 48000, {}};
-
+s32 SystemOptions(const OrbisNgs2SystemOption* option, OrbisNgs2SystemOption& copy) {
+    copy = DefaultSystem;
     if (option) {
-        if (option->size != sizeof(*option)) {
+        size_t size{};
+        // Check the size prefix before reading the rest (a short mapping is legal
+        // input to reject, not a reason to read across an unmapped page).
+        if (!ReadGuest(reinterpret_cast<const size_t*>(option), size))
+            return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
+        if (size != sizeof(copy))
             return ORBIS_NGS2_ERROR_INVALID_OPTION_SIZE;
-        }
-
-        result = *option;
+        if (!ReadGuest(option, copy))
+            return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
     }
-
-    if (!ValidGrain(result.maxGrainSamples)) {
+    if (!ValidGrain(copy.maxGrainSamples))
         return ORBIS_NGS2_ERROR_INVALID_MAX_GRAIN_SAMPLES;
-    }
-
-    if (!ValidGrain(result.numGrainSamples)) {
+    if (!ValidGrain(copy.numGrainSamples) || copy.numGrainSamples > copy.maxGrainSamples)
         return ORBIS_NGS2_ERROR_INVALID_NUM_GRAIN_SAMPLES;
-    }
-
-    if (!ValidSampleRate(result.sampleRate)) {
+    if (!ValidRate(copy.sampleRate))
         return ORBIS_NGS2_ERROR_INVALID_SAMPLE_RATE;
-    }
-
-    return ORBIS_OK;
+    return 0;
 }
-
-s32 ReadRackOption(u32 rackId, const OrbisNgs2RackOption* option, RackConfig& result) {
-    result = {};
-    const auto id = static_cast<RackId>(rackId);
-    result.id = id;
-
-    switch (id) {
-    case RackId::Sampler:
-        result.type = RackType::Sampler;
-        result.option = {sizeof(OrbisNgs2RackOption), "", 0, 512, 256, 0, 1, 8, {}};
-        result.extra = {256, 0, 4, 4, 8, 256, 256, 0, 8};
-        break;
-    case RackId::Submixer:
-        result.type = RackType::Effect;
-        result.option = {sizeof(OrbisNgs2RackOption), "", 0, 512, 1, 1, 1, 8, {}};
-        result.extra = {8, 4, 8, 1, 8};
-        break;
-    case RackId::Reverb:
-        result.type = RackType::Effect;
-        result.option = {sizeof(OrbisNgs2RackOption), "", 0, 512, 1, 0, 1, 8, {}};
-        result.extra = {8, 1};
-        break;
-    case RackId::Mastering:
-        result.type = RackType::Mastering;
-        result.option = {sizeof(OrbisNgs2RackOption), "", 0, 512, 2, 1, 0, 0, {}};
-        result.extra = {8, 8};
-        break;
-    case RackId::CustomSampler:
-    case RackId::CustomSubmixer:
-    case RackId::CustomMastering:
-        LOG_ERROR(Lib_Ngs2, "Custom rack creation is not implemented (id={:#x})", rackId);
-        return ORBIS_NGS2_ERROR_FAIL;
-    default:
+bool ValidRackId(u32 id) {
+    return id == u32(RackKind::Sampler) || id == u32(RackKind::Submixer) ||
+           id == u32(RackKind::Mastering);
+}
+s32 ReadRackOptions(u32 id, const OrbisNgs2RackOption* option, RackOptions& copy) {
+    if (!ValidRackId(id))
         return ORBIS_NGS2_ERROR_INVALID_RACK_ID;
-    }
-
     if (option) {
-        if (option->size < sizeof(*option)) {
+        size_t size{};
+        if (!ReadGuest(reinterpret_cast<const size_t*>(option), size))
+            return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
+        if (size < sizeof(copy.base))
             return ORBIS_NGS2_ERROR_INVALID_OPTION_SIZE;
+        if (!ReadGuest(option, copy.base))
+            return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
+        // Base-only options are accepted; an extension must be complete for its
+        // rack type. Copy only known fields, preserving future trailing bytes.
+        if (size > sizeof(copy.base)) {
+            size_t known_size{};
+            void* dest{};
+            if (id == u32(RackKind::Sampler)) {
+                known_size = sizeof(copy.sampler);
+                dest = &copy.sampler;
+            } else if (id == u32(RackKind::Submixer)) {
+                known_size = sizeof(copy.submixer);
+                dest = &copy.submixer;
+            } else {
+                known_size = sizeof(copy.mastering);
+                dest = &copy.mastering;
+            }
+            if (size < known_size)
+                return ORBIS_NGS2_ERROR_INVALID_OPTION_SIZE;
+            if (!GuestAccessible(option, known_size, GuestAccess::Read))
+                return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
+            std::memcpy(dest, option, known_size);
+            if (id == u32(RackKind::Submixer))
+                copy.channels = copy.submixer.maxChannels;
+            if (id == u32(RackKind::Mastering))
+                copy.channels = copy.mastering.maxChannels;
         }
-
-        if (option->flags & ~FirmwareRackOptionFlags) {
-            return ORBIS_NGS2_ERROR_INVALID_OPTION_FLAG;
-        }
-
-        const size_t extendedSize = id == RackId::Sampler    ? sizeof(OrbisNgs2SamplerRackOption)
-                                    : id == RackId::Submixer ? sizeof(OrbisNgs2SubmixerRackOption)
-                                    : id == RackId::Reverb   ? sizeof(OrbisNgs2ReverbRackOption)
-                                                             : sizeof(OrbisNgs2MasteringRackOption);
-        if (option->size != extendedSize) {
-            return ORBIS_NGS2_ERROR_INVALID_OPTION_SIZE;
-        }
-
-        result.option = *option;
-
-        const size_t count = id == RackId::Sampler ? 9 : id == RackId::Submixer ? 5 : 2;
-        std::memcpy(result.extra.data(), reinterpret_cast<const u8*>(option) + sizeof(*option),
-                    count * sizeof(u32));
     }
-
-    const auto& base = result.option;
-    if (id == RackId::Sampler && !option) {
-        auto& maxChannelWorks = result.extra[0];
-        auto& maxAtrac9Decoders = result.extra[5];
-        auto& maxAtrac9ChannelWorks = result.extra[6];
-
-        maxChannelWorks = base.maxVoices;
-        maxAtrac9Decoders = base.maxVoices;
-        maxAtrac9ChannelWorks = base.maxVoices;
-    }
-
-    if (!ValidGrain(base.maxGrainSamples)) {
+    if (!ValidGrain(copy.base.maxGrainSamples))
         return ORBIS_NGS2_ERROR_INVALID_MAX_GRAIN_SAMPLES;
-    }
-
-    const u32 maxVoices = id == RackId::Mastering ? 256 : id == RackId::Reverb ? 16 : 1024;
-    if (!base.maxVoices || base.maxVoices > maxVoices) {
+    if (!copy.base.maxVoices)
         return ORBIS_NGS2_ERROR_INVALID_MAX_VOICES;
-    }
-
-    if ((id == RackId::Mastering || id == RackId::Submixer)
-            ? (base.maxInputDelayBlocks < 1 || base.maxInputDelayBlocks > 1024)
-            : base.maxInputDelayBlocks != 0) {
-        return ORBIS_NGS2_ERROR_INVALID_MAX_INPUT_DELAY_BLOCKS;
-    }
-
-    if (id == RackId::Mastering ? base.maxMatrices != 0
-                                : (base.maxMatrices < 1 || base.maxMatrices > 16)) {
-        return ORBIS_NGS2_ERROR_INVALID_MAX_MATRICES;
-    }
-
-    if (id == RackId::Mastering ? base.maxPorts != 0 : (base.maxPorts < 1 || base.maxPorts > 16)) {
-        return ORBIS_NGS2_ERROR_INVALID_MAX_PORTS;
-    }
-
-    const auto range = [](u32 value, u32 min, u32 max, s32 error) {
-        return value >= min && value <= max ? ORBIS_OK : error;
-    };
-
-    const auto& extra = result.extra;
-    if (id == RackId::Sampler) {
-        const auto maxChannelWorks = extra[0];
-        const auto maxCodecCaches = extra[1];
-        const auto maxWaveformBlocks = extra[2];
-        const auto maxEnvelopePoints = extra[3];
-        const auto maxFilters = extra[4];
-        const auto maxAtrac9Decoders = extra[5];
-        const auto maxAtrac9ChannelWorks = extra[6];
-        const auto maxAjmAtrac9Decoders = extra[7];
-        const auto numPeakMeterBlocks = extra[8];
-
-        result.maxInputs = 0;
-        result.maxChannelWorks = maxChannelWorks;
-
-        for (auto error :
-             {range(result.maxChannelWorks, base.maxVoices, 8 * base.maxVoices,
-                    ORBIS_NGS2_ERROR_INVALID_MAX_CHANNEL_WORKS),
-              range(maxWaveformBlocks, 1, 16, ORBIS_NGS2_ERROR_INVALID_MAX_WAVEFORM_BLOCKS),
-              range(maxEnvelopePoints, 0, 16, ORBIS_NGS2_ERROR_INVALID_MAX_ENVELOPE_POINTS),
-              range(maxFilters, 0, 16, ORBIS_NGS2_ERROR_INVALID_MAX_FILTERS),
-              range(maxAtrac9Decoders, 0, base.maxVoices,
-                    ORBIS_NGS2_ERROR_INVALID_MAX_ATRAC9_DECODERS),
-              range(maxAjmAtrac9Decoders, 0, std::min(32u, base.maxVoices),
-                    ORBIS_NGS2_ERROR_INVALID_MAX_ATRAC9_DECODERS),
-              range(numPeakMeterBlocks, 1, 256, ORBIS_NGS2_ERROR_INVALID_NUM_PEAKMETER_BLOCKS)}) {
-            if (error < 0) {
-                return error;
-            }
-        }
-
-        if (maxAtrac9Decoders &&
-            range(maxAtrac9ChannelWorks, maxAtrac9Decoders, 8 * maxAtrac9Decoders,
-                  ORBIS_NGS2_ERROR_INVALID_MAX_ATRAC9_CHANNEL_WORKS) < 0) {
-            return ORBIS_NGS2_ERROR_INVALID_MAX_ATRAC9_CHANNEL_WORKS;
-        }
-
-        if (maxAjmAtrac9Decoders && range(maxCodecCaches, 10, 8 * maxAjmAtrac9Decoders,
-                                          ORBIS_NGS2_ERROR_INVALID_MAX_CODEC_CACHES) < 0) {
-            return ORBIS_NGS2_ERROR_INVALID_MAX_CODEC_CACHES;
-        }
-    } else {
-        const auto maxChannels = extra[0];
-        const auto maxInputs = id == RackId::Submixer ? extra[3] : 1;
-
-        result.maxChannels = maxChannels;
-        result.maxInputs = maxInputs;
-        result.maxChannelWorks = base.maxVoices * maxChannels;
-
-        if (maxChannels < 1 || maxChannels > 8) {
-            return ORBIS_NGS2_ERROR_INVALID_MAX_CHANNELS;
-        }
-
-        if (id == RackId::Reverb) {
-            const auto reverbSize = extra[1];
-            if (reverbSize > 1) {
-                return ORBIS_NGS2_ERROR_INVALID_REVERB_SIZE;
-            }
-        }
-
-        if (id == RackId::Submixer) {
-            const auto maxEnvelopePoints = extra[1];
-            const auto maxFilters = extra[2];
-
-            if (maxEnvelopePoints > 16) {
-                return ORBIS_NGS2_ERROR_INVALID_MAX_ENVELOPE_POINTS;
-            }
-
-            if (maxFilters > 16) {
-                return ORBIS_NGS2_ERROR_INVALID_MAX_FILTERS;
-            }
-
-            if (maxInputs < 1 || maxInputs > 2) {
-                return ORBIS_NGS2_ERROR_INVALID_MAX_INPUTS;
-            }
-        }
-
-        if (id != RackId::Reverb) {
-            const auto numPeakMeterBlocks = id == RackId::Mastering ? extra[1] : extra[4];
-            if (numPeakMeterBlocks < 1 || numPeakMeterBlocks > 256) {
-                return ORBIS_NGS2_ERROR_INVALID_NUM_PEAKMETER_BLOCKS;
-            }
-        }
-    }
-
-    return ORBIS_OK;
+    if (!copy.channels || copy.channels > 8)
+        return ORBIS_NGS2_ERROR_INVALID_MAX_CHANNELS;
+    return 0;
 }
-
-size_t SystemBufferSize(const OrbisNgs2SystemOption& option) {
-    return StorageSize<OrbisNgs2SystemInfo>() + StorageSize<float>(32 * option.maxGrainSamples);
-}
-
-size_t RackBufferSize(const RackConfig& config) {
-    return StorageSize<OrbisNgs2RackInfo>() + StorageSize<Voice>(config.option.maxVoices);
-}
-
-s32 ValidateBuffer(const OrbisNgs2ContextBufferInfo& info, size_t required) {
-    if (!info.hostBuffer) {
+s32 ValidateBuffer(const OrbisNgs2ContextBufferInfo& buffer) {
+    if (!GuestAccessible(buffer.hostBuffer, ContextBytes, GuestAccess::Write))
         return ORBIS_NGS2_ERROR_INVALID_BUFFER_ADDRESS;
-    }
-
-    return info.hostBufferSize < required ? ORBIS_NGS2_ERROR_INVALID_BUFFER_SIZE : ORBIS_OK;
+    if (reinterpret_cast<uintptr_t>(buffer.hostBuffer) % alignof(OrbisNgs2Handle))
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALIGN;
+    if (buffer.hostBufferSize < ContextBytes)
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_SIZE;
+    return 0;
 }
-
-void QueryBuffer(OrbisNgs2ContextBufferInfo& buffer, size_t size) {
-    buffer.hostBuffer = nullptr;
-    buffer.hostBufferSize = size;
-    std::ranges::fill(buffer.reserved, 0);
+bool Callable(OrbisNgs2BufferAllocHandler handler) {
+    return handler &&
+           GuestAccessible(reinterpret_cast<const void*>(handler), 1, GuestAccess::Execute);
 }
-
-struct ReleasedBuffer {
-    OrbisNgs2ContextBufferInfo buffer;
-    OrbisNgs2BufferFreeHandler freeHandler;
-
-    void Release(OrbisNgs2ContextBufferInfo* outInfo = nullptr) {
-        if (freeHandler) {
-            freeHandler(&buffer);
-        }
-
-        if (outInfo) {
-            *outInfo = buffer;
-        }
-    }
-};
-
-ReleasedBuffer RemoveRack(const std::shared_ptr<Rack>& rack) {
-    rack->alive = false;
-
-    {
-        std::scoped_lock lock{registryMutex};
-        for (u32 i = 0; i < rack->config.option.maxVoices; ++i) {
-            handles.erase(rack->voices[i].handle);
-        }
-
-        handles.erase(rack->handle);
-    }
-
-    std::erase(rack->system->racks, rack->handle);
-    if (rack->system->alive) {
-        rack->system->info->rackCount = static_cast<u32>(rack->system->racks.size());
-    }
-
-    return {rack->buffer, rack->freeHandler};
+s32 Release(Context& context) {
+    if (!context.free)
+        return 0;
+    // A guest can have unmapped its callback since creation. Never branch to it.
+    if (!Callable(context.free))
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALLOCATOR;
+    return context.free(&context.buffer);
 }
-
-s32 CreateSystem(const OrbisNgs2SystemOption& option, const OrbisNgs2ContextBufferInfo& buffer,
-                 OrbisNgs2BufferFreeHandler freeHandler, OrbisNgs2Handle* outHandle) try {
-    const auto result = ValidateBuffer(buffer, SystemBufferSize(option));
-    if (result < 0) {
+s32 RegistryError(HandleError error) {
+    switch (error) {
+    case HandleError::None:
+        return 0;
+    case HandleError::OutOfMemory:
+    case HandleError::ResourceLimit:
+        return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
+    default:
+        return ORBIS_NGS2_ERROR_FAIL;
+    }
+}
+s32 QueryBuffer(OrbisNgs2ContextBufferInfo* out) {
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    // userData is caller-owned for QueryBufferSize. Do not read poisoned output
+    // fields and do not overwrite userData; allocator creation initializes it.
+    OrbisNgs2ContextBufferInfo value{};
+    value.hostBufferSize = ContextBytes;
+    std::memcpy(out, &value, offsetof(OrbisNgs2ContextBufferInfo, userData));
+    return 0;
+}
+s32 Publish(Context context, bool is_system, OrbisNgs2Handle* out) {
+    // Revalidate after the guest allocator: it may have destroyed the parent or
+    // changed an output mapping. No object is published on any failure.
+    const std::lock_guard lock{runtime_mutex};
+    if (!is_system) {
+        const auto parent = systems.find(context.parent);
+        if (parent == systems.end())
+            return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
+        if (context.rack.base.maxGrainSamples < parent->second.system.numGrainSamples)
+            return ORBIS_NGS2_ERROR_INVALID_MAX_GRAIN_SAMPLES;
+    }
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    if (const auto result = ValidateBuffer(context.buffer); result < 0)
         return result;
-    }
-
-    auto system = std::make_shared<System>();
-    std::scoped_lock lock{system->mutex};
-
-    BufferArena arena{buffer};
-    system->info = arena.Allocate<OrbisNgs2SystemInfo>();
-    arena.Allocate<float>(32 * option.maxGrainSamples);
-    system->buffer = buffer;
-    system->freeHandler = freeHandler;
-
-    auto& info = *system->info;
-    std::copy_n(option.name, sizeof(info.name), info.name);
-    info.name[sizeof(info.name) - 1] = 0;
-    info.bufferInfo = buffer;
-    info.uid = AllocateUid();
-    info.stateFlags = StateFlagInUse;
-    info.minGrainSamples = MinGrainSamples;
-    info.maxGrainSamples = option.maxGrainSamples;
-    info.sampleRate = option.sampleRate;
-    info.numGrainSamples = option.numGrainSamples;
-
-    system->handle = InsertHandle({HandleType::System, system});
-    info.systemHandle = system->handle;
-    *outHandle = system->handle;
-    return ORBIS_OK;
-} catch (const std::bad_alloc&) {
-    return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
-}
-
-s32 CreateRack(const std::shared_ptr<System>& system, const RackConfig& config,
-               const OrbisNgs2ContextBufferInfo& buffer, OrbisNgs2BufferFreeHandler freeHandler,
-               OrbisNgs2Handle* outHandle) {
-    if (!system->alive) {
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    const auto result = ValidateBuffer(buffer, RackBufferSize(config));
-    if (result < 0) {
-        return result;
-    }
-
-    std::shared_ptr<Rack> rack;
+    const auto created =
+        is_system
+            ? registry.CreateSystem({context.system.maxGrainSamples, context.system.numGrainSamples,
+                                     context.system.sampleRate})
+            : registry.CreateRack(context.parent,
+                                  {static_cast<RackKind>(context.rack_id),
+                                   context.rack.base.maxVoices, context.rack.channels});
+    if (!created)
+        return RegistryError(created.error);
     try {
-        rack = std::make_shared<Rack>();
-        rack->system = system;
-        rack->buffer = buffer;
-        rack->config = config;
-        rack->freeHandler = freeHandler;
-
-        BufferArena arena{buffer};
-        rack->info = arena.Allocate<OrbisNgs2RackInfo>();
-        rack->voices = arena.Allocate<Voice>(config.option.maxVoices);
-
-        auto& info = *rack->info;
-        std::copy_n(config.option.name, sizeof(info.name), info.name);
-        info.name[sizeof(info.name) - 1] = 0;
-        info.bufferInfo = buffer;
-        info.ownerSystemHandle = system->handle;
-        info.type = static_cast<u32>(config.type);
-        info.rackId = static_cast<u32>(config.id);
-        info.uid = AllocateUid();
-        info.stateFlags = StateFlagInUse;
-        info.minGrainSamples = MinGrainSamples;
-        info.maxGrainSamples = config.option.maxGrainSamples;
-        info.maxVoices = config.option.maxVoices;
-        info.maxChannelWorks = config.maxChannelWorks;
-        info.maxInputs = config.maxInputs;
-        info.maxMatrices = config.option.maxMatrices;
-        info.maxPorts = config.option.maxPorts;
-
-        rack->handle = InsertHandle({HandleType::Rack, system, rack});
-        info.rackHandle = rack->handle;
-        for (u32 i = 0; i < config.option.maxVoices; ++i) {
-            rack->voices[i].handle = InsertHandle({HandleType::Voice, system, rack, i});
-        }
-
-        system->racks.push_back(rack->handle);
-        system->info->rackCount = static_cast<u32>(system->racks.size());
-        *outHandle = rack->handle;
-        return ORBIS_OK;
+        (is_system ? systems : racks).emplace(created.value, context);
     } catch (const std::bad_alloc&) {
-        if (rack && rack->handle) {
-            std::scoped_lock lock{registryMutex};
-            for (u32 i = 0; i < config.option.maxVoices; ++i) {
-                handles.erase(rack->voices[i].handle);
-            }
-
-            handles.erase(rack->handle);
-        }
-
+        if (is_system)
+            (void)registry.DestroySystem(created.value);
+        else
+            (void)registry.DestroyRack(created.value);
         return ORBIS_NGS2_ERROR_EMPTY_BUFFER;
     }
+    const auto handle = static_cast<OrbisNgs2Handle>(created.value);
+    WriteGuest(static_cast<OrbisNgs2Handle*>(context.buffer.hostBuffer), handle);
+    WriteGuest(out, handle);
+    return 0;
+}
+s32 Create(Context context, bool is_system, const OrbisNgs2ContextBufferInfo* buffer,
+           const OrbisNgs2BufferAllocator* allocator, bool use_allocator, OrbisNgs2Handle* out) {
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    if (!is_system) {
+        const std::lock_guard lock{runtime_mutex};
+        const auto parent = systems.find(context.parent);
+        if (parent == systems.end())
+            return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
+        if (context.rack.base.maxGrainSamples < parent->second.system.numGrainSamples)
+            return ORBIS_NGS2_ERROR_INVALID_MAX_GRAIN_SAMPLES;
+    }
+    if (!use_allocator) {
+        if (!ReadGuest(buffer, context.buffer))
+            return ORBIS_NGS2_ERROR_INVALID_BUFFER_INFO;
+        return Publish(context, is_system, out);
+    }
+    OrbisNgs2BufferAllocator callbacks{};
+    if (!ReadGuest(allocator, callbacks) || !Callable(callbacks.allocHandler) ||
+        (callbacks.freeHandler && !Callable(callbacks.freeHandler)))
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALLOCATOR;
+    context.buffer.hostBufferSize = ContextBytes;
+    context.buffer.userData = callbacks.userData;
+    context.free = callbacks.freeHandler;
+    const s32 allocated = callbacks.allocHandler(&context.buffer);
+    if (allocated < 0)
+        return allocated; // A failed allocation retains ownership in the callback.
+    const s32 result = Publish(context, is_system, out);
+    if (result < 0)
+        (void)Release(context);
+    return result;
 }
 
+s32 Destroy(OrbisNgs2Handle handle, bool is_system, OrbisNgs2ContextBufferInfo* out) {
+    Context removed;
+    std::map<OrbisNgs2Handle, Context> children;
+    {
+        const std::lock_guard lock{runtime_mutex};
+        auto& objects = is_system ? systems : racks;
+        const auto it = objects.find(handle);
+        if (it == objects.end())
+            return is_system ? ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE
+                             : ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
+        if (out && !WritableGuest(out))
+            return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+        removed = it->second;
+        RemoveVoices(handle, is_system);
+        if (is_system) {
+            (void)registry.DestroySystem(handle);
+            for (auto child = racks.begin(); child != racks.end();) {
+                if (child->second.parent == handle)
+                    children.insert(racks.extract(child++));
+                else
+                    ++child;
+            }
+        } else {
+            (void)registry.DestroyRack(handle);
+        }
+        objects.erase(it);
+        if (out)
+            WriteGuest(out, removed.buffer);
+    }
+    // Invalidate every descendant before the first free callback, so callback
+    // re-entry can neither resurrect nor double-destroy a child.
+    s32 result{};
+    for (auto& [child, context] : children) {
+        const s32 freed = Release(context);
+        if (freed < 0 && result == 0)
+            result = freed;
+    }
+    const s32 freed = Release(removed);
+    return result < 0 ? result : freed;
+}
+s32 GetUserData(OrbisNgs2Handle handle, bool is_system, uintptr_t* out) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto& objects = is_system ? systems : racks;
+    const auto it = objects.find(handle);
+    if (it == objects.end())
+        return is_system ? ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE
+                         : ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    WriteGuest(out, it->second.user_data);
+    return 0;
+}
+s32 SetUserData(OrbisNgs2Handle handle, bool is_system, uintptr_t value) {
+    const std::lock_guard lock{runtime_mutex};
+    auto& objects = is_system ? systems : racks;
+    const auto it = objects.find(handle);
+    if (it == objects.end())
+        return is_system ? ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE
+                         : ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
+    it->second.user_data = value;
+    return 0;
+}
 } // namespace
 
-s32 SystemQueryBufferSize(const OrbisNgs2SystemOption* option,
-                          OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    if (!outBufferInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    OrbisNgs2SystemOption normalized;
-    const auto result = ReadSystemOption(option, normalized);
-    if (result >= 0) {
-        QueryBuffer(*outBufferInfo, SystemBufferSize(normalized));
-    }
-
-    return result;
+s32 PS4_SYSV_ABI sceNgs2SystemResetOption(OrbisNgs2SystemOption* out) {
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OPTION_ADDRESS;
+    WriteGuest(out, DefaultSystem);
+    return 0;
 }
-
-s32 SystemCreate(const OrbisNgs2SystemOption* option, const OrbisNgs2ContextBufferInfo* bufferInfo,
-                 OrbisNgs2Handle* outHandle) {
-    if (!bufferInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_BUFFER_INFO;
-    }
-
-    if (!outHandle) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    OrbisNgs2SystemOption normalized;
-    const auto result = ReadSystemOption(option, normalized);
-    return result < 0 ? result : CreateSystem(normalized, *bufferInfo, nullptr, outHandle);
+s32 PS4_SYSV_ABI sceNgs2SystemQueryBufferSize(const OrbisNgs2SystemOption* option,
+                                              OrbisNgs2ContextBufferInfo* out) {
+    OrbisNgs2SystemOption copy;
+    const s32 result = SystemOptions(option, copy);
+    return result < 0 ? result : QueryBuffer(out);
 }
-
-s32 SystemCreateWithAllocator(const OrbisNgs2SystemOption* option,
-                              const OrbisNgs2BufferAllocator* allocator,
-                              OrbisNgs2Handle* outHandle) {
-    if (!allocator || !allocator->allocHandler) {
-        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALLOCATOR;
-    }
-
-    if (!outHandle) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    const auto callbacks = *allocator;
-    OrbisNgs2SystemOption normalized;
-    auto result = ReadSystemOption(option, normalized);
-    if (result < 0) {
-        return result;
-    }
-
-    OrbisNgs2ContextBufferInfo buffer{};
-    QueryBuffer(buffer, SystemBufferSize(normalized));
-    buffer.userData = callbacks.userData;
-    result = callbacks.allocHandler(&buffer);
-    if (result < 0) {
-        return result;
-    }
-
-    result = ReadSystemOption(option, normalized);
-    if (result >= 0) {
-        result = CreateSystem(normalized, buffer, callbacks.freeHandler, outHandle);
-    }
-
-    if (result < 0 && callbacks.freeHandler) {
-        callbacks.freeHandler(&buffer);
-    }
-
-    return result;
+s32 PS4_SYSV_ABI sceNgs2SystemCreate(const OrbisNgs2SystemOption* option,
+                                     const OrbisNgs2ContextBufferInfo* buffer,
+                                     OrbisNgs2Handle* out) {
+    Context context;
+    const s32 result = SystemOptions(option, context.system);
+    return result < 0 ? result : Create(context, true, buffer, nullptr, false, out);
 }
-
-s32 SystemDestroy(OrbisNgs2Handle systemHandle, OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    auto object = LockedHandle{systemHandle, HandleType::System};
-    if (!object) {
+s32 PS4_SYSV_ABI sceNgs2SystemCreateWithAllocator(const OrbisNgs2SystemOption* option,
+                                                  const OrbisNgs2BufferAllocator* allocator,
+                                                  OrbisNgs2Handle* out) {
+    Context context;
+    const s32 result = SystemOptions(option, context.system);
+    return result < 0 ? result : Create(context, true, nullptr, allocator, true, out);
+}
+s32 PS4_SYSV_ABI sceNgs2SystemDestroy(OrbisNgs2Handle handle, OrbisNgs2ContextBufferInfo* out) {
+    return Destroy(handle, true, out);
+}
+s32 PS4_SYSV_ABI sceNgs2RackQueryBufferSize(u32 id, const OrbisNgs2RackOption* option,
+                                            OrbisNgs2ContextBufferInfo* out) {
+    RackOptions copy;
+    const s32 result = ReadRackOptions(id, option, copy);
+    return result < 0 ? result : QueryBuffer(out);
+}
+s32 PS4_SYSV_ABI sceNgs2RackCreate(OrbisNgs2Handle system, u32 id,
+                                   const OrbisNgs2RackOption* option,
+                                   const OrbisNgs2ContextBufferInfo* buffer, OrbisNgs2Handle* out) {
+    Context context;
+    context.parent = system;
+    context.rack_id = id;
+    const s32 result = ReadRackOptions(id, option, context.rack);
+    return result < 0 ? result : Create(context, false, buffer, nullptr, false, out);
+}
+s32 PS4_SYSV_ABI sceNgs2RackCreateWithAllocator(OrbisNgs2Handle system, u32 id,
+                                                const OrbisNgs2RackOption* option,
+                                                const OrbisNgs2BufferAllocator* allocator,
+                                                OrbisNgs2Handle* out) {
+    Context context;
+    context.parent = system;
+    context.rack_id = id;
+    const s32 result = ReadRackOptions(id, option, context.rack);
+    return result < 0 ? result : Create(context, false, nullptr, allocator, true, out);
+}
+s32 PS4_SYSV_ABI sceNgs2RackDestroy(OrbisNgs2Handle handle, OrbisNgs2ContextBufferInfo* out) {
+    return Destroy(handle, false, out);
+}
+s32 PS4_SYSV_ABI sceNgs2RackGetVoiceHandle(OrbisNgs2Handle rack, u32 index, OrbisNgs2Handle* out) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto result = registry.GetVoice(rack, index);
+    if (!result)
+        return result.error == HandleError::InvalidHandle ? ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE
+                                                          : ORBIS_NGS2_ERROR_INVALID_VOICE_INDEX;
+    if (!WritableGuest(out))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    WriteGuest(out, static_cast<OrbisNgs2Handle>(result.value));
+    return 0;
+}
+s32 PS4_SYSV_ABI sceNgs2VoiceGetOwner(OrbisNgs2Handle voice, OrbisNgs2Handle* rack, u32* index) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto identity = registry.GetVoiceIdentity(voice);
+    if (!identity)
+        return ORBIS_NGS2_ERROR_INVALID_VOICE_HANDLE;
+    if ((rack && !WritableGuest(rack)) || (index && !WritableGuest(index)))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    if (rack)
+        WriteGuest(rack, static_cast<OrbisNgs2Handle>(identity->rack));
+    if (index)
+        WriteGuest(index, identity->index);
+    return 0;
+}
+s32 PS4_SYSV_ABI sceNgs2SystemGetInfo(OrbisNgs2Handle handle, OrbisNgs2SystemInfo* out,
+                                      size_t size) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto it = systems.find(handle);
+    if (it == systems.end())
         return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    auto system = object.entry.system;
-
-    // Firmware detaches racks here but their handles and buffers survive until
-    // RackDestroy.
-    for (const auto rackHandle : system->racks) {
-        auto entry = FindHandle(rackHandle, HandleType::Rack);
-        entry.rack->info->ownerSystemHandle = 0;
-    }
-
-    system->racks.clear();
-    system->info->rackCount = 0;
-    system->alive = false;
-
-    {
-        std::scoped_lock lock{registryMutex};
-        handles.erase(systemHandle);
-    }
-
-    ReleasedBuffer released{system->buffer, system->freeHandler};
-    object.lock.unlock();
-    released.Release(outBufferInfo);
-    return ORBIS_OK;
-}
-
-s32 RackQueryBufferSize(u32 rackId, const OrbisNgs2RackOption* option,
-                        OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    RackConfig config;
-    const auto result = ReadRackOption(rackId, option, config);
-    if (result < 0) {
-        return result;
-    }
-
-    if (!outBufferInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    QueryBuffer(*outBufferInfo, RackBufferSize(config));
-    return ORBIS_OK;
-}
-
-s32 RackCreate(OrbisNgs2Handle systemHandle, u32 rackId, const OrbisNgs2RackOption* option,
-               const OrbisNgs2ContextBufferInfo* bufferInfo, OrbisNgs2Handle* outHandle) {
-    RackConfig config;
-    auto result = ReadRackOption(rackId, option, config);
-    if (result < 0) {
-        return result;
-    }
-
-    if (!bufferInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_BUFFER_INFO;
-    }
-
-    if (!outHandle) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    return CreateRack(system.entry.system, config, *bufferInfo, nullptr, outHandle);
-}
-
-s32 RackCreateWithAllocator(OrbisNgs2Handle systemHandle, u32 rackId,
-                            const OrbisNgs2RackOption* option,
-                            const OrbisNgs2BufferAllocator* allocator, OrbisNgs2Handle* outHandle) {
-    RackConfig config;
-    auto result = ReadRackOption(rackId, option, config);
-    if (result < 0) {
-        return result;
-    }
-
-    if (!allocator || !allocator->allocHandler) {
-        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALLOCATOR;
-    }
-
-    if (!outHandle) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    const auto callbacks = *allocator;
-    OrbisNgs2ContextBufferInfo buffer{};
-    QueryBuffer(buffer, RackBufferSize(config));
-    buffer.userData = callbacks.userData;
-    result = callbacks.allocHandler(&buffer);
-    if (result < 0) {
-        return result;
-    }
-
-    result = ReadRackOption(rackId, option, config);
-    if (result >= 0) {
-        auto system = LockedHandle{systemHandle, HandleType::System};
-        result = system ? CreateRack(system.entry.system, config, buffer, callbacks.freeHandler,
-                                     outHandle)
-                        : ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    if (result < 0 && callbacks.freeHandler) {
-        callbacks.freeHandler(&buffer);
-    }
-
-    return result;
-}
-
-s32 RackDestroy(OrbisNgs2Handle rackHandle, OrbisNgs2ContextBufferInfo* outBufferInfo) {
-    auto rack = LockedHandle{rackHandle, HandleType::Rack};
-    if (!rack) {
-        return ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
-    }
-
-    auto released = RemoveRack(rack.entry.rack);
-    rack.lock.unlock();
-    released.Release(outBufferInfo);
-    return ORBIS_OK;
-}
-
-s32 RackGetVoiceHandle(OrbisNgs2Handle rackHandle, u32 voiceIndex, OrbisNgs2Handle* outHandle) {
-    if (!outHandle) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    auto rack = LockedHandle{rackHandle, HandleType::Rack};
-    if (!rack) {
-        *outHandle = 0;
-        return ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
-    }
-
-    if (voiceIndex >= rack.entry.rack->config.option.maxVoices) {
-        *outHandle = 0;
-        return ORBIS_NGS2_ERROR_INVALID_VOICE_INDEX;
-    }
-
-    *outHandle = rack.entry.rack->voices[voiceIndex].handle;
-    return ORBIS_OK;
-}
-
-s32 SystemEnumHandles(OrbisNgs2Handle* aOutHandle, u32 maxHandles) {
-    if (!aOutHandle && maxHandles) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    std::scoped_lock lock{registryMutex};
-    u32 count{};
-    for (const auto& [handle, entry] : handles) {
-        if (entry.type == HandleType::System) {
-            if (count < maxHandles) {
-                aOutHandle[count] = handle;
-            }
-
-            ++count;
-        }
-    }
-
-    return count;
-}
-
-s32 SystemEnumRackHandles(OrbisNgs2Handle systemHandle, OrbisNgs2Handle* aOutHandle,
-                          u32 maxHandles) {
-    if (!aOutHandle && maxHandles) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    const auto& racks = system.entry.system->racks;
-    if (maxHandles) {
-        std::copy_n(racks.begin(), std::min<size_t>(racks.size(), maxHandles), aOutHandle);
-    }
-
-    return static_cast<s32>(racks.size());
-}
-
-s32 SystemGetInfo(OrbisNgs2Handle systemHandle, OrbisNgs2SystemInfo* outInfo, size_t infoSize) {
-    if (!outInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    if (infoSize < sizeof(*outInfo)) {
+    if (size < sizeof(*out))
         return ORBIS_NGS2_ERROR_INVALID_OUT_SIZE;
-    }
-
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    *outInfo = *system.entry.system->info;
-    return ORBIS_OK;
-}
-
-s32 RackGetInfo(OrbisNgs2Handle rackHandle, OrbisNgs2RackInfo* outInfo, size_t infoSize) {
-    if (!outInfo) {
+    if (!WritableGuest(out))
         return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    if (infoSize < sizeof(*outInfo)) {
+    OrbisNgs2SystemInfo info{};
+    const auto& context = it->second;
+    std::memcpy(info.name, context.system.name, sizeof(info.name));
+    info.systemHandle = handle;
+    info.renderCount = static_cast<s64>(context.render_count);
+    info.bufferInfo = context.buffer;
+    info.uid = static_cast<u32>(handle);
+    info.minGrainSamples = 64;
+    info.maxGrainSamples = context.system.maxGrainSamples;
+    info.sampleRate = context.system.sampleRate;
+    info.numGrainSamples = context.system.numGrainSamples;
+    info.rackCount =
+        static_cast<u32>(std::count_if(racks.begin(), racks.end(), [handle](const auto& pair) {
+            return pair.second.parent == handle;
+        }));
+    WriteGuest(out, info);
+    return 0;
+}
+s32 PS4_SYSV_ABI sceNgs2RackGetInfo(OrbisNgs2Handle handle, OrbisNgs2RackInfo* out, size_t size) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto it = racks.find(handle);
+    if (it == racks.end())
+        return ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
+    if (size < sizeof(*out))
         return ORBIS_NGS2_ERROR_INVALID_OUT_SIZE;
+    const auto& context = it->second;
+    const auto& option = context.rack;
+    OrbisNgs2RackInfo info{};
+    std::memcpy(info.name, option.base.name, sizeof(info.name));
+    info.rackHandle = handle;
+    info.renderCount = context.render_count;
+    info.bufferInfo = context.buffer;
+    info.ownerSystemHandle = context.parent;
+    info.type = context.rack_id;
+    info.rackId = context.rack_id;
+    info.uid = static_cast<u32>(handle);
+    info.minGrainSamples = 64;
+    info.maxGrainSamples = option.base.maxGrainSamples;
+    info.maxVoices = option.base.maxVoices;
+    info.maxChannelWorks = context.rack_id == u32(RackKind::Sampler)
+                               ? option.sampler.maxChannelWorks
+                               : option.channels;
+    info.maxInputs = option.submixer.maxInputs;
+    info.maxMatrices = option.base.maxMatrices;
+    info.maxPorts = option.base.maxPorts;
+    // If the caller supplies the known extended info structure, populate it as
+    // well. A short/base query must never overrun its actual output allocation.
+    OrbisNgs2SamplerRackInfo sampler{info,
+                                     option.sampler.maxChannelWorks,
+                                     option.sampler.maxCodecCaches,
+                                     option.sampler.maxWaveformBlocks,
+                                     option.sampler.maxEnvelopePoints,
+                                     option.sampler.maxFilters,
+                                     option.sampler.maxAtrac9Decoders,
+                                     option.sampler.maxAtrac9ChannelWorks,
+                                     option.sampler.maxAjmAtrac9Decoders};
+    OrbisNgs2SubmixerRackInfo submixer{info, option.channels, option.submixer.maxEnvelopePoints,
+                                       option.submixer.maxFilters, option.submixer.maxInputs};
+    OrbisNgs2MasteringRackInfo mastering{info, option.channels, 0};
+    const void* data = &info;
+    size_t written = sizeof(info);
+    if (context.rack_id == u32(RackKind::Sampler) && size >= sizeof(sampler)) {
+        data = &sampler;
+        written = sizeof(sampler);
+    } else if (context.rack_id == u32(RackKind::Submixer) && size >= sizeof(submixer)) {
+        data = &submixer;
+        written = sizeof(submixer);
+    } else if (context.rack_id == u32(RackKind::Mastering) && size >= sizeof(mastering)) {
+        data = &mastering;
+        written = sizeof(mastering);
     }
-
-    auto rack = LockedHandle{rackHandle, HandleType::Rack};
-    if (!rack) {
-        return ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
-    }
-
-    const auto& context = *rack.entry.rack;
-    std::array<u8, sizeof(OrbisNgs2SamplerRackInfo)> info{};
-    std::memcpy(info.data(), context.info, sizeof(*outInfo));
-
-    auto extra = context.config.extra;
-    size_t extraCount{};
-    switch (context.config.id) {
-    case RackId::Sampler:
-        extra[0] = context.config.maxChannelWorks;
-        extra[1] = extra[7] ? extra[1] : 0;
-        extra[6] = extra[5] ? extra[6] : 0;
-        extraCount = 8;
-        break;
-    case RackId::Submixer:
-        extraCount = 4;
-        break;
-    case RackId::Reverb:
-        extraCount = 2;
-        break;
-    case RackId::Mastering:
-        extra[1] = 0;
-        extraCount = 2;
-        break;
-    default:
-        break;
-    }
-
-    std::memcpy(info.data() + sizeof(*outInfo), extra.data(), extraCount * sizeof(u32));
-    std::memcpy(outInfo, info.data(),
-                std::min(infoSize, sizeof(*outInfo) + extraCount * sizeof(u32)));
-    return ORBIS_OK;
-}
-
-s32 SystemGetUserData(OrbisNgs2Handle systemHandle, uintptr_t* outUserData) {
-    if (!outUserData) {
+    if (!GuestAccessible(out, written, GuestAccess::Write))
         return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    *outUserData = system ? system.entry.system->userData : 0;
-    return system ? ORBIS_OK : ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
+    std::memcpy(out, data, written);
+    return 0;
 }
-
-s32 RackGetUserData(OrbisNgs2Handle rackHandle, uintptr_t* outUserData) {
-    if (!outUserData) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    auto rack = LockedHandle{rackHandle, HandleType::Rack};
-    *outUserData = rack ? rack.entry.rack->userData : 0;
-    return rack ? ORBIS_OK : ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
+s32 PS4_SYSV_ABI sceNgs2SystemGetUserData(OrbisNgs2Handle handle, uintptr_t* out) {
+    return GetUserData(handle, true, out);
 }
-
-s32 SystemSetUserData(OrbisNgs2Handle systemHandle, uintptr_t userData) {
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
+s32 PS4_SYSV_ABI sceNgs2RackGetUserData(OrbisNgs2Handle handle, uintptr_t* out) {
+    return GetUserData(handle, false, out);
+}
+s32 PS4_SYSV_ABI sceNgs2SystemSetUserData(OrbisNgs2Handle handle, uintptr_t value) {
+    return SetUserData(handle, true, value);
+}
+s32 PS4_SYSV_ABI sceNgs2RackSetUserData(OrbisNgs2Handle handle, uintptr_t value) {
+    return SetUserData(handle, false, value);
+}
+s32 PS4_SYSV_ABI sceNgs2SystemSetGrainSamples(OrbisNgs2Handle handle, u32 samples) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto it = systems.find(handle);
+    if (it == systems.end())
         return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    system.entry.system->userData = userData;
-    return ORBIS_OK;
-}
-
-s32 RackSetUserData(OrbisNgs2Handle rackHandle, uintptr_t userData) {
-    auto rack = LockedHandle{rackHandle, HandleType::Rack};
-    if (!rack) {
-        return ORBIS_NGS2_ERROR_INVALID_RACK_HANDLE;
-    }
-
-    rack.entry.rack->userData = userData;
-    return ORBIS_OK;
-}
-
-s32 SystemSetGrainSamples(OrbisNgs2Handle systemHandle, u32 numSamples) {
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
-        return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    if (!ValidGrain(numSamples) || numSamples > system.entry.system->info->maxGrainSamples) {
+    if (std::ranges::any_of(racks, [=](const auto& pair) {
+            return pair.second.parent == handle && pair.second.rack.base.maxGrainSamples < samples;
+        }))
         return ORBIS_NGS2_ERROR_INVALID_NUM_GRAIN_SAMPLES;
-    }
-
-    system.entry.system->info->numGrainSamples = numSamples;
-    return ORBIS_OK;
+    if (registry.SetGrainSamples(handle, samples) != HandleError::None)
+        return ORBIS_NGS2_ERROR_INVALID_NUM_GRAIN_SAMPLES;
+    it->second.system.numGrainSamples = samples;
+    return 0;
 }
-
-s32 SystemSetSampleRate(OrbisNgs2Handle systemHandle, u32 sampleRate) {
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
+s32 PS4_SYSV_ABI sceNgs2SystemSetSampleRate(OrbisNgs2Handle handle, u32 rate) {
+    const std::lock_guard lock{runtime_mutex};
+    const auto it = systems.find(handle);
+    if (it == systems.end())
         return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    if (!ValidSampleRate(sampleRate)) {
+    if (registry.SetSampleRate(handle, rate) != HandleError::None)
         return ORBIS_NGS2_ERROR_INVALID_SAMPLE_RATE;
-    }
-
-    system.entry.system->info->sampleRate = sampleRate;
-    return ORBIS_OK;
+    it->second.system.sampleRate = rate;
+    return 0;
 }
-
-s32 VoiceGetOwner(OrbisNgs2Handle voiceHandle, OrbisNgs2Handle* outRackHandle, u32* outVoiceId) {
-    auto voice = LockedHandle{voiceHandle, HandleType::Voice};
-    if (!voice) {
-        return ORBIS_NGS2_ERROR_INVALID_VOICE_HANDLE;
-    }
-
-    if (outRackHandle) {
-        *outRackHandle = voice.entry.rack->handle;
-    }
-
-    if (outVoiceId) {
-        *outVoiceId = voice.entry.voiceIndex;
-    }
-
-    return ORBIS_OK;
-}
-
-s32 VoiceGetStateFlags(OrbisNgs2Handle voiceHandle, u32* outStateFlags) {
-    if (!outStateFlags) {
+s32 PS4_SYSV_ABI sceNgs2SystemEnumHandles(OrbisNgs2Handle* out, u32 capacity) {
+    const std::lock_guard lock{runtime_mutex};
+    if (!capacity)
+        return static_cast<s32>(systems.size());
+    const size_t count = std::min<size_t>(capacity, systems.size());
+    if (count && !GuestAccessible(out, count * sizeof(*out), GuestAccess::Write))
         return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    size_t index{};
+    for (const auto& [handle, context] : systems) {
+        if (index == count)
+            break;
+        WriteGuest(out + index++, handle);
     }
-
-    auto voice = LockedHandle{voiceHandle, HandleType::Voice};
-    *outStateFlags = voice ? voice.entry.rack->voices[voice.entry.voiceIndex].state : 0;
-    return voice ? ORBIS_OK : ORBIS_NGS2_ERROR_INVALID_VOICE_HANDLE;
+    return static_cast<s32>(count);
 }
-
-s32 VoiceGetState(OrbisNgs2Handle voiceHandle, OrbisNgs2VoiceState* outState, size_t stateSize) {
-    if (!outState) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
-    }
-
-    if (stateSize < sizeof(*outState)) {
-        return ORBIS_NGS2_ERROR_INVALID_OUT_SIZE;
-    }
-
-    auto voice = LockedHandle{voiceHandle, HandleType::Voice};
-    if (!voice) {
-        return ORBIS_NGS2_ERROR_INVALID_VOICE_HANDLE;
-    }
-
-    const auto id = voice.entry.rack->config.id;
-    const size_t fullSize = id == RackId::Sampler    ? sizeof(OrbisNgs2SamplerVoiceState)
-                            : id == RackId::Submixer ? sizeof(OrbisNgs2SubmixerVoiceState)
-                            : id == RackId::Reverb   ? sizeof(OrbisNgs2ReverbVoiceState)
-                                                     : sizeof(OrbisNgs2MasteringVoiceState);
-
-    // Firmware accepts intermediate sizes without writing any part of the state.
-    if (stateSize == sizeof(*outState) || stateSize >= fullSize) {
-        std::memset(outState, 0, stateSize == sizeof(*outState) ? sizeof(*outState) : fullSize);
-        outState->stateFlags = voice.entry.rack->voices[voice.entry.voiceIndex].state;
-    }
-
-    return ORBIS_OK;
-}
-
-s32 SystemRender(OrbisNgs2Handle systemHandle, const OrbisNgs2RenderBufferInfo* aBufferInfo,
-                 u32 numBufferInfo) {
-    auto system = LockedHandle{systemHandle, HandleType::System};
-    if (!system) {
+s32 PS4_SYSV_ABI sceNgs2SystemEnumRackHandles(OrbisNgs2Handle system, OrbisNgs2Handle* out,
+                                              u32 capacity) {
+    const std::lock_guard lock{runtime_mutex};
+    if (!systems.contains(system))
         return ORBIS_NGS2_ERROR_INVALID_SYSTEM_HANDLE;
-    }
-
-    if (numBufferInfo > 16 || !numBufferInfo || !aBufferInfo) {
-        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ADDRESS;
-    }
-
-    const auto buffers = std::span{aBufferInfo, numBufferInfo};
-    const size_t grain = system.entry.system->info->numGrainSamples;
-    s32 result = ORBIS_OK;
-
-    for (const auto& buffer : buffers) {
-        if (buffer.numChannels != 1 && buffer.numChannels != 2 && buffer.numChannels != 6 &&
-            buffer.numChannels != 8) {
-            result = ORBIS_NGS2_ERROR_INVALID_NUM_CHANNELS;
+    const size_t total = std::count_if(racks.begin(), racks.end(), [system](const auto& pair) {
+        return pair.second.parent == system;
+    });
+    if (!capacity)
+        return static_cast<s32>(total);
+    const size_t count = std::min<size_t>(capacity, total);
+    if (count && !GuestAccessible(out, count * sizeof(*out), GuestAccess::Write))
+        return ORBIS_NGS2_ERROR_INVALID_OUT_ADDRESS;
+    size_t index{};
+    for (const auto& [handle, context] : racks) {
+        if (index == count)
             break;
-        }
-
-        const auto type = static_cast<RenderWaveformType>(buffer.waveformType);
-        if (type != RenderWaveformType::PcmI16LittleEndian &&
-            type != RenderWaveformType::PcmI16BigEndian &&
-            type != RenderWaveformType::PcmF32LittleEndian &&
-            type != RenderWaveformType::PcmF32BigEndian) {
-            result = ORBIS_NGS2_ERROR_INVALID_WAVEFORM_TYPE;
-            break;
-        }
-
-        if (!buffer.buffer) {
-            result = ORBIS_NGS2_ERROR_INVALID_BUFFER_ADDRESS;
-            break;
-        }
-
-        const size_t bytes = type == RenderWaveformType::PcmI16LittleEndian ||
-                                     type == RenderWaveformType::PcmI16BigEndian
-                                 ? 2
-                                 : 4;
-        const size_t required = bytes * buffer.numChannels * grain;
-        if (buffer.bufferSize < required) {
-            result = ORBIS_NGS2_ERROR_INVALID_BUFFER_SIZE;
-            break;
-        }
+        if (context.parent == system)
+            WriteGuest(out + index++, handle);
     }
-
-    for (const auto& buffer : buffers) {
-        if (buffer.buffer) {
-            const auto type = static_cast<RenderWaveformType>(buffer.waveformType);
-            const size_t bytes = type == RenderWaveformType::PcmI16LittleEndian ||
-                                         type == RenderWaveformType::PcmI16BigEndian
-                                     ? 2
-                                     : 4;
-            std::memset(buffer.buffer, 0,
-                        result < 0 ? buffer.bufferSize : bytes * buffer.numChannels * grain);
-        }
-    }
-
-    if (result >= 0) {
-        ++system.entry.system->info->renderCount;
-    }
-
-    return result;
+    return static_cast<s32>(count);
 }
 
-} // namespace Libraries::Ngs2::Impl
+s32 SystemSetup(const OrbisNgs2SystemOption* option, OrbisNgs2ContextBufferInfo* buffer,
+                OrbisNgs2BufferFreeHandler free, OrbisNgs2Handle* out) {
+    if (!out)
+        return sceNgs2SystemQueryBufferSize(option, buffer);
+    Context context;
+    const s32 result = SystemOptions(option, context.system);
+    if (result < 0)
+        return result;
+    if (!ReadGuest(buffer, context.buffer))
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_INFO;
+    if (free && !Callable(free))
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ALLOCATOR;
+    context.free = free;
+    return Publish(context, true, out);
+}
+s32 SystemCleanup(OrbisNgs2Handle handle, OrbisNgs2ContextBufferInfo* out) {
+    return sceNgs2SystemDestroy(handle, out);
+}
+s32 RackQueryBufferSize(const OrbisNgs2RackOption* option, OrbisNgs2ContextBufferInfo* out) {
+    if (!out)
+        return ORBIS_NGS2_ERROR_INVALID_BUFFER_ADDRESS;
+    return sceNgs2RackQueryBufferSize(u32(RackKind::Sampler), option, out);
+}
+} // namespace Libraries::Ngs2

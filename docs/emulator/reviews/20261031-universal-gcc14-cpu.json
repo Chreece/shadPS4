@@ -1,0 +1,27 @@
+{
+  "schema_version": 2,
+  "record_id": "universal-upstream-gcc14-cpu-regressions-20261031",
+  "timestamp_utc": "2026-10-31T16:45:49.932060+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 118,
+  "published_source_commit": "b887fac9766449d8c625b5d383b0da199ed2fa93",
+  "production_source_tree": "aafe1aca2eeba7f42cbb8bedb4f07d0672a58319",
+  "compiler": "GCC14.2.0 Ubuntu SDK in isolated verified prefix",
+  "result": "PASS_FOCUSED_CPU_REGRESSIONS_ONLY",
+  "ctest_suites": 9,
+  "ctest_cases": 31,
+  "production_srt_checks": 10418,
+  "sparse_production_modes": [
+    "recorded operations",
+    "real Vulkan headers"
+  ],
+  "sparse_ranges_per_mode": 288,
+  "sparse_scenarios_per_mode": 7,
+  "sparse_baseline": "REPRODUCED_OLD_UPSTREAM_4GIB_BUFFER_EXCEEDS_4294967292_BYTE_LIMIT",
+  "native_app_build": "RUNNING_SEPARATELY",
+  "game_run": false,
+  "gpu_validation": false,
+  "source_only_capture_fixture": "PASS: C/C++ and root CMake only, shader/symlink excluded, hashes exact; not a user-host source capture",
+  "evidence": "docs/emulator/reviews/20261031-universal-cpu-tests.txt",
+  "host_runner_checks": "bash -n PASS; full CPU configure/build failures now included in archive; journal failure returns nonzero"
+}

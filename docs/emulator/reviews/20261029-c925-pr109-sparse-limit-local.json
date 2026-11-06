@@ -1,0 +1,60 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-shared-pr109-sparse-host-limit-local-20261029",
+  "recorded_on": "2026-10-29",
+  "record_type": "SHARED_FIX_REUSE_C925_ADAPTATION_LOCAL_TESTS_NATIVE_PENDING",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "context_games": ["CUSA11456", "CUSA34384"],
+  "tested_games": [],
+  "related_prs": [108,109],
+  "native_evidence_review": "20261029T064217332723Z-menu-resource-validation.json",
+  "confirmed_problem": "GoT core/sync validation reports VkBufferCreateInfo-size-06409:4294967296-byte buffer exceeds4294967292-byte host maximum. Existing GoW PR109 documents the identical violation. This is a per-buffer API limit, not an insufficient-free-VRAM diagnosis; dropping the final bytes is not a correct remedy.",
+  "pr108_preservation": {
+    "kept_label": true,
+    "merged": true,
+    "merged_head": "8268a83ffa025ebc9318129dded4e8a1fb1f5eb3",
+    "merge_commit": "3cb2d5dfbca84f2dfd084bc39712f41f3d78adb6",
+    "scope": "Native-tested patch/fixture/runner package preserved on fork main. Not a completed production-main C++ forward-port or upstream rebase. Current isolated native candidate already contains the exact mapping correction. Absence of01389 in the5.189-second GoT capture does not establish every upload path was exercised or menu recovery."
+  },
+  "shared_donor": {
+    "pr":109,
+    "ref":"385e31fa6f8c1bcb1d5ed030f1267f1168b28ec8",
+    "patch":"scripts/patchsets/sparse-buffer-host-limit-20261029.patch",
+    "patch_git_blob":"078127d4c82dd44631f4437267656ad504fc2cc6",
+    "fixture":"tools/development/sparse_arena_fixture.cpp.in",
+    "fixture_git_blob":"b069b44591ca557c20c0728e8fddcdb404f538e9",
+    "reuse":"Exact reviewed planner/GetArena/BindBackingToArena/SynchronizeSparseAliases semantics; host verifies the immutable donor patch and copied function equality before any mutation. No duplicate PR or shader-specific workaround."
+  },
+  "c925_package": {
+    "commit":"9bd1a3e4931ab60a320aeb10b797d170d520c32b",
+    "branch":"fix/sparse-buffer-host-limit-20261029",
+    "directory":"tools/development/c925_sparse_host_limit",
+    "donor_fragments_sha256":"718c77041b546c8671e70f12dcbfe1cf946f07471255bec7d8a91d6ac7c45a75",
+    "adapter_sha256":"5d4f214154e33154897e9b7badde11fb125cea7a1d61bb071531cac6908e239a",
+    "runner_sha256":"1fd17227581e5543be5e94d899daaa99fad987b580c6d5b3b61336810b3ceaf3",
+    "tests_sha256":"1eaf8bb2f7c400ab9d4dcf6fa99a0b28bf2f277d60a855146ae99b3e44c8dc6a",
+    "source_scope":"Five existing files and one new helper. Query actual maxBufferSize, size block-aligned sparse views, preserve complete requested ranges and shared physical backing, stable BDA owner, alias capability and memory dependencies. C925 public ForEachDmaBuffer iterator uses original backing owner rather than a coarse replaceable page hint. Existing DMA chunking, residency logs, readbacks/CMask and shader corrections retained.",
+    "limits":"A single aligned requested range genuinely exceeding the host limit, or required aliases without sparseResidencyAliased, fails explicitly. Broader emulation of such requests and native performance are not claimed solved. Conservative alias barriers may affect performance."
+  },
+  "local_tests": {
+    "cpp_gcc":"PASS baseline reproduces exact06409; corrected288 range cases and7 lifecycle/backing/BDA/DMA scenarios",
+    "cpp_clang":"PASS same baseline/corrected tests, C++23 Werror",
+    "clang_asan_ubsan":"PASS corrected288 ranges and7 scenarios",
+    "cpp_scope":"Exact transformed captured C925 functions, actual header DMA iterator and unchanged shared PR109 fixture with representative Vulkan recording types. Not actual Vulkan-device execution or full native shadPS4 compilation.",
+    "python":"16/16 PASS, final rerun0.261s with ResourceWarning as error",
+    "python_scope":"Actual archived source preservation, source/header refusal, source capture before refusal, donor-parser synthetic fixture, reapplication, real Git patch forward/reverse byte roundtrip, actual source/ELF rollback and external-edit preservation. Eight pipeline scenarios use explicitly mocked layer/native build/game/headroom actions; no hardware validation inferred.",
+    "complete_header_limit":"Full current vk_instance.h is not uploaded. Locally only the reviewed getter context fixture is used. Host captures the full header, requires a unique exact getter context and refuses changed/missing context before mutation. Actual host Vulkan-Hpp compile gate checks accessors, feature field ordering and sparse buffer flags, followed by mandatory full native compilation.",
+    "donor_limit":"Full remote donor patch could not be downloaded in the model container due DNS restrictions; reviewed method texts are used locally, and parser tests label their synthetic input. Host verifies full donor patch Git blob and exact copied method/helper correspondence before changing source. Original shared fixture blob was locally verified.",
+    "published_byte_parity":"Directory metadata at4429a190... confirms all four published Python Git blobs equal locally tested bytes. README added afterward without changing code."
+  },
+  "runner_guards":"Requires PR108 ELFcf775560... and prior verified record, all retained source hashes and corrected ImGui blob; rejects active builds/emulators. Existing layer probe and generated fixtures using actual host Vulkan headers pass before source writes. Checkpoint, incremental Ninja build with live stage output/heartbeat, restore old source/ELF on failure without overwriting concurrent external edits. No game after failed build. On success a copied private profile runs core/sync validation with first-error owned-process stop or118+2s cap, no input, unchanged8GiB gate and same-server actual-model-context/expiry restoration. Original saves/configs, protected GoT/GoW executables, SSH, Sunshine/X11 and launcher remain protected.",
+  "expected_input_elf":"cf775560a8eea04cffea06db21d296ecd9274a7fc9332a8cf48a6720784f0d6d",
+  "native_build_new_combination":"PENDING",
+  "runtime_validation_new_combination":"PENDING",
+  "menu_graphics":"UNVERIFIED; MISSING_MATERIAL_FILLS_AND_OVERLAYS_REMAIN_TARGET",
+  "no_identical_menu_freeze_inference":true,
+  "upstream_main_checked_not_integrated":"0614ce324be092791b758d79f93d9f1ca5b10a81",
+  "decision":"KEEP_PR108_NATIVE_CORRECTION; REUSE_EXISTING_PR109_AS_DRAFT; NO_NATIVE_BUFFER_FIX_OR_FULL_GRAPHICS_CLAIM_YET",
+  "next_test":"Run the exact C925 adaptation with real-header contracts and native build; if successful verify actual SparseArenaLimits/Window sizes and next core/sync diagnostic. Preserve guest range coverage and earlier shader improvements. Record all preflight/build/validation/visual outcomes in the common journal.",
+  "raw_game_data_published":false
+}

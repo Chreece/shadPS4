@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-upstream-pm4-20261028-prepared",
+  "recorded_at": "2026-10-28",
+  "scope": "Universal upstream command-processor fixes; GoW is the next validation title only",
+  "tested_games": [],
+  "gameplay": "NOT_RUN",
+  "retained_source": "94f118618609b3c3ee6e676d206a693c22b7e742",
+  "retained_binary_sha256": "b93633389dd17a06f0be08a0d56ea1bcda1483f4b36f22ebace72ad54af50888",
+  "previous_upstream": "ce74386283f559f2279a7c31416bcdc9359be0b3",
+  "checked_upstream": "7ea677e56d75bf3d90ace2b0a5144a665d1f38b6",
+  "upstream_fixes": [
+    {"pr":5542,"commit":"1b9d1591cc624df74866f26a29ab703f257738f8","fix":"Follow chained indirect buffers by replacing the current span instead of returning to its stale tail; graphics and indirect compute paths"},
+    {"pr":5541,"commit":"7ea677e56d75bf3d90ace2b0a5144a665d1f38b6","fix":"Read packet length before executing a packet that can signal the guest and permit command-buffer reuse; graphics and constant-engine paths"}
+  ],
+  "production_delta": {"path":"src/video_core/amdgpu/liverpool.cpp","additions":24,"deletions":3,"old_blob":"13405763e0bd41b9ac1b6c20e81a42b3e3d87eea","new_blob":"46629cf2b4f556cb9bcef81ad4b21e35db6c717e"},
+  "retention": "No custom renderer patch. Guarded merge of reviewed upstream with the exact latest native candidate; retain metadata ownership, CPU-write coherence, host-read publication, fault diagnostics and screenshot error capture. Verify that only liverpool.cpp changes relative to retained candidate.",
+  "local_tests": {
+    "source_identity":"Applying the reviewed upstream edits to the uploaded PR94 liverpool.cpp reproduced the official new Git blob exactly; last candidate's uploaded full-source-delta contains no liverpool.cpp change",
+    "cpp_scope":"Actual chain-transition blocks and packet-advance statements extracted from old/new production source, embedded in a CPU interpreter harness with modeled packet and callback types. Not the complete Liverpool coroutine implementation or GPU execution.",
+    "baseline":"PM4_BASELINE_DEFECTS=REPRODUCED snapshot_cases=1922 chain_cases=11",
+    "corrected":"PM4_UPSTREAM_SEMANTICS=PASS snapshot_cases=1922 chain_cases=11; covers ordinary calls, chain tail-transfer, nested call then chain, compute root versus indirect semantics, and 160 chained segments",
+    "compilers":"GCC and Clang strict C++23 release baseline/corrected runs PASS; corrected AddressSanitizer+UndefinedBehaviorSanitizer runs PASS on both compilers",
+    "initial_fixture_failure":"GCC -Werror rejected misleading indentation in two adjacent test if-statements. Added braces/separate lines; production upstream source unchanged. Final compiler runs passed.",
+    "runner":"Five real temporary-Git scenarios PASS: native-compile failure restores baseline; simulated runtime success restores baseline; simulated runtime failure returns nonzero and restores baseline; dirty initial source refused unchanged; external edit during simulated build preserved and restoration refused. Native compilation/game steps were stubbed only in these safety tests; C++ statement tests ran separately.",
+    "runtime_composition":"Actual previous host-generated runner passed strict source/hash/prefix substitution counts and bash -n. No game executed locally.",
+    "native_full_build":"PENDING",
+    "real_gpu_gameplay":"PENDING"
+  },
+  "runner_commit": "441bbd0e512b1673de39cdebf7130f91043e5406",
+  "runner_path": "scripts/shadps4_upstream_pm4_20261028.py",
+  "runner_blob": "b82b60ec044b12fa848bac526809a85d3b111385",
+  "runner_sha256": "72a275351adebd4ccde21f54fb3b1b7c408678c1e042fa46bac4301c386e9ff1",
+  "host_gates":"Require restored PR94 tree and all protected binary hashes; verify exact old/new Liverpool blobs and one-file upstream delta; run C++ regressions; compile actual command-processor object and full native link before one isolated 118+2-second game trial. Preserve new candidate separately, restore PR94 afterward, append shared local trials for success/failure.",
+  "causality_limit":"These are reviewed and already merged upstream correctness fixes, but the uploaded GoW archives do not prove that either original defect caused its device loss. Do not label the next candidate as recovered gameplay before runtime evidence.",
+  "decision":"TEST_OFFICIAL_PM4_FIXES_WITH_RETAINED_NATIVE_CORRECTIONS; NO_UNCHANGED_DIAGNOSTIC_RERUN"
+}
