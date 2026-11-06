@@ -1,0 +1,268 @@
+{
+  "schema_version": 2,
+  "record_id": "pr134-got-native-and-draw-bindings-20261103",
+  "reviewed_at": "2026-11-03T19:18:58.418739+00:00",
+  "pr": 135,
+  "pr_url": "https://github.com/Chreece/shadPS4/pull/135",
+  "implementation_commit": "67b85cc6864f4556b78375ad01f2f1a1757367a1",
+  "implementation_tree": "a4244bfd7df3623a7ca3167040fc21bb81eca798",
+  "parent": "711fd6def7d7208ae5e674c17cee239630862b28",
+  "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "result": "HOST_DRAW_BINDING_FIX_PASS_NATIVE_GAME_RECOVERY_PENDING",
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "native_evidence": {
+    "archive": "universal-two-games-20261103T190229Z-694996.tar.gz",
+    "sha256": "ee95c3f810b60d834f9721241502f013ec79daee30ca2d0e8474a43d9701bdac",
+    "library_file_id": "libfile_fe51c6bbd09c8191bca99ad5325f9108",
+    "source_commit": "7fb734fc992ca97a62a6ddb305ca831856dc6e00",
+    "runner_commit": "711fd6def7d7208ae5e674c17cee239630862b28",
+    "binary_sha256": "8e0d458a21e75446962f84cd8323bc695ac62323578c5e16dea3994727556e12",
+    "upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "tested_games": [
+      "CUSA11456"
+    ],
+    "gow": "NOT_RUN_AFTER_GOT_GPU_CONTEXT_LOSS",
+    "got": {
+      "binary_sha256": "8e0d458a21e75446962f84cd8323bc695ac62323578c5e16dea3994727556e12",
+      "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+      "duration_limit": 120,
+      "time_to_sigterm": 118,
+      "graphics_visual_acceptance": "NOT_OBSERVED",
+      "audio_audible_acceptance": "NOT_OBSERVED",
+      "gameplay_acceptance": "NOT_OBSERVED",
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png"
+      ],
+      "owned_child_terminated": true,
+      "exit_code": -11,
+      "owned_child_pid": 695036,
+      "exit_reason": "GPU_CONTEXT_LOST",
+      "elapsed_seconds": 62.175,
+      "gpu_failure": "radv/amdgpu: The CS has been cancelled because the context is lost. This context is guilty of a soft recovery.",
+      "srt_rejections": {},
+      "console_lines": 6859,
+      "warning_lines": 423,
+      "error_lines": 1346,
+      "graphics_diagnostics_active": true,
+      "graphics_event_sampled_max_counts": {
+        "enabled": 1,
+        "buffer-readback": 1024,
+        "image-readback": 8,
+        "image-read-demand": 8,
+        "conditional-exec": 8,
+        "image-buffer-write": 64,
+        "gpu-wait": 16,
+        "copy-layers": 6
+      },
+      "graphics_diagnostics_bytes": 7397,
+      "graphics_diagnostics_truncated": false,
+      "selected_diagnostic_lines": 420,
+      "full_console_bytes": 934924,
+      "console_excerpt_complete": true,
+      "gpu_memory_fault_reports": 0,
+      "gpu_memory_fault_pages": {},
+      "srt_source_preparations": 7,
+      "srt_source_blocks": {
+        "5508355:5508355": 1,
+        "5508356:5508356": 1,
+        "5508358:5508358": 1,
+        "5507459:5507459": 1,
+        "5507460:5507460": 1,
+        "5507462:5507462": 1,
+        "5507461:5507461": 1
+      },
+      "memory_histograms_truncated": false,
+      "validation_layer_active": true,
+      "validation_message_ids": {},
+      "first_validation_failure": null,
+      "validation_log_bytes": 290,
+      "validation_evidence_truncated": false,
+      "native_fault": {
+        "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+      }
+    },
+    "screenshots": [
+      {
+        "file": "frame-008s.png",
+        "sha256": "1eff0a2021e0e3f5ce80b143f025641562c53f9ac707c5616ae6ee05f1e62195",
+        "observation": "Emulator loading screen for Ghost of Tsushima."
+      },
+      {
+        "file": "frame-025s.png",
+        "sha256": "c4c3172d9d4d44458cc321284a906d34885b3621d3639c1b8977fe590c5f383e",
+        "observation": "PlayStation blue button-symbol intro at30FPS overlay; not menu or gameplay."
+      }
+    ],
+    "menu": "NOT_OBSERVED",
+    "gameplay": "NOT_OBSERVED",
+    "audio": "NOT_AUDITED",
+    "automatic_coherence_enabled": true,
+    "configured_readbacks_mode": 0,
+    "graphics_diagnostics_requested": true,
+    "vulkan_diagnostics_requested": true,
+    "vram_free_before": 25597632512,
+    "vram_free_at_launch": 25597632512,
+    "ollama_unloaded": [],
+    "ordered_gds_capture_requested": false,
+    "ordered_gds_captures": 0,
+    "captured_spirv": {
+      "modules": 15,
+      "validation": "PASS spirv-val --target-env vulkan1.3; structural validation does not prove execution/guest correctness."
+    },
+    "kernel_journal": "No entries; current user cannot read system journal. No inferred kernel reset detail."
+  },
+  "diagnostic_timeline": [
+    {
+      "ms": 38929,
+      "event": "Second image read demand completed."
+    },
+    {
+      "ms": 40252,
+      "event": "Wait tick3752 known3750 has timed out once after1016ms."
+    },
+    {
+      "ms": 47420,
+      "event": "Same wait has timed out8 times after8184ms."
+    },
+    {
+      "ms": 49496,
+      "event": "Further image readback and demand events prove CPU command preparation progressed again; sampled events do not establish exact wait return time/result."
+    },
+    {
+      "ms": 49848,
+      "event": "Six sampled array-layer copies completed recording; cannot attribute later fault to them."
+    },
+    {
+      "ms": 55068,
+      "event": "Wait tick3814 known3813 has5 timeouts,5102ms."
+    },
+    {
+      "elapsed_seconds": 62.175,
+      "event": "GPU context lost; master semaphore Refresh fails ErrorDeviceLost; process exited -11."
+    }
+  ],
+  "confirmed_host_defect": "BindVertexBuffers recorded setVertexInputEXT before ObtainBuffer. Automatic image publication can scheduler.Finish during acquisition, leaving input state on a submitted command buffer. Later index/indirect/count acquisitions can likewise discard earlier vertex/index bindings. Vulkan state is not inherited by a new command buffer.",
+  "causal_limit": "Latest native run has no draw-preparation tick instrumentation and no validation VUID; this host defect is not established as the cause of GoT GPU loss.",
+  "primary_references": [
+    "https://docs.vulkan.org/spec/latest/chapters/cmdbuffers.html",
+    "https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdSetVertexInputEXT.html"
+  ],
+  "changes": [
+    "Separate vertex/index resource acquisition from recording their Vulkan bindings.",
+    "Record dynamic vertex input, vertex buffers and optional index buffer on the final command buffer immediately before the draw pipeline/draw commands.",
+    "Preserve all buffer addresses, handles, offsets, sizes, strides, index widths, null behavior and capability-dependent paths.",
+    "Sample draw-preparation-flush events when resource preparation advances the submission tick."
+  ],
+  "validation": {
+    "production_host_reproducer": {
+      "source_functions": [
+        "Rasterizer::Draw",
+        "Rasterizer::DrawIndirect",
+        "Rasterizer::PrepareVertexBuffers / former BindVertexBuffers",
+        "Rasterizer::PrepareIndexBuffer / former BindIndexBuffer",
+        "Rasterizer::BindVertexBuffers",
+        "Rasterizer::BindIndexBuffer"
+      ],
+      "method": "Extract verbatim production bodies; mock buffer acquisition and independent command-buffer states. Simulate submissions at each of two vertex ranges, index, indirect arguments and count acquisitions. No GPU executed.",
+      "draw_cases": 12288,
+      "checks": 119808,
+      "baseline_failed_checks": 9752,
+      "candidate_failed_checks": 0,
+      "coverage": [
+        "direct, indirect, counted indirect",
+        "indexed/nonindexed,16/32-bit indices",
+        "dynamic/static vertex input",
+        "empty vertex bindings, null vertex slots",
+        "connected vertex range merging",
+        "maintenance5/6 and legacy/null-index fallback",
+        "all32 combinations of five acquisition submission points"
+      ],
+      "asan_ubsan": "PASS119808 checks; detect_leaks=0",
+      "leak_sanitizer": "NOT_RUN successfully: first attempt failed because /proc thread scan unavailable under ptrace. Separate ASan/UBSan retry passes."
+    },
+    "release_build": "PASS GCC14 Release after adding missing graphics_diagnostics.h include",
+    "initial_release_failure": "Four undeclared GraphicsDiagnostics errors in draw diagnostics; fixed the missing include, then compiled and linked successfully. Three pre-existing warnings also emitted in unchanged code (2 common.h nonnull,1 buffer_cache.cpp nodiscard). Retry log has no warnings/errors.",
+    "cpu_regressions": "PASS retained universal script,31 CTest cases plus all existing source/CPU contracts",
+    "actual_binary_startup": "PASS3 scenarios GPU_NOT_RUN",
+    "diff_check": "PASS",
+    "formatting": "clang-format18 changed lines only",
+    "new_repository_tests": false,
+    "logs": {
+      "nov3m-after.log": {
+        "bytes": 74,
+        "sha256": "dc2e10022cf868fec04d6264983b4042138de1449d3c8bbbc423c27760e8ddbf"
+      },
+      "nov3m-asan-ubsan.log": {
+        "bytes": 74,
+        "sha256": "dc2e10022cf868fec04d6264983b4042138de1449d3c8bbbc423c27760e8ddbf"
+      },
+      "nov3m-before.log": {
+        "bytes": 581,
+        "sha256": "ca4d8cb51bce0a6131328bf8f1861a3a089e45d052dccd29d170be6a6937f345"
+      },
+      "nov3m-build-retry.log": {
+        "bytes": 359,
+        "sha256": "e26872f4c7a65e85564b865b75bee5854296d671275dc75632f8736e11be1ecf"
+      },
+      "nov3m-build.log": {
+        "bytes": 27118,
+        "sha256": "dd8738d38d48cd856303b296fe1b4fa0d55a3e7d5f2f1d3174f3f7debcc08f7b"
+      },
+      "nov3m-cpu.log": {
+        "bytes": 6219,
+        "sha256": "9e03a63728a74f48170e26c21f42c7e382929f2ec39d641d70c95f327917ae63"
+      },
+      "nov3m-sanitize.log": {
+        "bytes": 266,
+        "sha256": "f62b0f6ed1474e6aac6a1a5fffd1f978c20f883d61fb685855ccd4327d891ed4"
+      },
+      "nov3m-startup.log": {
+        "bytes": 57,
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9"
+      }
+    },
+    "temporary_harness": {
+      "sha256": "d2af59d47152f3a8983aa617f0ee4ae6a220f50ca016c6fae828ad4fe1ffb0e9",
+      "before_cpp_sha256": "d896e15fc66e353c223b00c5584e1e546d7c074c28d52fcdec80c449b685a721",
+      "after_cpp_sha256": "ba57fe7d9ea9bb84ba017d928dd9bb545aa901f02e6466a64e46e43db53b760f"
+    }
+  },
+  "preservation": {
+    "prior_journal_rows": 445,
+    "prior_journal_sha256": "49bfd10b04eb91c783f39f9c65a086c6eafd4fb001b25b970800287157e46291",
+    "prior_work": "Parent711fd6d retains7fb734fc and all earlier patches; no rebase or upstream merge was necessary because live upstream remainsf3c57287.",
+    "changed_source_files": {
+      "src/video_core/graphics_diagnostics.h": "f500e4c9329cce5afe069856ed68a0e82a5e0ae5a5228b511ac48ce79d660cf7",
+      "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "3221efa4253445e60ad62afb127afc87e2d241539f415f7725b680b65a932d5c",
+      "src/video_core/renderer_vulkan/vk_rasterizer.h": "c2837269c46663b240489d64783431a6c6f45e83dc88f4d4b66f0d70ef1bb043"
+    },
+    "wrapper_sha256": "2e009c421782c49c4504e78e252e0a55e66020b7cde7e8085fe6cd975770cbfe",
+    "graphics_runner_sha256": "da410056250594d87a477376bd9200b0ac15b5f423689b81d210225d7b668566",
+    "observer_sha256": "6e7cb1d3ee21dbe0aef06a4f2529c6f7ddd7b725b60096f1a5afee1b1c3a48b3"
+  },
+  "limits": [
+    "No native candidate GPU/game run or main promotion; no all-games/platform safety claim.",
+    "No new guest instruction or memory-publication semantics; only host Vulkan binding placement and sampled observation. Existing OpenOrbis coherence probe remains pending SDK/PS4 execution; it does not exercise graphics draw state.",
+    "DS dedicated seed and actual guest shader re-entry remain unfinished; no capture requested/evidence from this native run.",
+    "Retained image-layout, write-watch and streaming-allocation lifetime concerns during draw preparation require independent reproduction; this patch does not claim to resolve them.",
+    "Validation changes timing; do not treat differing GPU-loss times as a controlled performance improvement."
+  ],
+  "existing_openorbis_probe": "https://chatgpt.com/library?file_id=libfile_f5935b2d11ec8191812778c64604c491&account_id=personal",
+  "next_test": {
+    "source": "Published PR135 checkpoint (same emulator code as implementation67b85cc6)",
+    "mode": "build",
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "policy": "Check current upstream, live workers, display,>=8GiB VRAM; conditional Ollama unload. No auto input or mode changes. <=120s/game; skip remaining tests on GPU failure, unconfirmed exit or missing diagnostics. No unrelated process/service resets.",
+    "falsifiable_checks": [
+      "draw-preparation-flush count/ticks; image-readback/wait ordering",
+      "GoT progresses beyond captured intro without GPU loss",
+      "GoW launches only if safe and progresses beyond loading",
+      "Record failures and screenshots; no promotion from build/checks alone."
+    ]
+  }
+}

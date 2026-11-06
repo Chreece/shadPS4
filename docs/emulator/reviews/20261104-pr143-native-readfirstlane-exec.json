@@ -1,0 +1,521 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T16:20:56.841364+00:00",
+  "request_id": "d7091d0f-ed28-45a0-b5ec-fbf8165c7a27",
+  "previous_review": "20261104-upstream-fc62ab15-refresh.json",
+  "upstream_commit": "1d8c741c31da757929ded01556ea0f150ebbe9d7",
+  "source_commit": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+  "source_tree": "43a5685e616e7b9a0264393367343f7913247ac5",
+  "isolated_fix_commit": "3de343e4628ca0358d1aa733bde6140382bfa8a0",
+  "prs": [
+    144,
+    145
+  ],
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "native_evidence": {
+    "artifact": {
+      "file": "universal-two-games-20261104T153636Z-970907.tar.gz",
+      "sha256": "eaa06b56e0396f90b8028e894d5f377386229263c225436c54557afc869b1b81",
+      "size_bytes": 5560038,
+      "library_file_id": "libfile_7ea1ca8e4de08191bd636020f2551419"
+    },
+    "source_commit": "7b4afb99de315d1fb5a0e0d50be40c2cdc4277f9",
+    "upstream_commit": "fc62ab15a92a728e96be3f7d82b3c1be0c0b39ab",
+    "binary_sha256": "813ff7905785ec8a3c1da3127b6ac34b77a066fdabf1f85f9409d8127fe09091",
+    "build": {
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "complete_log_reviewed": true,
+      "lines": 3280,
+      "warnings": 115,
+      "errors": 0,
+      "warnings_resolved": false
+    },
+    "gow": {
+      "result": "GPU_CONTEXT_LOST",
+      "elapsed_seconds": 18.396,
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "screenshots": [],
+      "graphics": "NO_CAPTURED_FRAME; menu/gameplay not proven",
+      "audio": "NOT_VERIFIED",
+      "fps": "NOT_VERIFIED",
+      "console_lines": 4896,
+      "console_bytes": 745002,
+      "warning_lines": 233,
+      "error_lines": 18
+    },
+    "got": {
+      "result": "SKIPPED_AFTER_GOW_GPU_CONTEXT_LOSS",
+      "game_launched": false,
+      "graphics": "NOT_TESTED",
+      "audio": "NOT_TESTED",
+      "fps": "NOT_TESTED"
+    },
+    "gpu_trace": {
+      "records": 287,
+      "recorded_total": 1115,
+      "ring_overwritten": 0,
+      "completed_tick": 2,
+      "requested_tick": 4,
+      "vuid_reports": 0,
+      "captured_spirv_modules_valid": 29,
+      "culprit_operation_proven": false
+    },
+    "ollama": {
+      "model": "qwen3.8-greek:latest",
+      "context_length": 16384,
+      "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+      "expires_at": "2319-02-14T15:25:37.706309+00:00",
+      "size_vram": 17361985862,
+      "restore_status": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS",
+      "vram_free_before": 5168361472,
+      "vram_free_at_launch": 25599688704
+    }
+  },
+  "defect": {
+    "instruction": "V_READFIRSTLANE_B32",
+    "old_behavior": "OpGroupNonUniformBroadcastFirst reads the first host-active lane without consulting guest EXEC. Completed lanes remain host-active inside scalar waterfall loops, so repeated selection can prevent progress.",
+    "correction": "Pass guest EXEC U1 through IR; subgroup ballot chooses its first set bit; empty EXEC adds bit0 before find-LSB. Use subgroup shuffle for dynamic selection and preserve constant-true broadcast-first path. Shader cache26->27.",
+    "source_files": 8,
+    "insertions": 24,
+    "deletions": 10,
+    "captured_shader": "d80cbb16",
+    "captured_scope": "339 original GCN instructions,40 CFG blocks,26 ReadFirstLane IR instructions,7 dynamic EXEC arguments,6 loop Phi arguments on both subgroup32/64 frontend replay",
+    "causality_limit": "The defect is present in a submitted shader, but the archive lacks runtime per-lane data and a precise GPU culprit marker. This is not proof it is the only cause of GoW GPU loss.",
+    "unrelated_candidates": "dfd7cccc has2 constant-true reads and30980d90 has no ReadFirstLane; retained as negative controls, not special-cased.",
+    "selectors_added": []
+  },
+  "validation": {
+    "source_commit": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+    "source_tree": "43a5685e616e7b9a0264393367343f7913247ac5",
+    "isolated_fix_commit": "3de343e4628ca0358d1aa733bde6140382bfa8a0",
+    "upstream_commit": "1d8c741c31da757929ded01556ea0f150ebbe9d7",
+    "prs": [
+      144,
+      145
+    ],
+    "host_binary_sha256": "95f7a929c366ddb759ff6daaa149a801b0cae666fa5b9d0d0738c4541cdb657e",
+    "native_archive_sha256": "eaa06b56e0396f90b8028e894d5f377386229263c225436c54557afc869b1b81",
+    "native_outcome": "GoW GPU context loss after18.396s on7b4afb99; no screenshots; GoT skipped",
+    "validation": {
+      "valid_modules": 96,
+      "case_pairs": 48,
+      "byte_identical_full_mask_cases": 6,
+      "emitted_lane_observations": 2048,
+      "random_mask_lane_observations": 74187,
+      "random_masks": 2048,
+      "old_selector_wrong_cases": 1014,
+      "waterfall_cases": 2048,
+      "old_waterfall_nonprogress_cases": 1819,
+      "new_waterfall_nonprogress_cases": 0,
+      "max_new_waterfall_iterations": 9,
+      "hardware_execution": false,
+      "limits": [
+        "Host subgroup32 checks cover represented half-wave only, not complete guest wave64 behavior.",
+        "Empty EXEC reads physical lane0 only when that lane remains host-active; general inactive-lane register resurrection is not implemented.",
+        "Waterfall is a CPU semantic projection using the actual emitted lane selector, not GPU execution."
+      ]
+    },
+    "captured_spirv_validation": {
+      "modules": 29,
+      "all_valid": true,
+      "hardware_execution": false
+    },
+    "original_homebrew": {
+      "zip_sha256": "806fc5db8e4e6ef126444bf0777784797e4b6bad92def43952bed9498bdb3ef2",
+      "full_compiler_modules": 6,
+      "assembly": "PASS gfx700",
+      "c_syntax": "PASS -Wall -Wextra -Werror",
+      "sdk_link_and_hardware": "UNVERIFIED"
+    },
+    "retained": {
+      "cpu_suite": "PASS",
+      "actual_binary_startup_cases": 3,
+      "barrier_emissions_byte_identical": 42,
+      "swizzle_spirv_modules": 18,
+      "swizzle_lane_results": 179988,
+      "reduction_matcher_checks": 1408,
+      "captured_reduction_frontend_instructions": 2380,
+      "reduction_results": {
+        "subgroup64": 2,
+        "subgroup32": 0
+      }
+    },
+    "failed_attempts": [
+      {
+        "stage": "initial full build",
+        "cause": "Sirit::Id has no operator==; changed the comparison to .value; completed -k0 log contains one source error; corrected full target links"
+      },
+      {
+        "stage": "initial homebrew assembly",
+        "cause": "s_cmp_eq_u64 unsupported on gfx700; replaced with s_or_b64 and SCC branches; final assembly and C syntax pass"
+      },
+      {
+        "stage": "initial replay harness compile",
+        "cause": "IR::Value has no InstRecursive; corrected to Inst; final production frontend replay passes"
+      },
+      {
+        "stage": "initial replay harness assertion",
+        "cause": "incorrectly required every inspected shader to use ReadFirstLane; no-read control shader30980d90 correctly has none; final check reports per-shader counts"
+      },
+      {
+        "stage": "upstream integration setup",
+        "cause": "no upstream remote configured; attempted rebase lacked new commit; retrieved exact SHA through preserved review branch and completed46-commit equivalent rebase"
+      },
+      {
+        "stage": "first integration build timing",
+        "cause": "fetch/switch command still running; no-work build not accepted as integrated proof; rerun only after verified9107282b checkout builds/links5targets and passes startup"
+      }
+    ],
+    "gpu_execution_here": false,
+    "new_game_graphics_audio_fps": "UNVERIFIED",
+    "main_promoted": false,
+    "ds_ordered_count_seed_and_guest_reentry": "NOT_IMPLEMENTED",
+    "onepaste_sha256": "a6071a0d3bd23cea1dc4a17e64105b7e7b3eb2efba9c7685328c5cbfcce9705a"
+  },
+  "rebase": {
+    "retained_commits": 46,
+    "equivalent_patches": 46,
+    "source_conflicts": 0,
+    "all_published_trees_match_local": true,
+    "mapping": [
+      {
+        "original": "f2e69c68290d2a26d98553fcd2142f03d4d32f69",
+        "local": "2257e3454de75c8fae289f7df534eac289b084a2",
+        "published": "8b03e3c64fc6caff337b693a80674d49c0c4e3a9",
+        "tree": "7c79e025072b56dd5f9725aa977f8f364357c2a0"
+      },
+      {
+        "original": "31b0bd819c8d42a881bf4cf2a6c075aad24c4ba8",
+        "local": "d91046a5869550832bfbb140038a91364dac692b",
+        "published": "f82fbf1d7bf7bef4d9b46237b05bb1c2740939c4",
+        "tree": "4683b0b2c512dd7a31bb1483d7529254b29554d8"
+      },
+      {
+        "original": "35f3460fe1a55cafa7d68b1d8c9b09a173c5c78e",
+        "local": "b3c8e48b7eb42365837191de6378ac22b2b77156",
+        "published": "8bab3d9a6e57578285793f1fb247c5549ca8c600",
+        "tree": "20d602a091e8d0aa6eaa73ce4e1fdf35d7153b87"
+      },
+      {
+        "original": "90e522420b61ca4edad961efaba730776d0c6482",
+        "local": "216c9a01179956c73a91cc21b0e80c3a0a7ff70f",
+        "published": "b0a4c6187f85dd18081d3cabfe86e1b4ed7b5b3d",
+        "tree": "4500e239a49f4664fa86eae8d9b85dcfb3b10a9b"
+      },
+      {
+        "original": "33195e78f2f811f52c7ecb0a45daf1a78179f550",
+        "local": "43631259369e9328dfd459278486b5cc8b3c04d7",
+        "published": "dd064f4533195112ac92790a6273f4a1d778978f",
+        "tree": "48c3e4d173a2485f82c9150f99304c48d06b1e86"
+      },
+      {
+        "original": "60d287869581e603597f879f30d000df4e3d88c7",
+        "local": "1bd128443506558c5709fd5fb732965c7108112e",
+        "published": "a37f45539d36f8a91fd593d1357b3b061496d244",
+        "tree": "8ec0d14373cbfb725174ec82b074f5662193d05b"
+      },
+      {
+        "original": "19f1443a4c2e4693f02d8e8a9df1879128d4b110",
+        "local": "6826fdf0c77630a01c71351cf7ee13c5c5c7e0b2",
+        "published": "a7b5b21ec2454c9527ed9d775372a550ecfa85e0",
+        "tree": "a1c5abb9b0b39c78ee9288ade164ab85fbfeff8e"
+      },
+      {
+        "original": "686dc2061fc5a5ff3e78ddd6bb9150e7d21522d2",
+        "local": "a39755eff4e28df633adabd744efb85d5d9aa73c",
+        "published": "8fa8b80d1be15282de796b3777d854f900947389",
+        "tree": "3a8e836550bd8f65a27b094d7afd0473a708ef3a"
+      },
+      {
+        "original": "ebd0a603a5b8ed5b34adcf83d8f64833fbb624a5",
+        "local": "105c59c5722b81f15f8bc0ea5229b62451ed1192",
+        "published": "be42ffdc4f3c92185d079d069aeee8ba597f1d30",
+        "tree": "5e4085769c7b4b3d99eaa781bf51d246d4e0330b"
+      },
+      {
+        "original": "92636615c25debc5d46199161053e8b7b6343306",
+        "local": "cb1dc3468eb7fff1a95248844b73a20b78315c83",
+        "published": "ec7b389561f547a50903424269cea45684d6594f",
+        "tree": "cfa722852d19a3bb1c24b92e0c59a6aee2493d75"
+      },
+      {
+        "original": "e68ba00b2ff708c6f8b949a80be3b236342a27bc",
+        "local": "2d2ab88271c58ea7423300ee43d797cade7b0323",
+        "published": "7161a8e408140674be353157dfcd61d1aca79726",
+        "tree": "09c281d2081ee0cf916b75bac512ccd7529f3981"
+      },
+      {
+        "original": "872e97be5cb8d9c2da73730450cf826bf06e520d",
+        "local": "8d21c45e5d82dacef74b2ac081da3128d0b0c988",
+        "published": "3d4c6b38bcc8b57ed125e2752bd19b49013c8ab7",
+        "tree": "1583aa07ed8f342506d77b5f40cf2575460e3462"
+      },
+      {
+        "original": "0052bf1a56cf9ea213ba7423bd5c4d15ad9d1c1f",
+        "local": "6fee4788814e53a09a7e02ca4f09ea31182c936a",
+        "published": "705b6109928178fe72417f530f4f611a31613388",
+        "tree": "eeba37b3fcc23f6c0cfe5f8c6e4fcc6d7809dc4f"
+      },
+      {
+        "original": "7b6999e65abaa2fffed06c0110d3148f37bc7e8e",
+        "local": "067d326cb78d498efadb2cf9476e18f842ea71c5",
+        "published": "8a70fe62550508d8995c4d30ee3a649084d7ae57",
+        "tree": "a1389f78f36c026ac57d3d221139e117c621b911"
+      },
+      {
+        "original": "e2415833b4743913a4b6a5de04132c7977675b20",
+        "local": "0e85dbbe2216a9d6e43e811143cee41ecfd70dd7",
+        "published": "efd121c26d802b3a2a20def981abbc480cbbecaa",
+        "tree": "814fc3f099de5e862a5aec87bbf163bee470f0b5"
+      },
+      {
+        "original": "9702160a1cc67ffa357416f9c19a5fe79b691b1a",
+        "local": "7c2f482c52b1417966d2396c42e3eca9cd11e8d6",
+        "published": "b60a4ac304c32efa9ad71176fdc3282858f448db",
+        "tree": "5f1d808a39077832a7ee1f091c0b7365091e3020"
+      },
+      {
+        "original": "f8d6cd06fb57262e353a34f485faffca3508c5d9",
+        "local": "87bfff081bf87f8599137181db196e99a5fb2aa4",
+        "published": "cf474b4b26bd05f8598d64a9b6817d6c069f460b",
+        "tree": "85621648ad2d60b4b0b6dd02a365b83c25a6cb62"
+      },
+      {
+        "original": "b6b01b5ddbd6fdee4501b9494bf77f37665c3ea3",
+        "local": "68c60a01efa4be699ae4574fbd100ae8696490e4",
+        "published": "843264eb0ba0fd988abe74c9dad45c01e213602c",
+        "tree": "58825be83d80fdc1c6063f5f88b7f6e3c0c556d0"
+      },
+      {
+        "original": "72ff78494e5a9e94682561ddd4c06a120445f400",
+        "local": "c44ed5b3bb99ca0e24435df863c5e3ca929d1f86",
+        "published": "1a98cf67ef64ba3a5b39ad04625014d3fb571bf5",
+        "tree": "4e94b9f6dac2a73e66d97c6db5c5462b4363df3e"
+      },
+      {
+        "original": "e4dd30b1cbd2118c4be78b03e4557f240313ff29",
+        "local": "cad3288fedb35b63679e188abe2d1b1c1869c35c",
+        "published": "6fb201e24d8ad6691b55e2bec47e2e141c06a959",
+        "tree": "074c394d5aee3916b8802ae89b94ec3de3f2a07b"
+      },
+      {
+        "original": "13ff657b5d4718e426798523d6ad8cdeab151169",
+        "local": "a604476b6c10d5429a3585bb647c2563d37198b5",
+        "published": "896c41984f3ecca3a4261f2fc46218faa4daf3e9",
+        "tree": "1a34240ae5d69c189f9ec66e7cadb207fd1cb521"
+      },
+      {
+        "original": "e3065415e0b3d1a3a17bccb62f4554c386cf3d11",
+        "local": "79604286c3f259251d7fa1e395886ba840841bf3",
+        "published": "0743a6d85f4e4eb08058be8a71ff4f5f1faaacc6",
+        "tree": "b94fa1de230abe4dea971a240efbb4c5dcbc9315"
+      },
+      {
+        "original": "f4a358db182e33434803e86a336d95cdf2d3d9c9",
+        "local": "0abe959a4a57a568f064f2fc7a0beadf41be2416",
+        "published": "063f02854cff75d7353229560e3cd1795eae67e8",
+        "tree": "860ea361b4e7d6dd74ab4a828aadf442d4328966"
+      },
+      {
+        "original": "7e1c6bf3463516dfe5a5d4c9d92dde7a65e0471b",
+        "local": "c06e7bd933e3d2c1b931aa07cd841d27ea2026b3",
+        "published": "b2619480e87688e2b1879faa0e191d13ba286202",
+        "tree": "7b3d147eb0a647ba662dd4f876315063d771dcfc"
+      },
+      {
+        "original": "5330e9f979c0574bc961aa65eb3e66cc3d33ef90",
+        "local": "d5d10f8a0dedb74fbc8525186c281a408344d9d9",
+        "published": "9f5d0ce9d2e90ea37467e9dbb227a3b1b31c4ebe",
+        "tree": "3881c2976ab83c3ace77f84e41d2fa72ff7044c6"
+      },
+      {
+        "original": "a43f485e94b046cb5136697b0dd473dbb5c1f640",
+        "local": "a7c0415c900e1f5600da3b7e67e1021875d8970b",
+        "published": "ff40cee1bb7159bebb8109097280606ba463db8d",
+        "tree": "10d9d5541bbda522d686d87dca99bc9de058d898"
+      },
+      {
+        "original": "c2d37c9f3cb4d1b5f1fba66b881b21a9c257a43f",
+        "local": "41ee14b0b1000f1088da6c2f7bdc2d0689f14ff6",
+        "published": "dbfd4b01a6ef64ae3a04b9870b5129afb633e4e4",
+        "tree": "dad908f95fbf7f34e46de2bb88819266e2f052f7"
+      },
+      {
+        "original": "6d8303a646a02138a4cf26945d8cb5cf3c117a5d",
+        "local": "b3f22430de7fb3596816e3f8c756b9be90036733",
+        "published": "b31f0659e99c430ab5b262d1781ea90acdfb2727",
+        "tree": "50c044d8a390bd206c6939e89a75f37ff4ea6e01"
+      },
+      {
+        "original": "8e8398bc5f3132bb6e5ad40220fb4617cd32b30c",
+        "local": "7524b70c8cd4b58370cb11157b9918f2bb2d2cfa",
+        "published": "91de9b8453ad02dc5337db4dc45df52306110b51",
+        "tree": "8a90b94ba6ea1698a082047912797f00c7fb66ec"
+      },
+      {
+        "original": "99c16e768375875500de36febf61a5c0cf9621dc",
+        "local": "d79228a95eeaf0d7cd3a4e9a3750fca8bf9aa549",
+        "published": "b1a1c85c5fff77cd02062e6bbb11089be81a2bf8",
+        "tree": "9b56cec8c0f8f1b0913d2558c4c4b7a08cf6b24c"
+      },
+      {
+        "original": "1ed65c3a82bdc2aa379c4341e85ee3f0e6004a31",
+        "local": "5748f80b5101c01ce2df6989c3595e3836c24b80",
+        "published": "29beb56d31b630328072b0205a0106919bbb7ed4",
+        "tree": "5ce46a3d2b01f3a70031978bc4df3a80f6695b2b"
+      },
+      {
+        "original": "c9c71a2101cc5b76e235147f274898470897d4bc",
+        "local": "337aef4e95cf19571cae31e876b2473f8e9d2077",
+        "published": "345a6e63adad9c563ed75cdc694b9ef7e00b3aef",
+        "tree": "2540218113edaaffb73ff83b49bce4d3bf0c69ea"
+      },
+      {
+        "original": "a3c947477a6f1696b26f472a22f5b7aa875fe586",
+        "local": "66daf2e207351cc0c6b9a13d3ba7260d34e80caf",
+        "published": "4a5567553a36eef5f75ee6fd0c8fa7125188aa25",
+        "tree": "40598480e500939d49228bc79fcfa139e1477854"
+      },
+      {
+        "original": "25ec27bc561534fc3ecf988ee43f5777e5873987",
+        "local": "8c2bea5da04a311925ac24fd260a60266a3c14e8",
+        "published": "59a2d55de921372f57295e84409a5a6a3c715ad2",
+        "tree": "e0abce1dbf050171b9f2d3667a53c982a387fe68"
+      },
+      {
+        "original": "65ba753239b34c1c2fd6df067aaaf33254ebf3a3",
+        "local": "65069cbaf9005f35728e0005e5e120173676611e",
+        "published": "666738b86b5640e11a8c6653e88048bf0bab47aa",
+        "tree": "883771b8546cab4d503e9d4286f7f654a39a4e85"
+      },
+      {
+        "original": "3ff8fa0156eea9879e1571e1bfdde266608d0018",
+        "local": "7f98ace3355550dbaee86aba5b547070e8c4c686",
+        "published": "0340dfba4a19b55b0bc50c894b4a6e8e283409c3",
+        "tree": "54d996cceb79a34ce8aad52bce6e378029b9df6f"
+      },
+      {
+        "original": "7523f365a1c6d871a21942fef11439de813ee74b",
+        "local": "c7c60b379fae7891eb782393a73f783bf7638c30",
+        "published": "8012074914de568120700cd894164fdfb18871fd",
+        "tree": "104a63517465d961641474e865b22311fe303550"
+      },
+      {
+        "original": "2b68eb0434ad083f354b7044f8d36acaf44afd26",
+        "local": "8381b6c1f89355ea8406ff5c9d9f8dd53175d4ca",
+        "published": "d1a3a96f599263f5e7781052db8644b9d5444987",
+        "tree": "78a2584fad33fa1294ab32dbe35cd46dcb10553f"
+      },
+      {
+        "original": "759897af1c052b0cea9b175724ac0165c2541041",
+        "local": "5db37cec44000d523688839c4d520ff2a03bc7cf",
+        "published": "ac55e1f642c61beab75b60af24abbdcbfd5bab34",
+        "tree": "ee7038e8757af6e440f145c151ed5211e0f6b47f"
+      },
+      {
+        "original": "118cca72cffad5dcb1261e3756c8c22e7dcb9162",
+        "local": "5fd26d6d6af307d682b8fc80b9377e454c000009",
+        "published": "4318d16022564c1c3d3d4df7eb0a3aaedef60cfa",
+        "tree": "785f4a5b265e47e254d503c561a565b129b5418c"
+      },
+      {
+        "original": "06149b0fd5778c28363610d175e15d59669dfdb9",
+        "local": "573cb40ceefa8e8513fbff59294401978df8da1c",
+        "published": "1c744c9c870fe5b28b26817c17d3ed1a4e68042c",
+        "tree": "86ea349b0494e48bb4c03c02f20efc1899c7428f"
+      },
+      {
+        "original": "12af4322d9f18100997a61b46133cf42d58d28e4",
+        "local": "0ddd0fb0297e2528a10d4fd463eb6a1af93dd34d",
+        "published": "f50f7a5c99bf07390c441075bb1314ca70f54b78",
+        "tree": "0ef7573e359ebf80a44804423723afc2d05a9c72"
+      },
+      {
+        "original": "d6ec6199a52b6df2cc6c13a4584914f76497b57a",
+        "local": "afe5c4120ebdf9e744a351dc6330d02757d6c6af",
+        "published": "cde2cc020c660b1294660656b82e0422137c62a2",
+        "tree": "cc5e48bc2ba5f6c91262ff12efd4910cf3402ea6"
+      },
+      {
+        "original": "7b4afb99de315d1fb5a0e0d50be40c2cdc4277f9",
+        "local": "c09ea5306f33eeda90aa6981e10f724fd0d51c51",
+        "published": "4a1efa686b3636697dbf17f248e2ede7b2e45865",
+        "tree": "37b8cbd82d8c84b9eb1b7dec68c17e0af6044ff5"
+      },
+      {
+        "original": "b24ee72f68829d14f1105ead88b90e4c8e95d710",
+        "local": "9c1164224e8cd74055d5870bf966c49c53f825df",
+        "published": "c532317c48794737bf7c4a0b1717674427d8f674",
+        "tree": "53617ca737ccbcc0635cea187c44be4041867516"
+      },
+      {
+        "original": "3de343e4628ca0358d1aa733bde6140382bfa8a0",
+        "local": "214d339a13e06ee8be52b83468b55e9a16a77dcc",
+        "published": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+        "tree": "43a5685e616e7b9a0264393367343f7913247ac5"
+      }
+    ],
+    "upstream_change": "save_data: read param.sfo before testing an unclean-exit corruption marker (#5630)",
+    "only_changed_path_relative_to_fix": "src/core/libraries/save_data/save_instance.cpp",
+    "covered_shader_renderer_runner_dependency_bytes_unchanged": true,
+    "dependency_pins": 54,
+    "full_cpu_compiler_suite_after_save_only_rebase": "Not rerun; identical covered sources retain exact earlier results. Full executable rebuild and3 startup cases rerun on final published source."
+  },
+  "artifacts": [
+    {
+      "file": "readfirstlane-openorbis-20261104.zip",
+      "library_file_id": "libfile_0c02c54e2ccc819197831236d5f4973f",
+      "sha256": "806fc5db8e4e6ef126444bf0777784797e4b6bad92def43952bed9498bdb3ef2",
+      "size_bytes": 5880
+    },
+    {
+      "file": "readfirstlane-host-validation-20261104.zip",
+      "library_file_id": "libfile_3683ccf312f88191ab0d96d7649d5c19",
+      "sha256": "9d5b0e71c1313bd557fdf5e29427eb0d90887a83aefbc813673797290b7f2ad4",
+      "size_bytes": 360522
+    }
+  ],
+  "references": [
+    "https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/southern-islands-instruction-set-architecture.pdf",
+    "https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html"
+  ],
+  "handoff": {
+    "source": "9107282b8b351397f37aa5f3b0bcbadfe2096555",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "first_game": "CUSA34384",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "a6071a0d3bd23cea1dc4a17e64105b7e7b3eb2efba9c7685328c5cbfcce9705a",
+    "same_emulator_for_both_games": true,
+    "per_game_settings": false,
+    "automated_input": false,
+    "term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "vram_min_gib": 8,
+    "stop_next_game_on_gpu_failure_or_live_process": true,
+    "defer_model_restore_after_gpu_loss": true,
+    "mocked_boundary_checks": [
+      "valid checksum/arguments",
+      "corrupted checksum rejected",
+      "download failure rejected",
+      "spaced temporary path",
+      "temporary cleanup"
+    ]
+  },
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION",
+  "limits": [
+    "Host subgroup32 checks cover represented half-wave only, not complete guest wave64 behavior.",
+    "Empty EXEC reads physical lane0 only when that lane remains host-active; general inactive-lane register resurrection is not implemented.",
+    "Waterfall is a CPU semantic projection using the actual emitted lane selector, not GPU execution.",
+    "New candidate has no native GPU, game visual/audio/FPS or cross-title acceptance.",
+    "DS ordered-count seed and guest re-entry remain incomplete."
+  ],
+  "next_step": "Run exact pinned9107282b candidate with GoW first, then GoT only after confirmed safe exit. Check whether the early GPU stall disappears and compare actual frames/audio before claiming recovery.",
+  "journal": {
+    "preserved_prefix_rows": 488,
+    "preserved_prefix_sha256": "0c930b71ae32510fc1a407b4f118deaad3c60fc6307756dd07edcf979074b5c3",
+    "appended_rows": 20,
+    "total_rows": 508,
+    "sha256": "1e037d451d80335f80ec22e3196f642e81e2d83428717cb12c930b26e220eaf7"
+  }
+}

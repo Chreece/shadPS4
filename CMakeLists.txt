@@ -359,6 +359,10 @@ set(KERNEL_LIB src/core/libraries/kernel/coredump/coredump.cpp
                src/core/libraries/kernel/kernel.h
                src/core/libraries/kernel/memory.cpp
                src/core/libraries/kernel/memory.h
+               src/core/libraries/kernel/sanitizer.cpp
+               src/core/libraries/kernel/sanitizer.h
+               src/core/libraries/kernel/thread_atexit.cpp
+               src/core/libraries/kernel/thread_atexit.h
                src/core/libraries/kernel/threads.cpp
                src/core/libraries/kernel/threads.h
                src/core/libraries/kernel/time.cpp
@@ -434,6 +438,7 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/system/systemservice.h
                 src/core/libraries/system/systemservice_error.h
                 src/core/libraries/system/userservice.cpp
+                src/core/libraries/system/userservice_user_color.cpp
                 src/core/libraries/system/userservice.h
                 src/core/libraries/system/userservice_error.h
                 src/core/libraries/app_content/app_content.cpp
@@ -452,6 +457,21 @@ set(SYSTEM_LIBS src/core/libraries/system/commondialog.cpp
                 src/core/libraries/ngs2/ngs2_error.h
                 src/core/libraries/ngs2/ngs2_impl.cpp
                 src/core/libraries/ngs2/ngs2_impl.h
+                src/core/libraries/ngs2/hle/handles.cpp
+                src/core/libraries/ngs2/hle/handles.h
+                src/core/libraries/ngs2/hle/guest_memory.cpp
+                src/core/libraries/ngs2/hle/guest_memory.h
+                src/core/libraries/ngs2/hle/waveform.cpp
+                src/core/libraries/ngs2/hle/waveform.h
+                src/core/libraries/ngs2/hle/decoder.cpp
+                src/core/libraries/ngs2/hle/decoder.h
+                src/core/libraries/ngs2/hle/direct_filter.h
+                src/core/libraries/ngs2/hle/playback.cpp
+                src/core/libraries/ngs2/hle/playback.h
+                src/core/libraries/ngs2/hle/runtime.h
+                src/core/libraries/ngs2/hle/voice.cpp
+                src/core/libraries/ngs2/hle/waveform_abi.h
+                src/core/libraries/ngs2/hle/waveform_abi.cpp
                 src/core/libraries/ngs2/ngs2_custom.cpp
                 src/core/libraries/ngs2/ngs2_custom.h
                 src/core/libraries/ngs2/ngs2_reverb.cpp
@@ -802,6 +822,7 @@ set(COMMON src/common/logging/classes.cpp
            src/common/arch.h
            src/common/assert.cpp
            src/common/assert.h
+           src/common/atrac9_lock.h
            src/common/bit_field.h
            src/common/bounded_threadsafe_queue.h
            src/common/concepts.h
@@ -1003,13 +1024,18 @@ set(CORE src/core/aerolib/stubs.cpp
          src/core/debugger.h
          src/core/linker.cpp
          src/core/linker.h
+         src/core/linker_thread_atexit.cpp
+         src/core/module_thread_atexit.h
          src/core/memory.cpp
          src/core/memory.h
+         src/core/memory_access.h
          src/core/module.cpp
          src/core/module.h
          src/core/platform.h
          src/core/signals.cpp
          src/core/signals.h
+         src/core/cpu_affinity.cpp
+         src/core/cpu_affinity.h
          src/core/thread.cpp
          src/core/thread.h
          src/core/tls.cpp
@@ -1031,6 +1057,9 @@ if (ARCHITECTURE STREQUAL "x86_64")
              src/core/cpu_patches.cpp
              src/core/cpu_patches.h
              ${FIBER_LIB})
+    if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        list(APPEND CORE src/core/cpu_id.cpp src/core/cpu_id.h)
+    endif()
 endif()
 
 set(SHADER_RECOMPILER src/shader_recompiler/profile.h
@@ -1105,6 +1134,7 @@ set(SHADER_RECOMPILER src/shader_recompiler/profile.h
                       src/shader_recompiler/ir/passes/lower_wave64_pass.cpp
                       src/shader_recompiler/ir/passes/phi_simplification_pass.cpp
                       src/shader_recompiler/ir/passes/readlane_elimination_pass.cpp
+                      src/shader_recompiler/ir/passes/full_wave_reduction_pass.cpp
                       src/shader_recompiler/ir/passes/resource_discover_pass.cpp
                       src/shader_recompiler/ir/passes/resource_pass.h
                       src/shader_recompiler/ir/passes/resource_patching_pass.cpp
@@ -1205,6 +1235,8 @@ set(VIDEO_CORE src/video_core/amdgpu/cb_db_extent.h
                src/video_core/renderer_vulkan/vk_resource_pool.h
                src/video_core/renderer_vulkan/vk_runtime.cpp
                src/video_core/renderer_vulkan/vk_runtime.h
+               src/video_core/renderer_vulkan/vk_occlusion_query.cpp
+               src/video_core/renderer_vulkan/vk_occlusion_query.h
                src/video_core/renderer_vulkan/vk_scheduler.cpp
                src/video_core/renderer_vulkan/vk_scheduler.h
                src/video_core/renderer_vulkan/vk_semaphore.cpp

@@ -1,0 +1,53 @@
+{
+  "recorded_at": "2026-10-29",
+  "source_archive": "gow-ordered-count-input-20261029T122701Z-3399542.tar.gz",
+  "source_archive_sha256": "fe4394c0414afb18582f12acb17c35a74a8acc8cf92aa669a4a6ebc600354be2",
+  "guest_input_bytes": 24024,
+  "guest_input_sha256": "97d6b31e16cc6c7660b78792faa15df49f49d10dad9ed97faa98fd3e137f999e",
+  "game": "CUSA34384",
+  "shader": "cs_0xdbaa6ae4",
+  "instructions": [
+    {
+      "byte_offset_in_input": 16728,
+      "opcode": 63,
+      "name": "DS_ORDERED_COUNT",
+      "gds_bit": 1,
+      "ordered_counter_index": 0,
+      "wave_release": true,
+      "wave_done": true,
+      "ordered_opcode": 1,
+      "ordered_opcode_names": "exchange",
+      "addr_vgpr": 5,
+      "vdst_vgpr": 7,
+      "static_nearest_m0_write": {
+        "byte_offset": 16548,
+        "scalar_source_sgpr": 46,
+        "instruction": "s_mov_b32 m0, s46"
+      }
+    },
+    {
+      "byte_offset_in_input": 16852,
+      "opcode": 63,
+      "name": "DS_ORDERED_COUNT",
+      "gds_bit": 1,
+      "ordered_counter_index": 0,
+      "wave_release": true,
+      "wave_done": true,
+      "ordered_opcode": 0,
+      "ordered_opcode_names": "add",
+      "addr_vgpr": 5,
+      "vdst_vgpr": 7,
+      "static_nearest_m0_write": {
+        "byte_offset": 16816,
+        "scalar_source_sgpr": 16,
+        "instruction": "s_mov_b32 m0, s16"
+      }
+    }
+  ],
+  "no_private_guest_bytes_published": true,
+  "notes": [
+    "Both DS_ORDERED_COUNT instructions are GDS operations on counter index 0, but one requests Exchange and the other Add. Both have wave_release and wave_done set.",
+    "Static disassembly shows M0 loaded from scalar s46 before first operation and from scalar s16 before second. Dynamic logicalWaveID, waveCrawlerInc, first-active-lane values and the inter-wave dispatch order cannot be proven by raw instruction bytes.",
+    "Actual AMD semantics depend on wave-creation order; neither a bare atomic add nor an unordered pair of atomics is equivalent."
+  ]
+}
