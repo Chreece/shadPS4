@@ -30,9 +30,40 @@ enum class Event {
     ImageBufferWrite,
     GpuWait,
     DrawPreparationFlush,
+    BufferProtectNone,
+    BufferProtectRead,
+    BufferProtectWrite,
+    ImageProtectNone,
+    ImageProtectRead,
+    ImageProtectWrite,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
+
+inline constexpr std::array names{"enabled",
+                                  "pixel-pipe",
+                                  "predication",
+                                  "copy-layers",
+                                  "containment-miss",
+                                  "conditional-exec",
+                                  "query-control",
+                                  "query-result",
+                                  "query-count-state",
+                                  "depth-growth",
+                                  "depth-growth-uninitialized",
+                                  "buffer-readback",
+                                  "image-readback",
+                                  "image-read-demand",
+                                  "image-buffer-write",
+                                  "gpu-wait",
+                                  "draw-preparation-flush",
+                                  "buffer-protect-none",
+                                  "buffer-protect-read",
+                                  "buffer-protect-write",
+                                  "image-protect-none",
+                                  "image-protect-read",
+                                  "image-protect-write"};
+static_assert(names.size() == static_cast<size_t>(Event::Count));
 
 inline unsigned long long ElapsedMs() {
     static const auto start = std::chrono::steady_clock::now();
@@ -41,10 +72,25 @@ inline unsigned long long ElapsedMs() {
                                                .count());
 }
 
+inline void DumpTotals() {
+    for (size_t index = 0; index < g_counts.size(); ++index) {
+        const auto count = g_counts[index].load(std::memory_order_relaxed);
+        if (count != 0) {
+            std::fprintf(stderr, "GRAPHICS_DIAG ms=%llu event=%s count=%llu total=1\n", ElapsedMs(),
+                         names[index], count);
+        }
+    }
+    std::fflush(stderr);
+}
+
 inline bool Enabled() {
     static const bool enabled = [] {
         const char* value = std::getenv("SHADPS4_GRAPHICS_DIAGNOSTICS");
-        return value && std::strcmp(value, "1") == 0;
+        const bool active = value && std::strcmp(value, "1") == 0;
+        if (active) {
+            std::atexit(DumpTotals);
+        }
+        return active;
     }();
     return enabled;
 }
@@ -58,24 +104,6 @@ void Emit(Event event, const char* format, Args... args) {
     if (!Enabled()) {
         return;
     }
-    static constexpr std::array names{"enabled",
-                                      "pixel-pipe",
-                                      "predication",
-                                      "copy-layers",
-                                      "containment-miss",
-                                      "conditional-exec",
-                                      "query-control",
-                                      "query-result",
-                                      "query-count-state",
-                                      "depth-growth",
-                                      "depth-growth-uninitialized",
-                                      "buffer-readback",
-                                      "image-readback",
-                                      "image-read-demand",
-                                      "image-buffer-write",
-                                      "gpu-wait",
-                                      "draw-preparation-flush"};
-    static_assert(names.size() == static_cast<size_t>(Event::Count));
     const auto index = static_cast<size_t>(event);
     const auto count = g_counts[index].fetch_add(1, std::memory_order_relaxed) + 1;
     if (!ShouldSample(count)) {

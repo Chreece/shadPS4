@@ -15,6 +15,7 @@
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "core/signals.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -109,6 +110,22 @@ struct PageManager::Impl {
 
     virtual void Protect(VAddr address, size_t size, Core::MemoryPermission perms) = 0;
 
+    void ProtectRange(VAddr address, u64 size, Core::MemoryPermission perms, bool buffer,
+                      PageOp write_op, PageOp read_op) {
+        using GraphicsDiagnostics::Event;
+        auto event = buffer ? Event::BufferProtectNone : Event::ImageProtectNone;
+        if (True(perms & Core::MemoryPermission::Write)) {
+            event = buffer ? Event::BufferProtectWrite : Event::ImageProtectWrite;
+        } else if (True(perms & Core::MemoryPermission::Read)) {
+            event = buffer ? Event::BufferProtectRead : Event::ImageProtectRead;
+        }
+        GraphicsDiagnostics::Emit(event, "address=%#llx bytes=%llu write-op=%d read-op=%d",
+                                  static_cast<unsigned long long>(address),
+                                  static_cast<unsigned long long>(size), static_cast<int>(write_op),
+                                  static_cast<int>(read_op));
+        Protect(address, size, perms);
+    }
+
     void EnsurePages(VAddr begin, VAddr end) {
         end = std::min(end, VAddr{1} << ADDRESS_BITS) - 1;
         const size_t start_page = begin >> PM_PAGE_BITS;
@@ -128,7 +145,8 @@ struct PageManager::Impl {
 
         const auto release_pending = [&] {
             if (range_pages > 0) {
-                Protect(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms);
+                ProtectRange(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms,
+                             false, write_op, read_op);
                 range_pages = 0;
                 potential_pages = 0;
             }
@@ -204,7 +222,8 @@ struct PageManager::Impl {
 
         const auto release_pending = [&] {
             if (range_pages > 0) {
-                Protect(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms);
+                ProtectRange(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms, true,
+                             write_op, read_op);
                 range_pages = 0;
                 potential_pages = 0;
             }
