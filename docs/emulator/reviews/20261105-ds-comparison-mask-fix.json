@@ -1,0 +1,587 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-05T17:06:01.657846+00:00",
+  "source_commit": "e2b34e7198f6e26bbdf740e2811e114408bd3db1",
+  "pr": 163,
+  "source_tree": "b6b7c6823246db6ee4401139e4e2de633cf24d60",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "archive": {
+    "filename": "universal-two-games-20261105T162224Z-2426883.tar.gz",
+    "sha256": "b097ac4b329f298bc0ccedb9680a35d1ea2c75dafd72cfb51b31b52d24cc7a6a"
+  },
+  "native": [
+    {
+      "record_id": "universal-graphics-20261105T163722Z-2545966",
+      "source_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+      "binary_sha256": "0b20b359cd4f8af3ff61a1d59985d90e412bd7546bce35609ee66d6cff4d2e2f",
+      "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "tested_games": [
+        "CUSA11456"
+      ],
+      "native": {
+        "binary_sha256": "0b20b359cd4f8af3ff61a1d59985d90e412bd7546bce35609ee66d6cff4d2e2f",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": 0,
+        "owned_child_pid": 2546063,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 118.765,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 11789,
+        "warning_lines": 590,
+        "error_lines": 1398,
+        "gpu_work_entries": 2048,
+        "gpu_work_bytes": 273925,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 311352,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "buffer-readback": 2048,
+          "image-readback": 64,
+          "image-read-demand": 64,
+          "conditional-exec": 8,
+          "image-buffer-write": 64,
+          "draw-preparation-flush": 8,
+          "copy-layers": 32
+        },
+        "graphics_diagnostics_bytes": 8699,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1596980,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 7,
+        "srt_source_blocks": {
+          "5508355:5508355": 1,
+          "5508356:5508356": 1,
+          "5508358:5508358": 1,
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1,
+          "5507461:5507461": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "ordered_gds_capture_requested": false,
+      "ordered_gds_evidence": [],
+      "visual_review": "BLACK_AT_110_SECONDS_NO_MENU"
+    },
+    {
+      "record_id": "universal-graphics-20261105T163642Z-2541279",
+      "source_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+      "binary_sha256": "0b20b359cd4f8af3ff61a1d59985d90e412bd7546bce35609ee66d6cff4d2e2f",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "tested_games": [
+        "CUSA34384"
+      ],
+      "native": {
+        "binary_sha256": "0b20b359cd4f8af3ff61a1d59985d90e412bd7546bce35609ee66d6cff4d2e2f",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 2541784,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "elapsed_seconds": 20.17,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 11713,
+        "warning_lines": 500,
+        "error_lines": 1974,
+        "gpu_work_entries": 0,
+        "gpu_work_bytes": 0,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 0,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "image-readback": 256,
+          "image-read-demand": 128,
+          "image-buffer-write": 128,
+          "buffer-readback": 128
+        },
+        "graphics_diagnostics_bytes": 4702,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1701785,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 51,
+        "srt_source_blocks": {
+          "4203462:4203462": 1,
+          "4203463:4203463": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201288:4201288": 1,
+          "4201298:4201298": 1,
+          "4201289:4201289": 1,
+          "4201290:4201290": 1,
+          "4203480:4203480": 1,
+          "4203482:4203482": 1,
+          "4203483:4203483": 1,
+          "4203481:4203481": 1,
+          "4205661:4205661": 1,
+          "4205662:4205662": 1,
+          "4205663:4205663": 1,
+          "4205664:4205664": 1,
+          "4205666:4205666": 1,
+          "4205668:4205668": 1,
+          "4205669:4205669": 1,
+          "4201291:4201291": 1,
+          "4203490:4203490": 1,
+          "4203472:4203472": 1,
+          "4203492:4203492": 1,
+          "4201304:4201304": 1,
+          "4201316:4201316": 1,
+          "4201305:4201305": 1,
+          "4201306:4201306": 1,
+          "4203464:4203464": 1,
+          "4203465:4203465": 1,
+          "4203474:4203474": 1,
+          "4201297:4201297": 1,
+          "4201296:4201296": 1,
+          "4201308:4201308": 1,
+          "4203475:4203475": 1,
+          "4203473:4203473": 1,
+          "4201307:4201307": 1,
+          "4203484:4203484": 1,
+          "4201299:4201299": 1,
+          "4201301:4201301": 1,
+          "4201300:4201300": 1,
+          "4203485:4203485": 1,
+          "4201309:4201309": 1,
+          "4203477:4203477": 1,
+          "4203476:4203476": 1,
+          "4201317:4201317": 1,
+          "4201315:4201315": 1,
+          "4201314:4201314": 1,
+          "4203491:4203491": 1,
+          "4203506:4203506": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "ordered_gds_capture_requested": false,
+      "ordered_gds_evidence": [
+        {
+          "file": "ordered-gds-00000000dbaa6ae4-1.bin",
+          "bytes": 97152,
+          "sha256": "40ec51911c6488c5920b5ac88bac2dfb69f44d5ee2c56ca6baf784b256866dc9",
+          "guest_continuation_executed": null,
+          "evidence_kind": "raw_gpu_checkpoint"
+        },
+        {
+          "file": "ordered-gds-00000000dbaa6ae4-1.inputs.bin",
+          "bytes": 944,
+          "sha256": "5c44d43954439371193e3f2ffe2dee46df004ea6553f2fab91b595d3a2f9ec86",
+          "guest_continuation_executed": null,
+          "evidence_kind": "host_device_authority_and_gpu_resume"
+        }
+      ],
+      "visual_review": "DS_FIRST_PHASE_REJECTED_NO_CONTINUATION_OBSERVED"
+    }
+  ],
+  "gpu_packet_analysis": {
+    "authority_records": 7,
+    "host_gpu_authority_identical": true,
+    "rejected_slot": 5,
+    "capture_sha256": "40ec51911c6488c5920b5ac88bac2dfb69f44d5ee2c56ca6baf784b256866dc9",
+    "inputs_sha256": "5c44d43954439371193e3f2ffe2dee46df004ea6553f2fab91b595d3a2f9ec86",
+    "packets": [
+      [
+        1129530439,
+        1,
+        16728,
+        4864,
+        0,
+        262144,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        1129530439,
+        1,
+        16728,
+        4864,
+        1,
+        262145,
+        1,
+        0,
+        0,
+        0,
+        2,
+        0,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        1129530439,
+        1,
+        16728,
+        4864,
+        2,
+        262146,
+        1,
+        0,
+        0,
+        0,
+        3,
+        0,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        1129530439,
+        1,
+        16728,
+        4864,
+        3,
+        262147,
+        1,
+        0,
+        0,
+        0,
+        4,
+        0,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        1129530439,
+        1,
+        16852,
+        768,
+        4,
+        262148,
+        1,
+        0,
+        0,
+        12,
+        5,
+        0,
+        7,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        16728,
+        4864,
+        5,
+        262149,
+        1,
+        0,
+        0,
+        0,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1129530439,
+        1,
+        16728,
+        4864,
+        6,
+        262150,
+        1,
+        0,
+        0,
+        0,
+        7,
+        0,
+        7,
+        0,
+        0,
+        0
+      ]
+    ],
+    "inference": "Valid authority/identity with zero validity stamps indicates incomplete host-wave participation; original reproducer confirms missed scalar-mask destinations can create this failure."
+  },
+  "root_defect": "WritesScalarMask inspected dst_count leading elements, but decoder stores VOPC and VOP3 comparison scalar destinations in slot1. VOPC dst_count is zero and VOP3 comparison dst_count is one. Missed outputs were masked as vector bodies, leaving inactive host lanes with stale scalar registers and allowing divergent scalar branches. Inspect both initialized destination slots. Unused operands default to Undefined and decoder resets each instruction.",
+  "validation": {
+    "source_commit": "e2b34e7198f6e26bbdf740e2811e114408bd3db1",
+    "source_tree": "b6b7c6823246db6ee4401139e4e2de633cf24d60",
+    "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+    "build": "PASS_RELEASE",
+    "binary_sha256": "d8708da98a8929f1b163ad117f4c3df02fc55337ac7c2bab8d2e68cc5f8c9d8a",
+    "cpu": "UNIVERSAL_CPU_REGRESSIONS=PASS",
+    "cli": "NATIVE_CLI_USER_DIRECTORIES=PASS scenarios=3 GPU_NOT_RUN",
+    "handoff": "ONEPASTE pass exit=0 handoff=True PASS\nONEPASTE bad_checksum exit=1 handoff=False PASS\nONEPASTE download_fail exit=22 handoff=False PASS\nDownload and native-run boundaries stubbed; no games launched.\n",
+    "native_shader_compile": "COMPILE_PASS words=266861 frame_words=2399 bindings=39",
+    "native_shader_spirv_validation": "PASS_VULKAN_1_2",
+    "offline_navi31_compile": "COMPILE_PASS GPU_NOT_RUN",
+    "physical_gpu_execution": false,
+    "gameplay_acceptance": false,
+    "openorbis": "LLVM19 BONAIRE_ASSEMBLY_AND_HOST_C11_SYNTAX_PASS; SDK_LINK_AND_PS4_EXECUTION_NOT_RUN",
+    "fixtures": {
+      "continuation-compare-mask-sdst": {
+        "checks": 13566,
+        "cases": [
+          {
+            "exec": "0xffffffffffffffff",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x8000000000000000",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x1",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0xaaaaaaaaaaaaaaaa",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x5555555555555555",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x0",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          }
+        ],
+        "execution": "independent integer SPIR-V interpreter, not GPU execution"
+      },
+      "continuation-compare-mask-vcc": {
+        "checks": 13566,
+        "cases": [
+          {
+            "exec": "0xffffffffffffffff",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x8000000000000000",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x1",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0xaaaaaaaaaaaaaaaa",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x5555555555555555",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x0",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          }
+        ],
+        "execution": "independent integer SPIR-V interpreter, not GPU execution"
+      },
+      "continuation": {
+        "checks": 13566,
+        "cases": [
+          {
+            "exec": "0xffffffffffffffff",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x8000000000000000",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x1",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0xaaaaaaaaaaaaaaaa",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x5555555555555555",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          },
+          {
+            "exec": "0x0",
+            "waves": 7,
+            "phases": 2,
+            "passed": true
+          }
+        ],
+        "execution": "independent integer SPIR-V interpreter, not GPU execution"
+      },
+      "continuation-loop": {
+        "checks": 13818,
+        "cases": [
+          {
+            "exec": "0xffffffffffffffff",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          },
+          {
+            "exec": "0x8000000000000000",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          },
+          {
+            "exec": "0x1",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          },
+          {
+            "exec": "0xaaaaaaaaaaaaaaaa",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          },
+          {
+            "exec": "0x5555555555555555",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          },
+          {
+            "exec": "0x0",
+            "waves": 7,
+            "phases": 4,
+            "passed": true
+          }
+        ],
+        "execution": "independent integer SPIR-V interpreter, not GPU execution"
+      },
+      "edge": {
+        "sparse_completion": "PASS 3 masks, 7 independently retiring waves, 8 phases, 6720 lane-field comparisons",
+        "first_instruction_ds": "PASS real PC zero is distinct from initial entry; 64 counter results",
+        "invalid_resume": "PASS 7 tag, epoch, site, flags, slot, token mutations; no writes"
+      },
+      "baseline-sdst": "FAIL_ZERO_TAG_OR_TERMINAL_PACKET_AFTER_MASKED_COMPARE",
+      "baseline-vcc": "FAIL_ZERO_TAG_OR_TERMINAL_PACKET_AFTER_MASKED_COMPARE"
+    },
+    "rejected": [
+      {
+        "candidate": "VK_KHR_shader_maximal_reconvergence only",
+        "result": "Original and maximal native ISA are identical; SHA256 c60849fc82fb794194c5f9a502d3d8a29c144f4c2b77b443396f29a00d320c54. No source change retained."
+      },
+      {
+        "candidate": "Keep EXEC scopes opaque to GotoPass",
+        "result": "Baseline and candidate generated SPIR-V identical; SHA256 30c69ccc6e9d86adfa152dbf01e14f3c8560d9c22b2887a139d0b7257854355c. Patch discarded."
+      }
+    ]
+  },
+  "main_changed": false,
+  "native_fix_acceptance": "PENDING",
+  "got_status": "UNRESOLVED_BLACK_SCREEN_NO_DS_ACTIVITY_OBSERVED",
+  "limitations": [
+    "No physical wave64 GPU or game run in this workspace.",
+    "Captured shader compiled using unbound resource stand-ins; this is compiler coverage, not resource replay.",
+    "Existing DS continuation bounds remain; no all-game or all-device compatibility claim.",
+    "PS4 homebrew assembly and host syntax checked; SDK link and hardware run unavailable."
+  ],
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/ds-ordered-comparison-fix-20261105.zip",
+    "sha256": "584760241a3dc4ce96449fb26625622cde8406b2d9836d6f8605a8e8878123c4",
+    "bytes": 42536,
+    "library_file_id": "libfile_dd3145c021248191936239521b1620b0",
+    "url": "https://chatgpt.com/library?file_id=libfile_dd3145c021248191936239521b1620b0&account_id=personal"
+  },
+  "next_run": {
+    "source_commit": "e2b34e7198f6e26bbdf740e2811e114408bd3db1",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "capture_requested": false,
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=e2b34e7198f6e26bbdf740e2811e114408bd3db1\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "expectation": "Normal execution with comparison scalar-mask fix. No deliberately incomplete capture gate. Native game success remains unverified."
+  }
+}
