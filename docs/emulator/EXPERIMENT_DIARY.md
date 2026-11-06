@@ -1040,3 +1040,12 @@ GCC14 Release and three actual-binary startup checks pass; host binary `aa362d1f
 
 
 Runner `d43d3ec6ad736d55b88ff9551eee16fce20b4cd3` builds the immutable source and tests GoT first, then GoW, with manual input, screenshots/FPS, TERM118s/owned KILL120s, >=8 GiB free VRAM and conditional exact model restoration. There is no moving-ref freshness check during build/launch. Handoff success, checksum/download rejection and cleanup fixtures pass. Main remains unchanged. Journal rows 767–768 append all 766 prior rows byte-for-byte. Native FPS improvement, GoT fill, the long GoW wait and broader blending remain unresolved. Full evidence and command: `docs/emulator/reviews/20261106-coherent-writes-and-viewport-slots.json`.
+
+
+## 2026-11-06 — Reuse buffer-barrier tracking storage (PR183)
+
+[PR183](https://github.com/Chreece/shadPS4/pull/183) retains PR182 and pins source `c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94` on upstream `ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49`, checked during preparation. Buffer-barrier tracking now reuses cleared range storage and avoids rewriting fully covered plain intervals. Submit housekeeping trims inactive slots while retaining pending accesses. GPU dependencies, coherence and metadata-bearing interval behavior are unchanged.
+
+Production-body host checks pass 150,000 operations, 59,848 matching hazard queries and 11,934 identical barriers; 2,560,000 metadata interval checks and ASan/UBSan also pass. A synthetic 20,000-barrier workload reduces allocation calls from 480,004 to 20. This is not a game FPS result. The full GCC14 Release build, three actual-binary startup checks and complete 31-CTest/renderer/SRT/sparse/descriptor/VMA/ABI suite pass. Host binary SHA256 `cbf9bd66c3c9902c0d5b0d91c10e9bdca95f78e931f639e15d0071a12569b762`; all 1,065 source files and 96 test files match the build checkout.
+
+No native capture newer than the 18:07 archive is available; PR182 and PR183 native acceptance remains pending. Audio PR5492 is still unmerged and is not included: its associated-port drain remains on the caller, and the captured GoW wait is for GPU completion. The pinned runner `d43d3ec6ad736d55b88ff9551eee16fce20b4cd3` tests GoT then GoW with the existing 118/120-second bounds and VRAM/model protections, without moving-ref checks during build/run. Main is unchanged. One host-validation record is appended; all 768 previous journal rows remain byte-identical. Full review and exact one-paste: `docs/emulator/reviews/20261106-buffer-barrier-storage-reuse.json`.
