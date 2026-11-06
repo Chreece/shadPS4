@@ -1,0 +1,487 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-05T21:14:36.631082+00:00",
+  "source_commit": "0fd5b3959df005cb70e7989341fa5bcb912b94c4",
+  "source_tree": "448e7475b116921591e17f421e43bf5072358b1f",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "pr": 169,
+  "base_pr": 168,
+  "archive": {
+    "filename": "universal-two-games-20261105T204013Z-4166720.tar.gz",
+    "sha256": "6a767ff83028820c3222512b401ccbaabdc16da57f01b936195ed2f8ac3721ac",
+    "library_file_id": "libfile_9e2abc702dac819195d9d0dc52bde6c4"
+  },
+  "native": [
+    {
+      "record": "universal-graphics-20261105T205545Z-90101",
+      "games": [
+        "CUSA11456"
+      ],
+      "source": "664a9b010e1dbbb4602e0e140b3bc6aef2eb6c31",
+      "binary_sha256": "485ba3e5c484d05143070595233b755f070ebeda618adef4ebfee11230cdd292",
+      "upstream": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+      "native": {
+        "exit_code": -9,
+        "elapsed_seconds": 119.764,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "gpu_failure": null,
+        "gpu_work_entries": 0,
+        "first_validation_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "completed_dispatches": 0,
+      "max_completed_waves": 0,
+      "exception": [],
+      "visual": "110s black with spinner,17FPS/60.0ms",
+      "oversized_buffer_clamps": 0,
+      "full_console_bytes": 687039,
+      "full_console_complete": true,
+      "failed_phase_waves": null
+    },
+    {
+      "record": "universal-graphics-20261105T205459Z-85069",
+      "games": [
+        "CUSA34384"
+      ],
+      "source": "664a9b010e1dbbb4602e0e140b3bc6aef2eb6c31",
+      "binary_sha256": "485ba3e5c484d05143070595233b755f070ebeda618adef4ebfee11230cdd292",
+      "upstream": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+      "native": {
+        "exit_code": -11,
+        "elapsed_seconds": 41.222,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "gpu_failure": null,
+        "gpu_work_entries": 0,
+        "first_validation_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "completed_dispatches": 201,
+      "max_completed_waves": 2013,
+      "exception": [
+        "ordered GDS first phase has no complete CIK creation order"
+      ],
+      "visual": "25s emulator loading card,60FPS UI overlay; no guest frame confirmed",
+      "oversized_buffer_clamps": 8950,
+      "full_console_bytes": 6335288,
+      "full_console_complete": true,
+      "failed_phase_waves": 2092
+    }
+  ],
+  "change": "Preserve full creation sequence assigned by the existing ordered compute prologue when TG_SIZE IDs wrap after 2048 waves. Complete-M0 permutation inference remains first. Fallback requires TG_SIZE and ordered append; per-group mode requires one wave per group. Validate live M0 low16 against wrapped ID, preserving zero crawler requirement. No title/hash/vendor/profile toggles, changed atomics, invented counter values or relaxed authentication.",
+  "research": {
+    "primary_source": "https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/programmer-references/CIK_3D_registers_v2.pdf",
+    "register": "COMPUTE_DISPATCH_INITIATOR",
+    "interpretation": "ORDERED_APPEND_ENBL enables guest wave-ID assignment; ORDERED_APPEND_MODE distinguishes per-wave and per-threadgroup identity. The candidate uses this emulator's existing prologue assignment, preserving its unbounded dispatch ordinal alongside its wrapped TG_SIZE identity. It does not infer order from Vulkan arrival.",
+    "local_evidence": "The uploaded compute IR uses WorkgroupIndex plus local wave, masks with 2047, shifts by six and packs the TG_SIZE SGPR. The last successful native DS dispatch has 2013 waves and the rejected first phase has 2092 waves. Raw failed capture packets are not present in the archive, so direct native duplicate-ID inspection remains unavailable.",
+    "remaining_scope": "Existing complete-M0 permutation inference remains first choice. Dispatch-derived fallback is gated on TG_SIZE plus ordered append, and per-group mode only with one wave per group. Every participating packet must match the assigned wrapped ID and zero crawler increment. Existing instruction, checkpoint, token, memory and wave-count checks remain. Arbitrary nonzero crawler strides, multiwave per-group ordered identities and all platform/game correctness are not claimed."
+  },
+  "validation": {
+    "published_binary": {
+      "source_commit": "0fd5b3959df005cb70e7989341fa5bcb912b94c4",
+      "tree": "448e7475b116921591e17f421e43bf5072358b1f",
+      "bytes": 94848808,
+      "sha256": "bc4612ef8290d1a2bc4aee8ecf8ec051d83b1dcd980c0376e9530c111fffee52"
+    },
+    "build": "PASS full published emulator build",
+    "cpu_suite": "PASS established universal CPU regressions",
+    "cli": "PASS three user-directory scenarios",
+    "order_probe": "PASS 164326 production checks; sizes 1,7,2047,2048,2049,2092,4096,8192; shuffled arrival, sparse completion, mode gates, malformed packets and counter wrap",
+    "wrap_semantics": {
+      "waves": 2092,
+      "checks": 1079472,
+      "seconds": 350.09,
+      "result": "PASS",
+      "execution": "independent integer SPIR-V interpreter; production shader, checkpoints, resolver and resume validation; no GPU"
+    },
+    "legacy_basic": {
+      "checks": 13566,
+      "cases": [
+        {
+          "exec": "0xffffffffffffffff",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x8000000000000000",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x1",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0xaaaaaaaaaaaaaaaa",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x5555555555555555",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        },
+        {
+          "exec": "0x0",
+          "waves": 7,
+          "phases": 2,
+          "passed": true
+        }
+      ],
+      "execution": "independent integer SPIR-V interpreter, not GPU execution"
+    },
+    "legacy_loop": {
+      "checks": 13818,
+      "cases": [
+        {
+          "exec": "0xffffffffffffffff",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x8000000000000000",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x1",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0xaaaaaaaaaaaaaaaa",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x5555555555555555",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        },
+        {
+          "exec": "0x0",
+          "waves": 7,
+          "phases": 4,
+          "passed": true
+        }
+      ],
+      "execution": "independent integer SPIR-V interpreter, not GPU execution"
+    },
+    "legacy_edges": {
+      "sparse_completion": "PASS 3 masks, 7 independently retiring waves, 8 phases, 6720 lane-field comparisons",
+      "first_instruction_ds": "PASS real PC zero is distinct from initial entry; 64 counter results",
+      "invalid_resume": "PASS 7 tag, epoch, site, flags, slot, token mutations; no writes"
+    },
+    "spirv": "Five original modules validate for Vulkan1.2; four legacy modules are byte-identical to PR168",
+    "offline_radv": "PASS original wrap shader on Navi31 and Vega10, ACO validateir/validatera; no work submitted",
+    "native_build_logs": [
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/build.log",
+        "bytes": 363650,
+        "sha256": "c58decedaa2837b959abc084cdeb02c5eac59ccdf824522d439345579b594152",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-tests.log",
+        "bytes": 7263,
+        "sha256": "61679deb0cb8477258e32371e2a03b7166e31f03a73116757c3323b3e98fbbaa",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/fetch.log",
+        "bytes": 117,
+        "sha256": "905c4150297c853a5e345918119daef414dd04c2f66f60e88de52ec34ccb4f27",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/native-startup.log",
+        "bytes": 57,
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/submodules.log",
+        "bytes": 21503,
+        "sha256": "57bee5d9a38d2443020ae048250f1a48016c4665084481245f40700dd8576ac1",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/clone.log",
+        "bytes": 92,
+        "sha256": "ec25eb8d910734028fdf2be917e365cfa544cfda81b7165d068ee56fa20d9a59",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/checkout.log",
+        "bytes": 101,
+        "sha256": "6eaea727ce1405b68a862e943e297414834b15cfa8dce04e89ae5ed9b325f624",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/configure.log",
+        "bytes": 47048,
+        "sha256": "9c47f287968800959ed826773eb9bdff4bd08069fae1bc3cf50a0b9f6d009441",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/upstream-fetch.log",
+        "bytes": 142,
+        "sha256": "4350da73ac32af27e85b45e7717415216849ee4728c36266af43c440e89b7ef6",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/compiler-check.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/hle-abi.log",
+        "bytes": 30,
+        "sha256": "73f114c9dc2117e84da4a1408b9e20308344ccad57a7fab8b92f37d2953f7373",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_thread_atexit-build.log",
+        "bytes": 516,
+        "sha256": "9f29dc33877e628844f3bda55b2ba734dd2f82bf3e1aaaea1709c7c3b6a02ea8",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/occlusion_query-configure.log",
+        "bytes": 447,
+        "sha256": "828202d948f2bf2f801e0b82fb4cfbde14cf096e00d6e9bdf41c892c70ea47df",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/srt-production.log",
+        "bytes": 37,
+        "sha256": "791c797bf025b9ff0d616966c683ec891186f714078779f6dc5d2092472bd0b4",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/userservice-configure.log",
+        "bytes": 443,
+        "sha256": "e1b8dd88f7310fdca61c0f4f6523a93f5ab696204b5aeb5c5c84022b1d0fe42a",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/startup_loading-test.log",
+        "bytes": 644,
+        "sha256": "cd141442430a52e4f25148c5665fd5ee29ecd008e78260d582f076919d66a014",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/startup_loading-build.log",
+        "bytes": 988,
+        "sha256": "b003a177c09dfadd55f439afe453854dca88cb35f76b0f6f9db9209f208e7775",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_sanitizer-configure.log",
+        "bytes": 448,
+        "sha256": "881a2ae6d111ecad20513242de8a39c0263192201453b9e354329239595fe537",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/sparse-production.log",
+        "bytes": 222,
+        "sha256": "9d59e3fd6ec4d3a8dc2e1f7363dca74a86a9258cd54e6e82d4d61e5125e774c5",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/graphics_diagnostics-test.log",
+        "bytes": 545,
+        "sha256": "2e278750a751db6c18ea4f94eef4d0b7bfd82653c03a04d48bb95c09b0b0b838",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/ngs2_hle-configure.log",
+        "bytes": 805,
+        "sha256": "014f56840344fc6891ac2b59fd666bbdf884c173398e4d00719c28b37584e20d",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/userservice-build.log",
+        "bytes": 347,
+        "sha256": "995e06870e55ff1443e618aca3eb97bc1779ea79b46634c9dc58f0d5ba426f9f",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_thread_atexit-configure.log",
+        "bytes": 571,
+        "sha256": "73b1a38e9d6bb1be2be0295684e7caefda39e25c08c9b166b61b4dc222731764",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/image_transfer-build.log",
+        "bytes": 269,
+        "sha256": "6f279355e569cdb34f857e10b68d0d366c35638b6bde3ac304075199b3ba58d7",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/quit_dialog-build.log",
+        "bytes": 127,
+        "sha256": "505b7d21ea0d36d1c4ceaaf15ffee46c47d46cda37cfd9d064a1ec72bd9624b0",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/contiguous-vma.log",
+        "bytes": 32,
+        "sha256": "80b2b3e0105854386cf168a8df15e199464ce267987c57eecd142693c7f1e6b6",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_sanitizer-test.log",
+        "bytes": 438,
+        "sha256": "4cecd8f5606e4e7816de9f82375d4e3feedb8f8dd5026de3536702c1d9577c93",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/ngs2_hle-build.log",
+        "bytes": 4694,
+        "sha256": "f670973d406536a3d9333d710609deaee4c93416590179665891440f0af507a6",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/ngs2_hle-test.log",
+        "bytes": 1582,
+        "sha256": "da35a3dc6d14c32ac9d4a50b303a0bef71ff05e49e9e482da19bd4a96d7d15a4",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/quit_dialog-configure.log",
+        "bytes": 443,
+        "sha256": "37ec4954d6a2c868e4ea6a48fd2013b091a39009f16269ea0d049c44fb16dc46",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/descriptor-heap.log",
+        "bytes": 229,
+        "sha256": "a0bd47f629e30cdc285869b8ef9b8934a8c0647af15ee9bfec1c9ba4cba80a19",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_thread_atexit-test.log",
+        "bytes": 442,
+        "sha256": "95b4a1c6b7c6a0e1e57ca5faea258f223bedc2fe81c129ea5eb88a6c8796a106",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/quit_dialog-test.log",
+        "bytes": 960,
+        "sha256": "bf76c01208873c71943b7d55f0711f36fb009cc581a29ceb062844dfc0aa5b6e",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/startup_loading-configure.log",
+        "bytes": 566,
+        "sha256": "989baf59eeaffc4d308397a2c6c3b458a1d183c90d7f4771678b851689770c72",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/occlusion_query-build.log",
+        "bytes": 290,
+        "sha256": "6d0667d020dd98df1239705add9c9e283e07f7f17cd67b6cbb38b72aa228e58f",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/graphics_diagnostics-configure.log",
+        "bytes": 452,
+        "sha256": "f1d858dcaa2293efdc901c93a6561730d1e43b23790459fa2b8d407ffca8c3fe",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/image_transfer-test.log",
+        "bytes": 772,
+        "sha256": "a7fa2e65ec2964d7c2c55e186c6552d43066ad54902c0cd8932b27c2333bf61b",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/renderer-contracts.log",
+        "bytes": 105,
+        "sha256": "670a39115e7523a8984e4842e16547cb2094b03fad392b037b4b9dc8b2656e62",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/occlusion_query-test.log",
+        "bytes": 539,
+        "sha256": "cbdce9e4874a543a4daa32b6072766a427c4010cf2768edeb960c48ef341581f",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/userservice-test.log",
+        "bytes": 426,
+        "sha256": "b70cfb35e24231c7afb35f581a222ac75f00aa3af16d8e3219055c81bf0f94ae",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/image_transfer-configure.log",
+        "bytes": 446,
+        "sha256": "991476411b2f0ce56293f51d709eb11deadc3bd8fd2d64915b85279f13fd4d60",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/graphics_diagnostics-build.log",
+        "bytes": 154,
+        "sha256": "300a87f284cce14e24e7fb79170c4b0aaadb6f137206513abed372d2d199d11e",
+        "errors": []
+      },
+      {
+        "path": "universal-two-games-20261105T204013Z-4166720/universal-upstream-20261105T204014Z-4167100-files/universal-upstream-20261105T204014Z-4167100/cpu-suite-logs/kernel_sanitizer-build.log",
+        "bytes": 347,
+        "sha256": "2b9fd8999af29856bfbaa2bfbd063660b250d152748efcdec3571406f0d14be9",
+        "errors": []
+      }
+    ],
+    "homebrew": "Original 2047/2048/2049/2092/4096-wave OpenOrbis probe; four EXEC masks; counter-derived order and wrapped IDs; pre/post atomics, LDS, inactive destinations. Assembly, strict host syntax and production SearchBinaryInfo pass. SDK link and PS4 execution unrun.",
+    "handoff": "ONEPASTE pass exit=0 handoff=True PASS\nONEPASTE bad_checksum exit=1 handoff=False PASS\nONEPASTE download_fail exit=22 handoff=False PASS\nDownload and native-run boundaries stubbed; no games launched.\n",
+    "corrected_attempts": [
+      "Initial handoff fixture invocation omitted the required repository argument, raising IndexError before launching anything; supplied argument and updated pinned source SHA, all three paths pass.",
+      "Standalone metadata fixture link lacked production logging/unreachable symbols; rebuilt using existing emulator objects, both kernels pass production SearchBinaryInfo.",
+      "Inherited homebrew builder retained a placeholder metadata-pointer literal. Corrected padding and offset calculation, rebuilt both kernels and validated using production metadata parser."
+    ],
+    "limits": "No physical GPU or native execution of PR169. Software interpretation and offline compilation do not prove console or host GPU correctness."
+  },
+  "artifact": {
+    "filename": "ds-ordered-wave-wrap-evidence-20261105.zip",
+    "bytes": 358268,
+    "files": 119,
+    "sha256": "b21a3c9dbaddf3249fc4907b3527e4eb4b4911d0ddbccef39dc797bd77f1023d",
+    "library_file_id": "libfile_3bf27aab5d088191a1903d34831fb75c",
+    "url": "https://chatgpt.com/library?file_id=libfile_3bf27aab5d088191a1903d34831fb75c&account_id=personal"
+  },
+  "next_run": {
+    "source_commit": "0fd5b3959df005cb70e7989341fa5bcb912b94c4",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=0fd5b3959df005cb70e7989341fa5bcb912b94c4\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "capture_requested": false,
+    "protections": "118s TERM +2s KILL; >=8GiB VRAM; conditional exact Ollama lease restoration; stop/defer after GPU loss or live child; no automatic input or SSH termination"
+  },
+  "decision": {
+    "pr168": "READY_NATIVE_MEMORY_LIMIT_PASSED_DISTINCT_IDENTITY_FAILURE_RECORDED",
+    "pr169": "DRAFT_LOCALLY_VALIDATED_NATIVE_PENDING",
+    "main_changed": false,
+    "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "main_reason": "Experimental ancestry retains unresolved rendering regressions; do not promote the whole stack from a single repaired guard.",
+    "visual_acceptance": false,
+    "gameplay_acceptance": false,
+    "audio_acceptance": "NOT_OBSERVED",
+    "remaining_limits": "Existing finite memory/wave64 bounds, supported DS encodings and workgroup suspension rules remain; all games/systems or DS forms are not claimed complete."
+  }
+}

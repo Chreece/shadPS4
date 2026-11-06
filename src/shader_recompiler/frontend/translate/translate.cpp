@@ -6,6 +6,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/decode.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -288,6 +289,29 @@ void Translator::EmitPrologue(IR::Block* first_block) {
         }
         if (runtime_info.hw.cs.tgid_enable[2]) {
             ir.SetScalarReg(dst_sreg++, ir.GetAttributeU32(IR::Attribute::WorkgroupId, 2));
+        }
+        if (runtime_info.hw.cs.tg_size_enable) {
+            const auto& cs = runtime_info.hw.cs;
+            const u64 threads =
+                u64(cs.workgroup_size[0]) * cs.workgroup_size[1] * cs.workgroup_size[2];
+            ASSERT_MSG(threads != 0 && threads <= 2048, "Invalid compute workgroup size");
+            const u32 waves = u32((threads + 63) / 64);
+            const IR::U32 local_wave = ir.ShiftRightLogical(
+                ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex), ir.Imm32(6u));
+            IR::U32 wave_id = local_wave;
+            if (cs.ordered_append) {
+                const IR::U32 group = ir.GetAttributeU32(IR::Attribute::WorkgroupIndex);
+                wave_id = cs.ordered_append_per_group
+                              ? group
+                              : IR::U32{ir.IAdd(ir.IMul(group, ir.Imm32(waves)), local_wave)};
+            }
+            const IR::U32 first_wave{
+                ir.Select(ir.IEqual(local_wave, ir.Imm32(0u)), ir.Imm32(1u << 31), ir.Imm32(0u))};
+            const IR::U32 ordered_term = ir.ShiftLeftLogical(
+                ir.BitwiseAnd(wave_id, ir.Imm32(OrderedGds::CikComputeOrderedWaveIdMask)),
+                ir.Imm32(6u));
+            ir.SetScalarReg(dst_sreg++,
+                            ir.BitwiseOr(first_wave, ir.BitwiseOr(ordered_term, ir.Imm32(waves))));
         }
         break;
     case SwStage::Geometry:
@@ -1215,13 +1239,16 @@ void Translator::LogMissingOpcode(const GcnInst& inst) {
 
 void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
                            std::span<const GcnInst> inst_list) {
-    if (inst_list.empty()) {
-        return;
-    }
     ir = IR::IREmitter{*block, block->begin()};
     pc = start_pc;
+    bool full_wave_select = false;
+    std::optional<u32> full_wave_mask;
+    const GcnInst* previous_inst{};
     for (const auto& inst : inst_list) {
         pc += inst.length;
+        const bool mask_outputs = info.uses_ordered_gds && inst.WritesScalarMask();
+        const IR::U1 active = mask_outputs ? ir.GetExec() : IR::U1{};
+        const auto previous = block->empty() ? block->end() : std::prev(block->end());
 
         // Special case for emitting fetch shader.
         if (inst.opcode == Opcode::S_SWAPPC_B64) {
@@ -1231,7 +1258,41 @@ void Translator::Translate(IR::Block* block, u32 start_pc, IR::Condition cond,
             continue;
         }
 
-        TranslateInstruction(inst);
+        if (inst.opcode == Opcode::V_CNDMASK_B32 && full_wave_select &&
+            (inst.src[2].field == OperandField::Undefined ||
+             inst.src[2].field == OperandField::VccLo ||
+             (inst.src[2].field == OperandField::ScalarGPR &&
+              full_wave_mask == inst.src[2].code))) {
+            V_CNDMASK_B32(inst, true);
+        } else {
+            TranslateInstruction(inst);
+        }
+        if (mask_outputs) {
+            auto first = previous == block->end() ? block->begin() : std::next(previous);
+            for (auto it = first; it != block->end(); ++it) {
+                IR::IREmitter masked_ir{*block, it};
+                if (it->GetOpcode() == IR::Opcode::SetVectorRegister) {
+                    const auto reg = it->Arg(0).VectorReg();
+                    const auto old = masked_ir.GetVectorReg<IR::U32>(reg);
+                    it->SetArg(1, masked_ir.Select(active, it->Arg(1), old));
+                } else if (it->GetOpcode() == IR::Opcode::Ballot) {
+                    it->SetArg(0, masked_ir.LogicalAnd(active, IR::U1{it->Arg(0)}));
+                }
+            }
+        }
+        if (inst.opcode != Opcode::S_WAITCNT && inst.opcode != Opcode::S_NOP) {
+            full_wave_select = inst.opcode == Opcode::S_ORN2_SAVEEXEC_B64 &&
+                               inst.src[0].field == OperandField::ExecLo &&
+                               inst.dst[0].field == OperandField::VccLo;
+            full_wave_mask.reset();
+            if (full_wave_select && previous_inst && previous_inst->opcode == Opcode::S_AND_B64 &&
+                previous_inst->dst[0].field == OperandField::ScalarGPR &&
+                (previous_inst->src[0].field == OperandField::ExecLo ||
+                 previous_inst->src[1].field == OperandField::ExecLo)) {
+                full_wave_mask = previous_inst->dst[0].code;
+            }
+            previous_inst = &inst;
+        }
     }
     if (cond != IR::Condition::True && cond != IR::Condition::False) {
         block->branch_cond = ir.ConditionRef(ir.Condition(cond));

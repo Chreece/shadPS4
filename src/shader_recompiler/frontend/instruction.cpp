@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <span>
 #include "common/assert.h"
 #include "shader_recompiler/frontend/instruction.h"
 
@@ -24,6 +26,31 @@ bool GcnInst::IsUnconditionalBranch() const {
 bool GcnInst::IsFork() const {
     return opcode == Opcode::S_CBRANCH_I_FORK || opcode == Opcode::S_CBRANCH_G_FORK ||
            opcode == Opcode::S_CBRANCH_JOIN;
+}
+
+bool GcnInst::WritesScalarMask() const {
+    if (category != InstCategory::VectorALU || opcode == Opcode::V_READLANE_B32 ||
+        opcode == Opcode::V_READFIRSTLANE_B32) {
+        return false;
+    }
+    switch (opcode) {
+    case Opcode::V_ADD_I32:
+    case Opcode::V_SUB_I32:
+    case Opcode::V_SUBREV_I32:
+    case Opcode::V_ADDC_U32:
+    case Opcode::V_SUBB_U32:
+    case Opcode::V_SUBBREV_U32:
+    case Opcode::V_MAD_U64_U32:
+        return true;
+    default:
+        break;
+    }
+    return IsCmpx() ||
+           std::ranges::any_of(dst, [](const InstOperand& operand) {
+               return operand.field == OperandField::ScalarGPR ||
+                      operand.field == OperandField::VccLo ||
+                      operand.field == OperandField::VccHi || operand.field == OperandField::ExecLo;
+           });
 }
 
 bool GcnInst::IsConditionalBranch() const {
