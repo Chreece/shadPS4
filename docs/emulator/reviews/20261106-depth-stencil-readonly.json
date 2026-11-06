@@ -1,0 +1,133 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T20:41:26.678161+00:00",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/185",
+  "archive": "universal-two-games-20261106T201915Z-1350091.tar.gz",
+  "archive_sha256": "64678a780f1655fabd6a21abe62159741be570d341c8bf97288a12eddcb1ee51",
+  "library_file_id": "libfile_b5b8bec0ff0c8191a9cd53738683b9b9",
+  "tested_source_commit": "c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94",
+  "tested_runner_commit": "110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b",
+  "candidate_source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+  "candidate_source_tree": "0d1809e795f0b963593193955072204fd569e3d5",
+  "next_runner_commit": "110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b",
+  "upstream_commit": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_preparation_check": "Current upstream checked during preparation and unchanged. No upstream/fork freshness gate in build or launch.",
+  "native_binary_sha256": "b6dadbaa9fad8036671556035b2b6af73ca7350ad20ac728571423541521f711",
+  "native_acceptance": "FAILED_GOT_VALIDATION_AND_GRAPHICS_GOW_GAMEPLAY_NOT_REACHED",
+  "fps_comparison": "Same native binary as prior performance capture, but Vulkan core/synchronization validation, synchronous logging, markers and shader dumping were enabled. Different settings and scenes prevent a causal FPS comparison. No measured speedup claimed.",
+  "games": {
+    "gow": {
+      "elapsed_seconds": 118.468,
+      "exit_code": 0,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "validation_layer_active": true,
+      "validation_message_ids": {},
+      "vram_free_at_launch": 20581355520,
+      "ollama_restore_statuses": [
+        "RESTORED"
+      ],
+      "native_acceptance": false,
+      "visual_110s": "Loading tips screen, overlay 5 FPS / 200.6 ms; not gameplay or a comparable performance sample."
+    },
+    "got": {
+      "elapsed_seconds": 113.911,
+      "exit_code": 0,
+      "exit_reason": "VULKAN_VALIDATION_FAILED",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "validation_layer_active": true,
+      "validation_message_ids": {
+        "VUID-VkDescriptorImageInfo-imageLayout-00344": 4,
+        "VUID-vkCmdDrawIndexed-None-08114": 4
+      },
+      "vram_free_at_launch": 20581339136,
+      "ollama_restore_statuses": [
+        "RESTORED"
+      ],
+      "native_acceptance": false,
+      "visual_110s": "Black image with overlay 8 FPS / 126.7 ms; graphics failed.",
+      "validation_error": "Sampled 1920x1080 D32SfloatS8Uint image descriptor declares DEPTH_STENCIL_READ_ONLY_OPTIMAL while tracked layout is DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL.",
+      "causal_limit": "The capture does not contain the failing draw stencil write masks/operations or sampled aspect. Read-only classification is a verified host defect on this path, not a proven explanation of this exact native draw. Actual writes plus same-aspect sampling remain an unresolved feedback-loop case."
+    }
+  },
+  "kernel_evidence": "Both runs collected bounded journal results, but stderr reports that the user cannot see the system journal. No entries is not proof of a clean kernel log. Previous GPU-fence stall/reset cause remains unknown.",
+  "change": [
+    "Classify attachment writes from enabled depth testing/writes and stencil masks/operations, including clears and back-face fallback; zero-mask/all-KEEP stencil testing remains read-only.",
+    "Use independent depth/stencil layouts and attachment write access only when required. Include shader-read stage/access scope for a sampled depth/stencil target.",
+    "Use STORE_OP_NONE for read-only depth/stencil aspects. Preserve STORE for writable aspects, including clears; color store operations unchanged.",
+    "Add sparsely sampled depth-stencil-access diagnostics with masks/operations, clears, selected layout and writable aspects. No addresses, game or shader selectors."
+  ],
+  "semantics": "Host Vulkan layout/access/store correction. Guest operations, write masks, shader code, clear requests, draw calls and geometry are not changed. No new guest-emulation semantics or game-specific workaround.",
+  "validation": {
+    "build": "PASS GCC14 Release",
+    "source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+    "binary_sha256": "2882a525239f7c36aebb3b7efd43b558cb192d6d37750fafe3a0499ab739525d",
+    "startup": [
+      {
+        "args": [
+          "--help"
+        ],
+        "exit": 0
+      },
+      {
+        "args": [
+          "--show-fps",
+          "--help"
+        ],
+        "exit": 0
+      },
+      {
+        "args": [
+          "--fullscreen",
+          "true",
+          "--help"
+        ],
+        "exit": 0
+      }
+    ],
+    "all_source_bytes_match": true,
+    "source_files_compared": 1065,
+    "test_files_compared": 96,
+    "ctests": 31,
+    "renderer_contracts": 7,
+    "srt_checks": 10418,
+    "sparse_ranges": 288,
+    "sparse_scenarios": 7,
+    "remaining_cpu_checks": "descriptor pool/batch, contiguous VMA, HLE ABI PASS",
+    "scope": "Host build without a Vulkan ICD or games; native GPU acceptance pending.",
+    "production_depth_stencil_probe": [
+      {
+        "mode": "release",
+        "exit": 0,
+        "stdout": "PASS cases=108000 transition_checks=216000 baseline_regressions=3 real_write_preserved=1",
+        "leak_detection": null
+      },
+      {
+        "mode": "sanitized",
+        "exit": 0,
+        "stdout": "PASS cases=108000 transition_checks=216000 baseline_regressions=3 real_write_preserved=1",
+        "leak_detection": false
+      }
+    ],
+    "probe_method": "Extract exact production helpers and transition block; compare supported stencil operations against enumerated stored-value changes for all 256 old byte values. Cover front/back fallback, masks, invalid aspects, depth/stencil clears, mixed layouts, shader-read scope and store preservation. Three old-layout regressions reproduced. Genuine writes retain writable layouts/stores.",
+    "sanitizer_limit": "ASan and UBSan passed with assertions enabled. Leak detection disabled because LeakSanitizer is unsupported under this host ptrace environment; no leak-validation claim.",
+    "handoff": "ONEPASTE pass exit=0 handoff=True PASS\nONEPASTE bad_checksum exit=1 handoff=False PASS\nONEPASTE download_fail exit=22 handoff=False PASS\nDownload and native-run boundaries stubbed; no games launched.",
+    "setup_failures": "Initial CPU invocation in dependency-light checkout lacked Ninja/include paths; final complete suite used the dependency-complete checkout and source bytes were compared. Initial LeakSanitizer environment failure was rerun with leak detection disabled."
+  },
+  "limitations": [
+    "No Vulkan ICD or games available on build host. Native visuals, VUID clearance and FPS remain unverified for the new source.",
+    "Read-only layout classification does not solve actual writes plus same-aspect sampling; no blanket writable layout or draw suppression introduced.",
+    "GoW low FPS, previous GPU stall, GoT missing fill and scaled min/max blend behavior remain open until native evidence demonstrates otherwise.",
+    "Next performance run disables Vulkan validation and cannot by itself certify VUID clearance."
+  ],
+  "primary_references": [
+    "https://docs.vulkan.org/spec/latest/chapters/resources.html#resources-image-layouts-matching",
+    "https://docs.vulkan.org/spec/latest/chapters/renderpass.html",
+    "https://docs.vulkan.org/refpages/latest/refpages/source/VkStencilOpState.html"
+  ],
+  "next_run": "Build immutable candidate, then GoW and GoT with performance settings, manual input, FPS screenshots and cost counters. Each native run capped at 120 seconds including owned-process stop. Keep process/VRAM/Ollama protections, isolated profiles, Sunshine/SSH intact. No install acceptance or upstream freshness check.",
+  "main_changed": false,
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1\nRUNNER=110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/depth-stencil.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c3cd560d1e4a974d38615366cdc589163004fe32c33ebfc6816e96c7970f5bc6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA34384 \\\nSHADPS4_TEST_CAPTURE_FIRST_SHADERS=0 \\\n  bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nSHADPS4_TEST\n"
+}
