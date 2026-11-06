@@ -211,6 +211,8 @@ def prepare_live_symbols(binary):
             if len(fields) != 4:
                 continue
             address, length, kind, name = fields
+            if name == 'Common::PerformanceDiagnostics::counters' and int(length, 16) == 13 * 48:
+                result['counters'] = int(address, 16)
             if name.startswith(prefix) and name[len(prefix):] in expected:
                 key = name[len(prefix):]
                 if int(length, 16) != expected[key]:
@@ -231,7 +233,9 @@ def capture_owned_live_memory(pid, out, second, symbols):
               'coherent_snapshot': False, 'signals_sent': False,
               'registers_are_prior_profiler_samples': True,
               'stack_code_candidates_are_not_unwound_frames': True,
-              'maximum_threads': 8, 'maximum_sample_age_ms': 2000}
+              'maximum_threads': 128, 'maximum_sample_age_ms': 2000,
+              'maximum_data_blocks': 512, 'maximum_code_blocks': 128,
+              'maximum_pointer_depth': 2, 'pointer_context': []}
     began = time.monotonic()
     deadline = began + 1.0
     mem = None
@@ -250,18 +254,24 @@ def capture_owned_live_memory(pid, out, second, symbols):
                          'offset': int(fields[2], 16),
                          'path': fields[5] if len(fields) > 5 else ''})
         record['maps'] = maps
+        map_starts = [r['start'] for r in maps]
         initial = next(r for r in maps if r['path'] == symbols['binary'] and r['offset'] == 0)
         bias = initial['start'] - symbols.get('initial_vaddr', 0)
         record['load_bias'] = bias
         mem = os.open(process / 'mem', os.O_RDONLY | os.O_CLOEXEC)
 
+        def mapping(address):
+            index = bisect.bisect_right(map_starts, address) - 1
+            if index >= 0 and address < maps[index]['end']:
+                return maps[index]
+            return None
+
         def read(address, size):
             if time.monotonic() >= deadline:
                 record['budget_exhausted'] = True
                 return b''
-            region = next((r for r in maps if r['start'] <= address < r['end']
-                           and r['permissions'].startswith('r')), None)
-            if region is None:
+            region = mapping(address)
+            if region is None or not region['permissions'].startswith('r'):
                 return b''
             try:
                 return os.pread(mem, min(size, region['end'] - address), address)
@@ -269,9 +279,8 @@ def capture_owned_live_memory(pid, out, second, symbols):
                 return b''
 
         def location(address):
-            region = next((r for r in maps if r['start'] <= address < r['end']
-                           and 'x' in r['permissions']), None)
-            if region is None:
+            region = mapping(address)
+            if region is None or 'x' not in region['permissions']:
                 return None
             entry = {'address': address, 'module': region['path'],
                      'file_offset': address - region['start'] + region['offset']}
@@ -284,7 +293,31 @@ def capture_owned_live_memory(pid, out, second, symbols):
                         entry.update(symbol=name, symbol_offset=relative - start)
             return entry
 
-        def memory(regs):
+        pending = []
+        contexts = {}
+
+        def queue_pointer(address, origin, depth=0):
+            region = mapping(address)
+            if region is None or not region['permissions'].startswith('r'):
+                return
+            is_code = 'x' in region['permissions']
+            start = max(region['start'], (address // 128) * 128 - 128) if is_code else (
+                max(region['start'], (address // 1024) * 1024))
+            key = (is_code, start)
+            if key in contexts:
+                item = contexts[key]
+                if len(item['origins']) < 4 and origin not in item['origins']:
+                    item['origins'].append(origin)
+                return
+            if len(pending) >= 2048:
+                record['pointer_queue_truncated'] = True
+                return
+            item = {'address': start, 'pointer': address, 'code': is_code,
+                    'depth': depth, 'origins': [origin]}
+            contexts[key] = item
+            pending.append(item)
+
+        def memory(regs, origin):
             stack = read(regs['rsp'], 2048)
             entry = {'code': {'address': max(0, regs['rip'] - 16),
                               'hex': read(max(0, regs['rip'] - 16), 96).hex()},
@@ -294,11 +327,29 @@ def capture_owned_live_memory(pid, out, second, symbols):
                         for key, value in regs.items() if key not in ('rip', 'rsp')
                         and (data := read(value, 64))},
                      'stack_code_candidates': []}
+            for key, value in regs.items():
+                queue_pointer(value, origin + ':' + key)
             for offset in range(0, len(stack) - 7, 8):
-                candidate = location(int.from_bytes(stack[offset:offset + 8], 'little'))
+                address = int.from_bytes(stack[offset:offset + 8], 'little')
+                candidate = location(address)
                 if candidate:
                     entry['stack_code_candidates'].append(dict(candidate, stack_offset=offset))
+                if offset < 512:
+                    queue_pointer(address, origin + ':stack+' + str(offset))
             return entry
+
+        if 'counters' in symbols:
+            raw = read(bias + symbols['counters'], 13 * 48)
+            if len(raw) == 13 * 48:
+                names = ('draw dispatch ordered-ds bind-buffers bind-textures shader-compile '
+                         'pipeline-lookup image-readback buffer-readback page-protect submit '
+                         'gpu-wait buffer-clamp').split()
+                fields = 'calls inclusive_ns self_ns max_ns bytes last_ns'.split()
+                record['live_performance_regions'] = [dict(name=name,
+                    **dict(zip(fields, struct.unpack_from('<6Q', raw, index * 48))))
+                    for index, name in enumerate(names)]
+            else:
+                record['live_performance_error'] = 'COUNTER_MEMORY_UNAVAILABLE'
 
         latest = {}
         sampler = symbols.get('sampler', {})
@@ -343,22 +394,52 @@ def capture_owned_live_memory(pid, out, second, symbols):
                 tasks.append((runtime, int(task.name), (task / 'comm').read_text().strip()))
             except (OSError, ValueError):
                 continue
-        for runtime, tid, name in sorted(tasks, reverse=True)[:8]:
+        record['thread_count'] = len(tasks)
+        record['threads_truncated'] = len(tasks) > record['maximum_threads']
+        for runtime, tid, name in sorted(tasks, reverse=True)[:record['maximum_threads']]:
             if time.monotonic() >= deadline:
                 record['budget_exhausted'] = True
                 break
             item = {'tid': tid, 'name': name, 'runtime_ns': runtime, 'samples': []}
             record['threads'].append(item)
             for sample in latest.get(tid, []):
-                item['samples'].append(dict(sample, memory=memory(sample['registers'])))
+                item['samples'].append(dict(sample,
+                    memory=memory(sample['registers'], f'{tid}:sample-{sample["sample_index"]}')))
             try:
                 syscall = (process / 'task' / str(tid) / 'syscall').read_text().split()
                 item['syscall'] = syscall
                 if len(syscall) >= 3 and syscall[0] != 'running':
                     regs = dict(zip(('rsp', 'rip'), (int(v, 0) for v in syscall[-2:])))
-                    item['blocked_syscall_memory'] = dict(registers=regs, memory=memory(regs))
+                    for index, value in enumerate(syscall[1:-2]):
+                        queue_pointer(int(value, 0), f'{tid}:syscall-arg-{index}')
+                    item['blocked_syscall_memory'] = dict(registers=regs,
+                        memory=memory(regs, f'{tid}:syscall'))
             except (OSError, ValueError) as error:
                 item['syscall_error'] = str(error)
+        record['threads_captured'] = len(record['threads'])
+        data_count = code_count = 0
+        for item in pending:
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                break
+            if item['code']:
+                if code_count >= record['maximum_code_blocks']:
+                    record['code_context_truncated'] = True
+                    continue
+                code_count += 1
+            else:
+                if data_count >= record['maximum_data_blocks']:
+                    record['data_context_truncated'] = True
+                    continue
+                data_count += 1
+            raw = read(item['address'], 512 if item['code'] else 2048)
+            record['pointer_context'].append(dict(item, hex=raw.hex()))
+            if not item['code'] and item['depth'] < record['maximum_pointer_depth']:
+                for offset in range(0, len(raw) - 7, 8):
+                    queue_pointer(int.from_bytes(raw[offset:offset + 8], 'little'),
+                                  f'{item["address"]:#x}+{offset}', item['depth'] + 1)
+        record['pointer_context_bytes'] = sum(len(item['hex']) // 2
+                                               for item in record['pointer_context'])
     except (OSError, RuntimeError, ValueError, StopIteration) as error:
         record['error'] = str(error)
     finally:
