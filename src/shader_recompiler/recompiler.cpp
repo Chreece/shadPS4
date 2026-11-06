@@ -10,6 +10,7 @@
 #include "shader_recompiler/frontend/structured_control_flow.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
+#include "shader_recompiler/ir/passes/ordered_gds_continuation_pass.h"
 #include "shader_recompiler/ir/post_order.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
@@ -86,6 +87,17 @@ void EmitControlFlowGraph(IR::Program& program, Pools& pools, Gcn::CFG& cfg,
         translator.Translate(ir_block, block.begin, block.cond,
                              std::span{program.ins_list}.subspan(start, size));
         program.blocks.push_back(ir_block);
+    }
+    if (program.info.uses_ordered_gds) {
+        auto* entry = cfg.block_pool.Create();
+        entry->is_dummy = true;
+        entry->end_class = Gcn::EndClass::Branch;
+        entry->cond = IR::Condition::True;
+        entry->branch_true = &*cfg.begin();
+        entry->ir_block = pools.block_pool.Create(pools.inst_pool);
+        entry->ir_block->cfg_block = entry;
+        cfg.blocks.insert_before(cfg.begin(), *entry);
+        program.blocks.insert(program.blocks.begin(), entry->ir_block);
     }
     translator.EmitPrologue(program.blocks.front());
     ASSERT_MSG(!program.info.translation_failed, "Shader translation has failed");
@@ -256,6 +268,7 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
         ir_block->ssa_state.Reset();
     }
     Shader::Optimization::LowerPhisToRegsPass(program);
+    Shader::Optimization::OrderedGdsContinuationPass(program, cfg, pools);
 
     // Structurize control flow graph and create program.
     program.syntax_list = Shader::Gcn::BuildASL(pools, cfg, info);

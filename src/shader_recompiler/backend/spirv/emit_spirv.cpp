@@ -18,6 +18,7 @@
 #include "shader_recompiler/backend/spirv/spirv_emit_context.h"
 #include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
 #include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
+#include "shader_recompiler/frontend/ordered_gds_state.h"
 #include "shader_recompiler/frontend/ordered_gds_word_layout.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/basic_block.h"
@@ -141,6 +142,26 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
     switch (type) {
     case IR::Type::U1:
         return ctx.U1[1];
+    case IR::Type::U8:
+        return ctx.U8;
+    case IR::Type::U16:
+        return ctx.U16;
+    case IR::Type::F16:
+        return ctx.F16[1];
+    case IR::Type::F16x2:
+        return ctx.F16[2];
+    case IR::Type::F16x3:
+        return ctx.F16[3];
+    case IR::Type::F16x4:
+        return ctx.F16[4];
+    case IR::Type::F64:
+        return ctx.F64[1];
+    case IR::Type::F64x2:
+        return ctx.F64[2];
+    case IR::Type::F64x3:
+        return ctx.F64[3];
+    case IR::Type::F64x4:
+        return ctx.F64[4];
     case IR::Type::U32:
         return ctx.U32[1];
     case IR::Type::U32x2:
@@ -153,6 +174,10 @@ Id TypeId(const EmitContext& ctx, IR::Type type) {
         return ctx.F32[1];
     case IR::Type::F32x2:
         return ctx.F32[2];
+    case IR::Type::F32x3:
+        return ctx.F32[3];
+    case IR::Type::F32x4:
+        return ctx.F32[4];
     case IR::Type::U64:
         return ctx.U64;
     default:
@@ -820,6 +845,10 @@ static std::vector<u32> EmitSPIRVWithCaptureMode(const Profile& profile,
                                                  bool capture_only) {
     EmitContext ctx{profile, runtime_info, program.info, binding};
     ctx.ordered_gds_capture_pass = capture_only;
+    if (program.info.ordered_gds_state_words) {
+        ctx.ordered_gds_resume_consumed = ctx.DefineVariable(
+            ctx.U1[1], std::nullopt, spv::StorageClass::Private, ctx.false_value);
+    }
     const Id main{DefineMain(ctx, program)};
     DefineEntryPoint(program.info, runtime_info, ctx, main);
     SetupCapabilities(program.info, profile, runtime_info, ctx);
@@ -830,8 +859,9 @@ static std::vector<u32> EmitSPIRVWithCaptureMode(const Profile& profile,
 
 std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_info,
                            const IR::Program& program, Bindings& binding) {
-    // Normal guest execution MUST remain blocked until the dedicated CIK
-    // packer seed, complete-wave handling and true GPU continuation exist.
+    if (program.info.uses_ordered_gds && program.info.ordered_gds_state_words) {
+        return EmitSPIRVOrderedGdsCapturePass(profile, runtime_info, program, binding);
+    }
     ASSERT_MSG(!program.info.uses_ordered_gds,
                "DS_ORDERED_COUNT needs guest wave creation ordering; refusing unordered "
                "SPIR-V atomic lowering");
@@ -841,41 +871,20 @@ std::vector<u32> EmitSPIRV(const Profile& profile, const RuntimeInfo& runtime_in
 std::vector<u32> EmitSPIRVOrderedGdsCapturePass(const Profile& profile,
                                                 const RuntimeInfo& runtime_info,
                                                 const IR::Program& program, Bindings& binding) {
-    // Explicit FIRST PASS only: continue ORIGINAL guest shader until the
-    // ordered site, write the real live GPU checkpoint and immediately
-    // terminate the wave BEFORE any instruction that consumes the returned
-    // counter. This helper is intentionally not called by the gameplay
-    // pipeline or the normal EmitSPIRV path.
     ASSERT_MSG(program.info.uses_ordered_gds && program.info.hw_stage == HwStage::Compute &&
                    !program.info.ordered_gds_sites.empty(),
                "GCN ordered capture pass requires decoded compute ordered sites");
     ASSERT_MSG(profile.subgroup_size == 64 && program.info.shared_memory_scratch_size == 0,
                "Ordered GDS checkpoint requires a complete host wave64 without ballot scratch");
-    std::vector<const IR::Block*> pending;
-    for (const IR::Block* block : program.blocks) {
-        bool after_capture = false;
-        for (const auto& inst : block->Instructions()) {
-            after_capture |= inst.GetOpcode() == IR::Opcode::OrderedGdsCount;
-            ASSERT_MSG(!after_capture || inst.GetOpcode() != IR::Opcode::Barrier,
-                       "Ordered GDS capture would strand a workgroup barrier");
+    const auto& local = runtime_info.hw.cs.workgroup_size;
+    if (u64(local[0]) * local[1] * local[2] > 64) {
+        for (const auto* block : program.blocks) {
+            for (const auto& inst : block->Instructions()) {
+                ASSERT_MSG(
+                    inst.GetOpcode() != IR::Opcode::Barrier,
+                    "Ordered GDS multiwave workgroup barriers require coordinated suspension");
+            }
         }
-        if (after_capture) {
-            pending.insert(pending.end(), block->imm_successors.begin(),
-                           block->imm_successors.end());
-        }
-    }
-    std::unordered_set<const IR::Block*> visited;
-    while (!pending.empty()) {
-        const IR::Block* block = pending.back();
-        pending.pop_back();
-        if (!visited.insert(block).second) {
-            continue;
-        }
-        for (const auto& inst : block->Instructions()) {
-            ASSERT_MSG(inst.GetOpcode() != IR::Opcode::Barrier,
-                       "Ordered GDS capture would strand a workgroup barrier");
-        }
-        pending.insert(pending.end(), block->imm_successors.begin(), block->imm_successors.end());
     }
     return EmitSPIRVWithCaptureMode(profile, runtime_info, program, binding, true);
 }
@@ -893,6 +902,171 @@ Id EmitPhi(EmitContext& ctx, IR::Inst* inst) {
 }
 
 void EmitVoid(EmitContext&) {}
+
+static std::pair<IR::Type, u32> StateElements(IR::Type type) {
+    switch (type) {
+    case IR::Type::U32x2:
+        return {IR::Type::U32, 2};
+    case IR::Type::U32x3:
+        return {IR::Type::U32, 3};
+    case IR::Type::U32x4:
+        return {IR::Type::U32, 4};
+    case IR::Type::F16x2:
+        return {IR::Type::F16, 2};
+    case IR::Type::F16x3:
+        return {IR::Type::F16, 3};
+    case IR::Type::F16x4:
+        return {IR::Type::F16, 4};
+    case IR::Type::F32x2:
+        return {IR::Type::F32, 2};
+    case IR::Type::F32x3:
+        return {IR::Type::F32, 3};
+    case IR::Type::F32x4:
+        return {IR::Type::F32, 4};
+    case IR::Type::F64x2:
+        return {IR::Type::F64, 2};
+    case IR::Type::F64x3:
+        return {IR::Type::F64, 3};
+    case IR::Type::F64x4:
+        return {IR::Type::F64, 4};
+    default:
+        return {type, 1};
+    }
+}
+
+static Id StatePointer(EmitContext& ctx, u32 offset) {
+    ASSERT(offset < ctx.info.ordered_gds_state_words);
+    const auto& buffer = ctx.buffers.at(ctx.ordered_gds_state_index);
+    ASSERT(buffer.buffer_type == BufferType::OrderedGdsState);
+    const auto [storage, pointer_type] = buffer.Alias(EmitContext::PointerType::U32);
+    const Id index = ctx.OpIAdd(ctx.U32[1], ctx.ordered_gds_state_base, ctx.ConstU32(offset));
+    return ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, index);
+}
+
+Id EmitOrderedGdsLoadState(EmitContext& ctx, IR::Inst* inst, u32 offset) {
+    const auto type = inst->Flags<IR::Type>();
+    const auto [element_type, count] = StateElements(type);
+    std::vector<Id> elements;
+    for (u32 element = 0; element < count; ++element) {
+        Id value = ctx.OpLoad(ctx.U32[1], StatePointer(ctx, offset++));
+        switch (element_type) {
+        case IR::Type::U1:
+            value = ctx.OpINotEqual(ctx.U1[1], value, ctx.u32_zero_value);
+            break;
+        case IR::Type::U8:
+        case IR::Type::U16:
+            value = ctx.OpUConvert(TypeId(ctx, element_type), value);
+            break;
+        case IR::Type::F16:
+            value = ctx.OpBitcast(ctx.F16[1], ctx.OpUConvert(ctx.U16, value));
+            break;
+        case IR::Type::F32:
+            value = ctx.OpBitcast(ctx.F32[1], value);
+            break;
+        case IR::Type::U64:
+        case IR::Type::F64: {
+            const Id high = ctx.OpLoad(ctx.U32[1], StatePointer(ctx, offset++));
+            value = ctx.OpBitcast(TypeId(ctx, element_type),
+                                  ctx.OpCompositeConstruct(ctx.U32[2], value, high));
+            break;
+        }
+        default:
+            ASSERT(element_type == IR::Type::U32);
+            break;
+        }
+        elements.push_back(value);
+    }
+    return count == 1 ? elements.front()
+                      : ctx.OpCompositeConstruct(TypeId(ctx, type), std::span<const Id>{elements});
+}
+
+void EmitOrderedGdsStoreState(EmitContext& ctx, IR::Inst* inst, u32 offset, Id value) {
+    const auto type = inst->Flags<IR::Type>();
+    const auto [element_type, count] = StateElements(type);
+    for (u32 element = 0; element < count; ++element) {
+        Id part =
+            count == 1 ? value : ctx.OpCompositeExtract(TypeId(ctx, element_type), value, element);
+        switch (element_type) {
+        case IR::Type::U1:
+            part = ctx.OpSelect(ctx.U32[1], part, ctx.u32_one_value, ctx.u32_zero_value);
+            break;
+        case IR::Type::U8:
+        case IR::Type::U16:
+            part = ctx.OpUConvert(ctx.U32[1], part);
+            break;
+        case IR::Type::F16:
+            part = ctx.OpUConvert(ctx.U32[1], ctx.OpBitcast(ctx.U16, part));
+            break;
+        case IR::Type::F32:
+            part = ctx.OpBitcast(ctx.U32[1], part);
+            break;
+        case IR::Type::U64:
+        case IR::Type::F64: {
+            const Id words = ctx.OpBitcast(ctx.U32[2], part);
+            ctx.OpStore(StatePointer(ctx, offset++), ctx.OpCompositeExtract(ctx.U32[1], words, 0));
+            ctx.OpStore(StatePointer(ctx, offset++), ctx.OpCompositeExtract(ctx.U32[1], words, 1));
+            continue;
+        }
+        default:
+            ASSERT(element_type == IR::Type::U32);
+            break;
+        }
+        ctx.OpStore(StatePointer(ctx, offset++), part);
+    }
+}
+
+Id EmitOrderedGdsResumeSite(EmitContext& ctx) {
+    namespace Gds = Shader::Gcn::OrderedGds;
+    const auto& local = ctx.runtime_info.hw.cs.workgroup_size;
+    const u32 threads = local[0] * local[1] * local[2];
+    const Id index = ctx.OpIAdd(
+        ctx.U32[1], ctx.OpIMul(ctx.U32[1], ctx.workgroup_index_id, ctx.ConstU32(threads)),
+        ctx.OpLoad(ctx.U32[1], ctx.local_invocation_index));
+    ctx.ordered_gds_state_base =
+        ctx.OpIMul(ctx.U32[1], index, ctx.ConstU32(ctx.info.ordered_gds_state_words));
+    const Id wave = ctx.OpUDiv(ctx.U32[1], index, ctx.ConstU32(Gds::GcnWaveLanes));
+    const auto load = [&](size_t binding, u32 stride, u32 word) {
+        const auto [storage, pointer_type] =
+            ctx.buffers.at(binding).Alias(EmitContext::PointerType::U32);
+        const Id at = ctx.OpIAdd(ctx.U32[1], ctx.OpIMul(ctx.U32[1], wave, ctx.ConstU32(stride)),
+                                 ctx.ConstU32(word));
+        return ctx.OpLoad(ctx.U32[1],
+                          ctx.OpAccessChain(pointer_type, storage, ctx.u32_zero_value, at));
+    };
+    const auto resume = [&](u32 word) { return load(ctx.ordered_gds_resume_index, 16, word); };
+    const auto auth = [&](u32 word) { return load(ctx.ordered_gds_auth_index, 8, word); };
+    const Id site = resume(2);
+    Id known_site = ctx.OpLogicalOr(
+        ctx.U1[1], ctx.OpIEqual(ctx.U1[1], site, ctx.ConstU32(Gds::InitialResumeSite)),
+        ctx.OpIEqual(ctx.U1[1], site, ctx.ConstU32(Gds::NoActiveLane)));
+    const Id no_result = known_site;
+    for (const auto& decoded : ctx.info.ordered_gds_sites) {
+        known_site = ctx.OpLogicalOr(ctx.U1[1], known_site,
+                                     ctx.OpIEqual(ctx.U1[1], site, ctx.ConstU32(decoded.pc)));
+    }
+    Id valid = ctx.OpIEqual(ctx.U1[1], resume(0), ctx.ConstU32(Gds::ResumePacketTag));
+    const auto require = [&](Id condition) {
+        valid = ctx.OpLogicalAnd(ctx.U1[1], valid, condition);
+    };
+    require(ctx.OpIEqual(ctx.U1[1], resume(1), auth(1)));
+    require(ctx.OpIEqual(ctx.U1[1], resume(4), wave));
+    require(ctx.OpIEqual(ctx.U1[1], resume(8), auth(4)));
+    require(ctx.OpIEqual(ctx.U1[1], resume(9), auth(5)));
+    require(ctx.OpIEqual(
+        ctx.U1[1], resume(3),
+        ctx.OpSelect(ctx.U32[1], no_result, ctx.u32_zero_value, ctx.ConstU32(Gds::ResumeFlags))));
+    require(known_site);
+    const Id proceed = ctx.OpLabel();
+    const Id invalid = ctx.OpLabel();
+    ctx.OpSelectionMerge(proceed, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(valid, proceed, invalid);
+    ctx.AddLabel(invalid);
+    ctx.OpReturn();
+    ctx.AddLabel(proceed);
+    ctx.ordered_gds_resume_site = site;
+    ctx.ordered_gds_previous = resume(5);
+    return site;
+}
 
 Id EmitConditionRef(EmitContext& ctx, const IR::Value& value) {
     const Id id{ctx.Def(value)};
@@ -1074,6 +1248,20 @@ void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank, u
 
 Id EmitOrderedGdsCount(EmitContext& ctx, Id, Id, Id /*guest_exec_mask*/, u32 encoded_control,
                        u32 site_pc) {
+    if (ctx.info.ordered_gds_state_words) {
+        const Id consume = ctx.OpLogicalAnd(
+            ctx.U1[1], ctx.OpIEqual(ctx.U1[1], ctx.ordered_gds_resume_site, ctx.ConstU32(site_pc)),
+            ctx.OpLogicalNot(ctx.U1[1], ctx.OpLoad(ctx.U1[1], ctx.ordered_gds_resume_consumed)));
+        const Id resume = ctx.OpLabel();
+        const Id capture = ctx.OpLabel();
+        ctx.OpSelectionMerge(resume, spv::SelectionControlMask::MaskNone);
+        ctx.OpBranchConditional(consume, resume, capture);
+        ctx.AddLabel(capture);
+        ctx.OpReturn();
+        ctx.AddLabel(resume);
+        ctx.OpStore(ctx.ordered_gds_resume_consumed, ctx.true_value);
+        return ctx.ordered_gds_previous;
+    }
     if (ctx.ordered_gds_capture_pass) {
         // The REAL guest GCN checkpoint and 16-DWORD packet were emitted
         // immediately BEFORE this IR operation at the original decoded

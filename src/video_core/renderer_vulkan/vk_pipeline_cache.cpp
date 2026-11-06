@@ -445,8 +445,7 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
                                                        *pipeline_cache, compute_key, *infos[0],
                                                        modules[0], sdata, false);
-        // The opt-in original-GCN first-pass probe is NOT a completed
-        // guest compute pipeline and must never be serialized as one.
+        // Continuation metadata is not part of the disk cache format.
         if (!infos[0]->uses_ordered_gds) {
             RegisterPipelineData(compute_key, sdata);
             ++num_new_pipelines;
@@ -726,9 +725,6 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
 
-    // Explicit one-shot, fail-closed GPU investigation of an ORIGINAL guest
-    // shader. It will stop the game after authenticated checkpoint readback
-    // rather than pretending that the absent second pass has finished.
     const char* const probe_flag = std::getenv("SHADPS4_PR117_CAPTURE_ONCE");
     const bool one_shot_probe = !ordered_capture_only && info.uses_ordered_gds &&
                                 info.hw_stage == HwStage::Compute && probe_flag &&
@@ -739,8 +735,6 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         // Validate the REAL post-SSA/optimization IR, not merely that the
         // unstructured GCN translator attempted to capture register values.
         // Structured cloning is allowed only with a complete set per clone.
-        // This is prerequisite evidence for a future shader checkpoint
-        // writer; no Vulkan guest shader dispatch is enabled by this audit.
         Shader::Gcn::OrderedGds::LiveCheckpointCoverage coverage(
             info.ordered_gds_site_pcs, runtime_info.props.num_allocated_vgprs);
         for (const Shader::IR::Block* const block : ir_program.blocks) {
@@ -762,12 +756,10 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             LOG_WARNING(Render_Recompiler,
                         "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: "
                         "site={:#x}, copies={}, register_records={}; "
-                        "live register + decoded metadata writers staged; authentic epoch/token, "
-                        "GPU owner and guest shader re-entry still gated",
+                        "checkpoint coverage complete",
                         result.site_pc, result.complete_copies, result.register_records);
         }
-        // Capture *static* guest instruction identities before the intentional
-        // SPIR-V backend gate. These PC offsets are not dynamic wave ordering.
+        // Static site identities are not dynamic wave ordering.
         using Shader::Gcn::OrderedGds::FlowKind;
         using Shader::Gcn::OrderedGds::FlowStep;
         using Shader::Gcn::OrderedGds::SiteTopology;
@@ -859,7 +851,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         for (const auto& site : info.ordered_gds_sites) {
             LOG_WARNING(Render_Recompiler,
                         "Ordered GDS guest ISA: site={:#x} VDST=v{} control={:#x} "
-                        "(register checkpoint and replay still gated)",
+                        "(checkpoint and continuation site)",
                         site.pc, site.destination_vgpr, site.encoded_control);
         }
         LOG_WARNING(Render_Recompiler,
@@ -869,11 +861,9 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         if (info.hw_stage == HwStage::Compute) {
             LOG_WARNING(Render_Recompiler,
                         "Ordered GDS guest checkpoint prerequisites: allocated_vgprs={}, "
-                        "shared_lds_bytes={}, live IR/SSBO register and site metadata writers="
-                        "STAGED_ONLY; epoch/token and LDS quiescence unimplemented; "
-                        "nonzero LDS must not be silently discarded",
+                        "shared_lds_bytes={}, continuation_words_per_invocation={}",
                         u32(runtime_info.props.num_allocated_vgprs),
-                        runtime_info.hw.cs.shared_memory_size);
+                        runtime_info.hw.cs.shared_memory_size, info.ordered_gds_state_words);
             const auto& regs = liverpool->GetCsRegs();
             const auto& local = runtime_info.hw.cs.workgroup_size;
             const auto layout = Shader::Gcn::OrderedGds::DispatchLayout::Create(
@@ -885,9 +875,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
                     layout->TotalSlots() * sizeof(Shader::Gcn::OrderedGds::GpuResumePacket);
                 LOG_WARNING(Render_Recompiler,
                             "Ordered GDS GPU packet ABI: guest_wave_slots={}, "
-                            "capture_bytes={}, resume_bytes={}; no device buffers "
-                            "allocated until guest scheduler order and shader "
-                            "continuation are implemented",
+                            "capture_bytes={}, resume_bytes={}",
                             layout->TotalSlots(), capture_bytes, resume_bytes);
                 LOG_WARNING(Render_Recompiler,
                             "Ordered GDS compute preflight (CS-register snapshot): "
@@ -904,25 +892,6 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
             }
         }
     }
-    // For unsupported ordered-GDS COMPUTE shaders, shader dumping may
-    // collect the ORIGINAL guest GCN first-pass SPIR-V without allowing any
-    // gameplay execution. Capture stops at DS_ORDERED_COUNT after writing
-    // genuine state and packet records; the normal compile below still
-    // rejects the opcode. This is universal diagnosis, never a title/hash
-    // exception, and does not dispatch any GPU shader or fake a counter.
-    if (!capture_variant && info.uses_ordered_gds && info.hw_stage == HwStage::Compute &&
-        EmulatorSettings.IsDumpShaders()) {
-        auto capture_binding = binding; // Diagnostic must not mutate real bindings.
-        const auto capture_spv = Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(
-            profile, runtime_info, ir_program, capture_binding);
-        DumpShader(capture_spv, info.pgm_hash, info.hw_stage, perm_idx, "pr117-capture.spv");
-        LOG_WARNING(Render_Recompiler,
-                    "PR117 real GCN capture-only candidate: hash={:#x}, words={}, "
-                    "decoded_sites={}; SPIR-V dump only, no GPU dispatch or "
-                    "guest continuation; normal ordered opcode still gated",
-                    info.pgm_hash, capture_spv.size(), info.ordered_gds_sites.size());
-    }
-
     if (capture_variant) {
         ASSERT_MSG(info.uses_ordered_gds && info.hw_stage == HwStage::Compute,
                    "capture-only module must be original ordered-GDS compute guest");
@@ -936,11 +905,11 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 
     vk::ShaderModule module;
 
-    // Never replace first-pass GPU capture instrumentation with an
-    // unrelated user-patched normal guest compute module.
-    auto patch = capture_variant ? std::optional<std::vector<u32>>{}
-                                 : GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
-    const bool is_patched = !capture_variant && patch && EmulatorSettings.IsPatchShaders();
+    // Ordered continuations require the compiler-generated packet and state ABI.
+    auto patch = info.uses_ordered_gds
+                     ? std::optional<std::vector<u32>>{}
+                     : GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
+    const bool is_patched = !info.uses_ordered_gds && patch && EmulatorSettings.IsPatchShaders();
     if (is_patched) {
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
