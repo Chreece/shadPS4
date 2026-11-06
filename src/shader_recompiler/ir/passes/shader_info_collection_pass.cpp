@@ -158,8 +158,14 @@ void Visit(Info& info, const IR::Inst& inst, Profile const& profile) {
         info.uses_group_shuffle |= !inst.Arg(1).IsImmediate() || !inst.Arg(1).U1();
         [[fallthrough]];
     case IR::Opcode::ReadLane:
-    case IR::Opcode::WriteLane:
         info.uses_group_ballot = true;
+        break;
+    case IR::Opcode::WriteLane:
+        if (info.hw_stage == HwStage::Compute) {
+            info.loads.Set(IR::Attribute::LocalInvocationIndex);
+        } else {
+            info.uses_lane_id = true;
+        }
         break;
     case IR::Opcode::Discard:
     case IR::Opcode::DiscardCond:
@@ -200,10 +206,10 @@ void Visit(Info& info, const IR::Inst& inst, Profile const& profile) {
     case IR::Opcode::DataAppend:
     case IR::Opcode::DataConsume:
     case IR::Opcode::Ballot:
-    case IR::Opcode::InverseBallot:
     case IR::Opcode::BallotFindLsb:
         info.uses_group_ballot = true;
         [[fallthrough]];
+    case IR::Opcode::InverseBallot:
     case IR::Opcode::LaneId:
         info.uses_lane_id = true;
         break;
