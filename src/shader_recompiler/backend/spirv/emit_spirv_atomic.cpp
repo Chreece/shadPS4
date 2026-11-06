@@ -26,6 +26,36 @@ Id SharedAtomicU32(EmitContext& ctx, Id offset, Id value,
     return (ctx.*atomic_func)(ctx.U32[1], pointer, scope, semantics, value);
 }
 
+Id SharedAtomicF32(EmitContext& ctx, Id offset, Id value, bool is_min) {
+    if (ctx.profile.supports_shared_fp32_atomic_min_max) {
+        const Id index = ctx.OpShiftRightLogical(ctx.U32[1], offset, ctx.ConstU32(2u));
+        const Id pointer = ctx.EmitSharedMemoryAccess(ctx.shared_f32, ctx.shared_memory_f32, index);
+        const auto [scope, semantics] = AtomicArgs(ctx);
+        return is_min ? ctx.OpAtomicFMin(ctx.F32[1], pointer, scope, semantics, value)
+                      : ctx.OpAtomicFMax(ctx.F32[1], pointer, scope, semantics, value);
+    }
+    const Id bits = ctx.OpBitcast(ctx.U32[1], value);
+    const Id negative =
+        ctx.OpINotEqual(ctx.U1[1], ctx.OpBitwiseAnd(ctx.U32[1], bits, ctx.ConstU32(0x80000000u)),
+                        ctx.u32_zero_value);
+    const Id negative_label = ctx.OpLabel();
+    const Id positive_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(negative, negative_label, positive_label);
+    ctx.AddLabel(negative_label);
+    const Id negative_result = SharedAtomicU32(
+        ctx, offset, bits, is_min ? &Sirit::Module::OpAtomicUMax : &Sirit::Module::OpAtomicUMin);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(positive_label);
+    const Id positive_result = SharedAtomicU32(
+        ctx, offset, bits, is_min ? &Sirit::Module::OpAtomicSMin : &Sirit::Module::OpAtomicSMax);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+    return ctx.OpBitcast(ctx.F32[1], ctx.OpPhi(ctx.U32[1], negative_result, negative_label,
+                                               positive_result, positive_label));
+}
+
 Id SharedAtomicU32IncDec(EmitContext& ctx, Id offset,
                          Id (Sirit::Module::*atomic_func)(Id, Id, Id, Id)) {
     const Id shift_id{ctx.ConstU32(2U)};
@@ -168,6 +198,32 @@ Id ImageAtomicF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id va
     return (ctx.*atomic_func)(ctx.F32[1], pointer, scope, semantics, value);
 }
 
+Id BufferAtomicF32Emulated(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                           bool is_min) {
+    const Id bits = ctx.OpBitcast(ctx.U32[1], value);
+    const Id negative =
+        ctx.OpINotEqual(ctx.U1[1], ctx.OpBitwiseAnd(ctx.U32[1], bits, ctx.ConstU32(0x80000000u)),
+                        ctx.u32_zero_value);
+    const Id negative_label = ctx.OpLabel();
+    const Id positive_label = ctx.OpLabel();
+    const Id merge_label = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge_label, spv::SelectionControlMask::MaskNone);
+    ctx.OpBranchConditional(negative, negative_label, positive_label);
+    ctx.AddLabel(negative_label);
+    const Id negative_result =
+        BufferAtomicU32(ctx, inst, handle, address, bits,
+                        is_min ? &Sirit::Module::OpAtomicUMax : &Sirit::Module::OpAtomicUMin);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(positive_label);
+    const Id positive_result =
+        BufferAtomicU32(ctx, inst, handle, address, bits,
+                        is_min ? &Sirit::Module::OpAtomicSMin : &Sirit::Module::OpAtomicSMax);
+    ctx.OpBranch(merge_label);
+    ctx.AddLabel(merge_label);
+    return ctx.OpBitcast(ctx.F32[1], ctx.OpPhi(ctx.U32[1], negative_result, negative_label,
+                                               positive_result, positive_label));
+}
+
 Id ImageAtomicF32Emulated(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id value,
                           bool is_min) {
     const Id bits = ctx.OpBitcast(ctx.U32[1], value);
@@ -239,24 +295,7 @@ Id EmitSharedAtomicSMax64(EmitContext& ctx, Id offset, Id value) {
 }
 
 Id EmitSharedAtomicFMax32(EmitContext& ctx, Id offset, Id value) {
-    if (ctx.profile.supports_shared_fp32_atomic_min_max) {
-        return SharedAtomicU32(ctx, offset, value, &Sirit::Module::OpAtomicFMax);
-    }
-
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    // FIXME this needs control flow because it currently executes both atomics
-    const auto result =
-        ctx.OpSelect(ctx.F32[1], sign_bit_set,
-                     EmitBitCastF32U32(ctx, EmitSharedAtomicUMin32(ctx, offset, u32_value)),
-                     EmitBitCastF32U32(ctx, EmitSharedAtomicSMax32(ctx, offset, u32_value)));
-
-    return ctx.OpBitcast(ctx.F32[1], result);
+    return SharedAtomicF32(ctx, offset, value, false);
 }
 
 Id EmitSharedAtomicUMin32(EmitContext& ctx, Id offset, Id value) {
@@ -276,24 +315,7 @@ Id EmitSharedAtomicSMin64(EmitContext& ctx, Id offset, Id value) {
 }
 
 Id EmitSharedAtomicFMin32(EmitContext& ctx, Id offset, Id value) {
-    if (ctx.profile.supports_shared_fp32_atomic_min_max) {
-        return SharedAtomicU32(ctx, offset, value, &Sirit::Module::OpAtomicFMax);
-    }
-
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    // FIXME this needs control flow because it currently executes both atomics
-    const auto result =
-        ctx.OpSelect(ctx.F32[1], sign_bit_set,
-                     EmitBitCastF32U32(ctx, EmitSharedAtomicUMax32(ctx, offset, u32_value)),
-                     EmitBitCastF32U32(ctx, EmitSharedAtomicSMin32(ctx, offset, u32_value)));
-
-    return ctx.OpBitcast(ctx.F32[1], result);
+    return SharedAtomicF32(ctx, offset, value, true);
 }
 
 Id EmitSharedAtomicAnd32(EmitContext& ctx, Id offset, Id value) {
@@ -385,21 +407,7 @@ Id EmitBufferAtomicFMin32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id addre
         return BufferAtomicU32<true>(ctx, inst, handle, address, value,
                                      &Sirit::Module::OpAtomicFMin);
     }
-
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    // FIXME this needs control flow because it currently executes both atomics
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitBufferAtomicUMax32(ctx, inst, handle, address, u32_value)),
-        EmitBitCastF32U32(ctx, EmitBufferAtomicSMin32(ctx, inst, handle, address, u32_value)));
-
-    return result;
+    return BufferAtomicF32Emulated(ctx, inst, handle, address, value, true);
 }
 
 Id EmitBufferAtomicSMax32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value) {
@@ -423,21 +431,7 @@ Id EmitBufferAtomicFMax32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id addre
         return BufferAtomicU32<true>(ctx, inst, handle, address, value,
                                      &Sirit::Module::OpAtomicFMax);
     }
-
-    const auto u32_value = ctx.OpBitcast(ctx.U32[1], value);
-    // OpSelect requires a bool condition; produce one by comparing the sign bit to 0.
-    const auto sign_bit_set = ctx.OpINotEqual(
-        ctx.U1[1],
-        ctx.OpBitFieldUExtract(ctx.U32[1], u32_value, ctx.ConstU32(31u), ctx.ConstU32(1u)),
-        ctx.u32_zero_value);
-
-    // FIXME this needs control flow because it currently executes both atomics
-    const auto result = ctx.OpSelect(
-        ctx.F32[1], sign_bit_set,
-        EmitBitCastF32U32(ctx, EmitBufferAtomicUMin32(ctx, inst, handle, address, u32_value)),
-        EmitBitCastF32U32(ctx, EmitBufferAtomicSMax32(ctx, inst, handle, address, u32_value)));
-
-    return result;
+    return BufferAtomicF32Emulated(ctx, inst, handle, address, value, false);
 }
 
 Id EmitBufferAtomicInc32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address) {
