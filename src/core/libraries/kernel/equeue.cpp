@@ -24,7 +24,7 @@ extern boost::asio::io_context io_context;
 extern void KernelSignalRequest();
 
 static std::unordered_map<s32, EqueueInternal*> kqueues;
-static constexpr auto HrTimerSpinlockThresholdNs = 1200000u;
+static constexpr auto SmallTimerThresholdNs = 1200000u;
 
 EqueueInternal* GetEqueue(OrbisKernelEqueue eq) {
     if (!kqueues.contains(eq)) {
@@ -190,56 +190,31 @@ bool EqueueInternal::RemoveEvent(u64 id, s16 filter) {
 }
 
 int EqueueInternal::WaitForEvents(OrbisKernelEvent* ev, int num, const OrbisKernelUseconds* timo) {
-    if (timo != nullptr && *timo == 0) {
-        // Effectively acts as a poll; only events that have already
-        // arrived at the time of this function call can be received
-        std::scoped_lock lock{m_mutex};
-        return GetTriggeredEvents(ev, num);
-    }
-    const auto micros = timo ? *timo : 0u;
-
-    if (HasSmallTimer()) {
-        // If a small timer is set, just wait for it to expire.
-        return WaitForSmallTimer(ev, num, micros);
-    }
-
-    int count = 0;
-
+    const auto deadline = timo ? std::chrono::steady_clock::now() + std::chrono::microseconds(*timo)
+                               : std::chrono::steady_clock::time_point::max();
     std::unique_lock lock{m_mutex};
-    if (micros == 0) {
-        // Wait indefinitely for events
-        if (HasPendingIoEvents()) {
-            while ((count = GetTriggeredEvents(ev, num)) == 0) {
-                m_cond.wait_for(lock, std::chrono::milliseconds(10));
-            }
-        } else {
-            m_cond.wait(lock, [&] {
-                count = GetTriggeredEvents(ev, num);
-                return count > 0;
-            });
+    for (;;) {
+        const int count = GetTriggeredEvents(ev, num);
+        if (count > 0) {
+            return count;
         }
-    } else {
-        // Wait up until the timeout value
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            return 0;
+        }
+        auto wake_at = deadline;
+        for (const auto& [id, timer] : m_small_timers) {
+            wake_at = std::min(wake_at, timer.added + timer.interval);
+        }
         if (HasPendingIoEvents()) {
-            const auto deadline =
-                std::chrono::steady_clock::now() + std::chrono::microseconds(micros);
-            while ((count = GetTriggeredEvents(ev, num)) == 0 &&
-                   std::chrono::steady_clock::now() < deadline) {
-                const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    deadline - std::chrono::steady_clock::now());
-                const auto slice = std::clamp(remaining, std::chrono::milliseconds(1),
-                                              std::chrono::milliseconds(10));
-                m_cond.wait_for(lock, slice);
-            }
+            wake_at = std::min(wake_at, now + std::chrono::milliseconds(10));
+        }
+        if (wake_at == std::chrono::steady_clock::time_point::max()) {
+            m_cond.wait(lock);
         } else {
-            m_cond.wait_for(lock, std::chrono::microseconds(micros), [&] {
-                count = GetTriggeredEvents(ev, num);
-                return count > 0;
-            });
+            m_cond.wait_until(lock, wake_at);
         }
     }
-
-    return count;
 }
 
 bool EqueueInternal::TriggerEvent(u64 ident, s16 filter, void* trigger_data) {
@@ -290,6 +265,18 @@ int EqueueInternal::GetTriggeredEvents(OrbisKernelEvent* ev, int num) {
         }
     }
 
+    if (count < num && !m_small_timers.empty()) {
+        const auto now = std::chrono::steady_clock::now();
+        for (auto it = m_small_timers.begin(); it != m_small_timers.end() && count < num;) {
+            const auto& timer = it->second;
+            if (now - timer.added >= timer.interval) {
+                ev[count++] = timer.event;
+                it = m_small_timers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
     return count;
 }
 
@@ -402,38 +389,8 @@ bool EqueueInternal::AddSmallTimer(EqueueEvent& ev) {
         std::scoped_lock lock{m_mutex};
         m_small_timers[st.event.ident] = std::move(st);
     }
+    m_cond.notify_all();
     return true;
-}
-
-int EqueueInternal::WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros) {
-    ASSERT(num >= 1);
-
-    auto curr_clock = std::chrono::steady_clock::now();
-    const auto wait_end_us = (micros == 0) ? std::chrono::steady_clock::time_point::max()
-                                           : curr_clock + std::chrono::microseconds{micros};
-    int count = 0;
-    do {
-        curr_clock = std::chrono::steady_clock::now();
-        {
-            std::scoped_lock lock{m_mutex};
-            for (auto it = m_small_timers.begin(); it != m_small_timers.end() && count < num;) {
-                const SmallTimer& st = it->second;
-
-                if (curr_clock - st.added >= st.interval) {
-                    ev[count++] = st.event;
-                    it = m_small_timers.erase(it);
-                } else {
-                    ++it;
-                }
-            }
-
-            if (count > 0)
-                return count;
-        }
-        std::this_thread::yield();
-    } while (curr_clock < wait_end_us);
-
-    return 0;
 }
 
 bool EqueueInternal::EventExists(u64 id, s16 filter) {
@@ -643,15 +600,8 @@ s32 PS4_SYSV_ABI sceKernelAddHRTimerEvent(OrbisKernelEqueue eq, int id, OrbisKer
     event.event.data = reinterpret_cast<u64>(&time);
     event.event.udata = udata;
 
-    // HR timers cannot be implemented within the existing event queue architecture due to the
-    // slowness of the notification mechanism. For instance, a 100us timer will lose its precision
-    // as the trigger time drifts by +50-700%, depending on the host PC and workload. To address
-    // this issue, we use a spinlock for small waits (which can be adjusted using
-    // `HrTimerSpinlockThresholdUs`) and fall back to boost asio timers if the time to tick is
-    // large. Even for large delays, we truncate a small portion to complete the wait
-    // using the spinlock, prioritizing precision.
     auto& equeue = kqueues[eq];
-    if (total_ns < HrTimerSpinlockThresholdNs) {
+    if (total_ns < SmallTimerThresholdNs) {
         return equeue->AddSmallTimer(event) ? ORBIS_OK : ORBIS_KERNEL_ERROR_ENOMEM;
     }
 
@@ -667,13 +617,10 @@ int PS4_SYSV_ABI sceKernelDeleteHRTimerEvent(OrbisKernelEqueue eq, int id) {
     }
 
     auto& equeue = kqueues[eq];
-    if (equeue->HasSmallTimer()) {
-        return equeue->RemoveSmallTimer(id) ? ORBIS_OK : ORBIS_KERNEL_ERROR_ENOENT;
-    } else {
-        return equeue->RemoveEvent(id, OrbisKernelEvent::Filter::HrTimer)
-                   ? ORBIS_OK
-                   : ORBIS_KERNEL_ERROR_ENOENT;
-    }
+    return equeue->RemoveSmallTimer(id) ||
+                   equeue->RemoveEvent(id, OrbisKernelEvent::Filter::HrTimer)
+               ? ORBIS_OK
+               : ORBIS_KERNEL_ERROR_ENOENT;
 }
 
 int PS4_SYSV_ABI sceKernelAddTimerEvent(OrbisKernelEqueue eq, int id, OrbisKernelUseconds usec,
