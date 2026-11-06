@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <magic_enum/magic_enum.hpp>
 #include <xxhash.h>
+#include "common/performance_diagnostics.h"
 
 #include "common/alignment.h"
 #include "core/debug_state.h"
@@ -194,6 +195,8 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
     if (total_size_bytes == 0) {
         return;
     }
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::BufferReadback, total_size_bytes};
     const auto download =
         staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached, 16, async);
     for (auto& copy : copies) {
