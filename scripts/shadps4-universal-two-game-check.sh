@@ -105,6 +105,9 @@ if [[ "$MODE" == build ]]; then
 else
     printf 'REUSING_VERIFIED_NATIVE_BUILD=%s\n' "$PIN"
 fi
+if [[ "$MODE" == build && "${SHADPS4_KERNEL_JOURNAL_SUDO:-0}" == 1 ]]; then
+    sudo -v
+fi
 RESULT=0
 for GAME in "${GAMES[@]}"; do
     CAPTURE_SHADERS=0
