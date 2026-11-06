@@ -10,9 +10,6 @@
 #include <utility>
 #include <vector>
 
-// Physical guest GDS byte-range safety. CounterKey -> byte offset is NOT
-// decoded here; the real GCN/PM4 mapping must be independently proven before
-// a host executor can use the values as physical counter locations.
 namespace Shader::Gcn::OrderedGds {
 
 inline constexpr std::uint32_t GdsPhysicalBytes = 64u * 1024u;
