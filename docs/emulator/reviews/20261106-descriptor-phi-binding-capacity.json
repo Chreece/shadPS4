@@ -1,0 +1,98 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T14:09:47.709001+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "9515fcb15e328c70692fc9ee7113337a619d168b",
+  "upstream_commit": "68b4c0c071b4172a94c6dd145706663fb58a202e",
+  "integration_head": "f29fbd1f651645059f7e272ae265714f71e7d322",
+  "retained_commits_rebased": 48,
+  "native_archive": {
+    "filename": "universal-two-games-20261106T133152Z-2858281.tar.gz",
+    "sha256": "9deecfad88060d90fb74b34f03d4a80c1110a36e7ee79a0b8eaa8baf2a06ea88",
+    "library_file_id": "libfile_6aa6874cf2f081918679840bcdfce02a",
+    "source_commit": "4afbf1dc55ebb448c5c79ba10dd8c9552b975c4b",
+    "runner_commit": "5197fceb741e35ca38f42bb4e1946abafcae72dd",
+    "binary_sha256": "8622061ddfcf0054f5c31fe65680795a592995f08f3ae5ada47501bb6179b95e"
+  },
+  "got": {
+    "exit_code": -11,
+    "elapsed_seconds": 88.599,
+    "termination_reason": "GAME_EXITED_BEFORE_LIMIT",
+    "failure": "Two-ReadConst descriptor Phi assertion in MarkReadConstBufferSharpSources",
+    "first_failing_operation": "LoadBufferU32x3",
+    "resource_accesses_before_discovery": 298,
+    "old_split_budget": 0,
+    "reason": "Original instruction uses were counted against a distinct buffer-binding capacity of 56; no Phi access was expanded. Store support alone could not address this.",
+    "screenshot_80s": "Sony presents screen; menu/progression not established by this capture",
+    "missing_fill_resolved": false
+  },
+  "gow": {
+    "screenshot_80s_fps": 8,
+    "screenshot_80s_frame_ms": 121.1,
+    "page_protect_calls": 9027584,
+    "page_protect_self_seconds": 22.862550499,
+    "image_readback_scope_calls": 25849160,
+    "image_readback_scope_self_seconds": 2.8814,
+    "buffer_readback_calls": 17184,
+    "buffer_readback_bytes": 4151423360,
+    "gpu_wait_calls": 32558,
+    "gpu_wait_total_seconds": 19.028416336,
+    "owned_child_terminated": false,
+    "stop_state": "Main thread zombie with SDLAudioP43 still R/running in final snapshot",
+    "fps_improvement_proven": false,
+    "note": "Image-readback scope calls include checks, not that many actual downloads. No coherence policy or performance behavior changed in this candidate."
+  },
+  "change": {
+    "production": "Remove the global buffer-access budget from direct Phi expansion. Bound alternatives per access by NUM_BUFFERS. Enforce actual resource capacity after existing exact descriptor deduplication. No binding limits increased; no recursive/nested Phi expansion added.",
+    "upstream": "48 retained commits rebased onto the observed upstream documentation correction; every rebased tree differs from its previous tree only in documents/building-linux.md.",
+    "runner": "Unchanged. Pinned source/runner, no moving-ref freshness checks."
+  },
+  "validation": {
+    "release_build": "PASS",
+    "local_binary_sha256": "5496efa9707fedf3785095f6a35c61d483b5db3380a53549b49a37f18f5fd835",
+    "startup_checks": 3,
+    "private_native_shader_replay": {
+      "baseline_exit": -11,
+      "candidate_exit": 0,
+      "candidate_discovered_resources": 312,
+      "boundary": "Production translation through resource discovery only, then exit. Guest descriptor contents were not replayed; this does not prove later lowering, SPIR-V or native execution of the captured shader."
+    },
+    "original_gcn_stress": {
+      "kernels": 4,
+      "load_store_iterations": 160,
+      "buffer_operations_per_kernel": 320,
+      "distinct_guest_buffers": 2,
+      "spirv_vulkan_1_3": "PASS",
+      "independent_interpreter_cases": 16,
+      "compared_output_words": 8704,
+      "result": "PASS selected data increments; unselected buffer, padding and sentinels unchanged",
+      "baseline": "Same descriptor Phi assertion, exit -11"
+    },
+    "capacity_boundary": {
+      "distinct_56": "Compiles; Vulkan 1.3 SPIR-V validation passes",
+      "distinct_57": "Rejected with explicit unchanged capacity of 56"
+    },
+    "openorbis": {
+      "filename": "descriptor-phi-binding-openorbis-20261106.zip",
+      "library_file_id": "libfile_93f3a01a70c0819196207a6d17b76c37",
+      "gcn_assembled": true,
+      "c_syntax": "PASS -Wall -Wextra -Werror",
+      "sdk_build": false,
+      "physical_hardware_test": false
+    },
+    "native_candidate_test": false
+  },
+  "pending": [
+    "Native GoT loading past captured compiler failure",
+    "GoT missing fill graphics",
+    "GoW low FPS and host coherence cost",
+    "GoW shutdown completion"
+  ],
+  "policy": {
+    "game_or_shader_specific_emulation": false,
+    "automatic_input": false,
+    "forced_counters": false,
+    "runtime_upstream_freshness_checks": false,
+    "raw_guest_data_published": false
+  }
+}

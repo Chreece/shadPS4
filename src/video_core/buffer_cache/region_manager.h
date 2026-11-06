@@ -7,7 +7,6 @@
 
 #include "common/adaptive_mutex.h"
 #include "common/types.h"
-#include "core/emulator_settings.h"
 #include "video_core/buffer_cache/region_definitions.h"
 #include "video_core/page_manager.h"
 
@@ -26,8 +25,7 @@ using LockType = std::mutex;
 class RegionManager {
 public:
     explicit RegionManager(PageManager* tracker_, VAddr cpu_addr_)
-        : tracker{tracker_}, cpu_addr{cpu_addr_},
-          readbacks_mode{EmulatorSettings.GetReadbacksMode()} {
+        : tracker{tracker_}, cpu_addr{cpu_addr_} {
         cpu.Fill(true);
         gpu.Fill(false);
     }
@@ -35,6 +33,7 @@ public:
 
     void SetCpuAddress(VAddr new_cpu_addr) {
         cpu_addr = new_cpu_addr;
+        last_cpu_write_page = NUM_REGION_PAGES;
     }
 
     static constexpr Bounds GetBounds(u64 offset, u64 size) {
@@ -109,6 +108,27 @@ public:
         if constexpr (locked) {
             mutex.unlock();
         }
+    }
+
+    void MarkCpuWrite(u64 offset, u64 size) {
+        const auto bounds = GetBounds(offset, size);
+        const u64 page = bounds.start_page;
+        const bool sequential =
+            last_cpu_write_page < NUM_REGION_PAGES &&
+            (page == last_cpu_write_page + 1 || page + 1 == last_cpu_write_page);
+        last_cpu_write_page = size <= BYTES_PER_PAGE ? page : NUM_REGION_PAGES;
+        if (sequential && bounds.start_page == bounds.end_page) {
+            const auto [start_mask, end_mask] = GetMasks(bounds.start_page, bounds.end_page);
+            const u64 mask = start_mask & end_mask;
+            const u64 gpu_word = gpu[bounds.start_word];
+            if (!(gpu_word & mask) && (cpu[bounds.start_word] & mask) != mask) {
+                const u64 first = std::bit_width(gpu_word & ~start_mask);
+                const u64 end = std::countr_zero(gpu_word & ~end_mask);
+                offset = bounds.start_word * BYTES_PER_WORD + first * BYTES_PER_PAGE;
+                size = (end - first) * BYTES_PER_PAGE;
+            }
+        }
+        ChangeRegionState<StateOp::Set, StateOp::None, false>(offset, size);
     }
 
     template <Type type, StateOp cpu_op, StateOp gpu_op, bool locked = true>
@@ -309,7 +329,7 @@ private:
             } else if (state_op == StateOp::Clear) {
                 return PageOp::Track;
             }
-        } else if (type == Type::GPU && readbacks_mode == GpuReadbacksMode::Precise) {
+        } else if constexpr (type == Type::GPU) {
             if (state_op == StateOp::Set) {
                 return PageOp::Track;
             } else if (state_op == StateOp::Clear) {
@@ -331,7 +351,7 @@ private:
 
     PageManager* tracker;
     VAddr cpu_addr{};
-    u32 readbacks_mode;
+    u64 last_cpu_write_page = NUM_REGION_PAGES;
     RegionBits cpu;
     RegionBits gpu;
     LockType mutex;

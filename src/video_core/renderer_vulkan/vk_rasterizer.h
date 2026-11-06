@@ -3,8 +3,21 @@
 
 #pragma once
 
+#include <map>
+#include <memory>
+#include <optional>
+#include <span>
+#include <utility>
+#include <vector>
+
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
+#include "shader_recompiler/frontend/ordered_gds_epoch_auth.h"
+#include "shader_recompiler/frontend/ordered_gds_lds_checkpoint.h"
+#include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
@@ -23,6 +36,8 @@ namespace Vulkan {
 
 class GraphicsPipeline;
 class Runtime;
+class OcclusionQuery;
+class OrderedGdsEpochDeviceBuffers;
 
 class Rasterizer {
 public:
@@ -52,6 +67,151 @@ public:
 
     void DispatchDirect();
     void DispatchIndirect(VAddr address, u32 offset, u32 size);
+
+    // Allocate an exact per-dispatch set of independent VMA/Vulkan buffers for
+    // guest ordered-GDS capture and future resumption. The returned owner
+    // must be held until the resumed dispatch completes. It creates no
+    // shader, never guesses wave rank, and never enables the guest opcode.
+    // Scope the dedicated checkpoint SSBO binding to exactly one caller-
+    // authorized capture phase. No scope exists during ordinary game draws.
+    // The epoch owner must remain alive until GPU timeline completion.
+    class OrderedGdsCaptureBinding {
+    public:
+        OrderedGdsCaptureBinding(Rasterizer& rasterizer, const OrderedGdsEpochDeviceBuffers& epoch);
+        ~OrderedGdsCaptureBinding();
+
+        OrderedGdsCaptureBinding(const OrderedGdsCaptureBinding&) = delete;
+        OrderedGdsCaptureBinding& operator=(const OrderedGdsCaptureBinding&) = delete;
+        OrderedGdsCaptureBinding(OrderedGdsCaptureBinding&&) = delete;
+        OrderedGdsCaptureBinding& operator=(OrderedGdsCaptureBinding&&) = delete;
+
+    private:
+        Rasterizer& rasterizer;
+        const OrderedGdsEpochDeviceBuffers& epoch;
+    };
+
+    [[nodiscard]] std::unique_ptr<OrderedGdsEpochDeviceBuffers> AllocateOrderedGdsEpochBuffers(
+        Shader::Gcn::OrderedGds::DispatchExtent groups,
+        Shader::Gcn::OrderedGds::DispatchExtent local_threads, u32 allocated_vgprs,
+        u32 guest_shared_lds_bytes);
+
+    // The indirect grid is read from the real GPU dispatch-command source,
+    // AFTER earlier GPU writers finish and BEFORE capture buffer allocation.
+    // This explicit API is not invoked by normal game dispatch. It never
+    // substitutes Liverpool dim_x/y/z for unknown indirect command values.
+    [[nodiscard]] std::unique_ptr<OrderedGdsEpochDeviceBuffers>
+    AllocateOrderedGdsEpochBuffersFromGpuIndirect(
+        VAddr address, u32 offset, u32 available_bytes,
+        Shader::Gcn::OrderedGds::DispatchExtent local_threads, u32 allocated_vgprs,
+        u32 guest_shared_lds_bytes);
+
+    // Issues a fresh monotonic host epoch and distinct per-physical-wave
+    // continuation identities only for an ALREADY size-verified GPU buffer
+    // owner. No guest creation order, packer seed, or shader dispatch is
+    // inferred; this does not enable normal ordered-GDS gameplay.
+    [[nodiscard]] u32 AuthorizeNewOrderedGdsCaptureEpoch(OrderedGdsEpochDeviceBuffers& owner);
+
+    // Execute the ORIGINAL translated GCN compute shader on the actual GPU,
+    // stopping each wave at its first DS_ORDERED_COUNT or genuine S_ENDPGM.
+    // Requires a separately owned, bounded buffer set and the exact fresh
+    // per-slot auth epoch. This calls vkCmdDispatch and synchronously reads
+    // GPU-written packets and SGPR/VGPR checkpoints.
+    //
+    // This is intentionally an explicit capture-only API; it MUST NOT be
+    // called by normal gameplay without the completed guest re-entry pass.
+    // Earlier guest side effects execute ONCE in this first pass, so replay
+    // from shader entry is prohibited. A caller must keep the device owner
+    // alive and must not signal the guest dispatch complete from capture.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureDirect(OrderedGdsEpochDeviceBuffers& owner,
+                                            u32 expected_epoch);
+
+    // Same original GCN capture, but the grid is sourced from the actual
+    // synchronized GPU indirect-command buffer, never the stale CS register
+    // dimensions. The epoch owner must have been allocated from that GPU
+    // command and the address must still resolve to the same dimensions.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureIndirect(OrderedGdsEpochDeviceBuffers& owner,
+                                              u32 expected_epoch, VAddr address, u32 offset,
+                                              u32 available_bytes);
+
+    // Staged Vulkan capture/readback and result upload API. GPU packet-writing,
+    // guest-wave ordering and shader continuation are intentionally not enabled.
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket> DownloadOrderedGdsPackets(
+        const VideoCore::Buffer& device_capture, u64 source_offset, std::size_t packet_count);
+    void UploadOrderedGdsPackets(VideoCore::Buffer& device_resume, u64 destination_offset,
+                                 std::span<const Shader::Gcn::OrderedGds::GpuResumePacket> packets);
+
+    // Production GPU-buffer bridge for an ALREADY checkpointed complete guest
+    // wave epoch. This cannot create wave ranks, packer seeds or shader state.
+    // Callers must supply ranks from the real guest scheduler and CIK packer
+    // values from a synchronized CIK GDS snapshot at the decoded address.
+    // If capture/resolve/upload fails, no new host packer state is returned.
+    // No guest dispatch currently calls this until real shader checkpoint and
+    // continuation are implemented; the ordered-GDS SPIR-V guard stays active.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32> ResolveVerifiedOrderedGdsEpoch(
+        const VideoCore::Buffer& device_capture, u64 capture_offset,
+        VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+        const Shader::Gcn::OrderedGds::VerifiedGuestCreationOrder& creation,
+        std::span<const u32> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
+
+    // Typed, dispatch-owned host resolution handoff. The buffers, wave
+    // count and layouts MUST come from one bounded epoch owner rather than
+    // separate arbitrary Vulkan handles. No guest execution is enabled by
+    // calling this; missing authentic GPU capture data fails closed.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveOwnedCikComputeOrderedGdsEpoch(
+        OrderedGdsEpochDeviceBuffers& owned, u32 epoch,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin);
+
+    // Explicit host counter state for one capture/resolve/resume handoff.
+    // Reset and resnapshot GDS before each new dispatch.
+    void EstablishVerifiedCikPackerState(
+        u64 context_identity, std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> state,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin origin);
+    void ResetVerifiedCikPackerState() noexcept;
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveOwnedCikComputeOrderedGdsFromLedger(
+        OrderedGdsEpochDeviceBuffers& owned, u32 epoch, u64 context_identity,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites);
+
+    // Restricted CIK compute path: derive creation positions from live
+    // guest M0 logicalWaveID rather than Vulkan workgroup scheduling. Only
+    // complete ordered-count epochs with contiguous wave IDs and zero
+    // crawler increment are accepted. The full SGPR/VGPR/VCC/SCC checkpoint
+    // layout and packet identity must match the same GPU epoch, and the
+    // original bytes are uploaded into separate GPU-resume state memory.
+    // The guest still needs a compiled state-restoring continuation. Bypasses
+    // need a verified external scheduler and independent replay solution.
+    [[nodiscard]] std::map<Shader::Gcn::OrderedGds::CounterKey, u32>
+    ResolveCompleteCikComputeOrderedGdsEpoch(
+        const VideoCore::Buffer& device_capture, u64 capture_offset,
+        const VideoCore::Buffer& device_checkpoints, u64 checkpoint_offset,
+        const Shader::Gcn::OrderedGds::GcnCheckpointLayout& checkpoint_layout,
+        const VideoCore::Buffer& device_lds, u64 lds_capture_offset,
+        const Shader::Gcn::OrderedGds::GcnLdsCheckpointLayout& lds_layout,
+        u32 verified_shared_lds_bytes, VideoCore::Buffer& device_resume_lds, u64 resume_lds_offset,
+        VideoCore::Buffer& device_resume_checkpoints, u64 resume_checkpoint_offset,
+        VideoCore::Buffer& device_resume, u64 resume_offset, u32 epoch,
+        std::size_t guest_created_waves,
+        std::span<const Shader::Gcn::OrderedGds::VerifiedGcnOrderedSite> verified_sites,
+        std::span<const Shader::Gcn::OrderedGds::OrderedCounterSeed> seed,
+        Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin,
+        std::span<const Shader::Gcn::OrderedGds::GpuGcnOrderedEpochAuth> authority,
+        // Non-null only when the compiler lowered ALL guest LDS accesses
+        // into the same bounded GPU SSBO and Rasterizer observed its live
+        // descriptor binding for this exact authenticated epoch.
+        const VideoCore::Buffer* persistent_guest_lds = nullptr);
+
+    // Read the true GPU-visible 64 KiB GDS contents after prior writes,
+    // then apply only specifically verified physical dword counter changes.
+    // The caller must NOT invent CounterKey -> byte-offset mappings.
+    [[nodiscard]] std::vector<u32> SnapshotOrderedGdsDwords();
+    void CommitOrderedGdsDwords(std::span<const std::pair<u32, u32>> updates);
 
     void ScopeMarker(fmt::string_view fmt, fmt::format_args args, auto&& func) {
         if (host_markers_enabled) {
@@ -83,6 +243,8 @@ public:
     void Finish();
     void OnSubmit();
     void OnFence();
+    OcclusionQuery& GetOcclusionQuery();
+    void SubmitPendingQueries();
 
     PipelineCache& GetPipelineCache() {
         return pipeline_cache;
@@ -103,6 +265,7 @@ public:
 #endif
 
 private:
+    void ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDeviceBuffers> owner);
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
     void Resolve();
@@ -123,8 +286,31 @@ private:
     void BindTextures(const Shader::Info& stage, Shader::Backend::Bindings& binding);
     bool BindResources(const Pipeline* pipeline);
 
-    void BindVertexBuffers(const GraphicsPipeline* pipeline);
-    void BindIndexBuffer(u32 index_offset = 0, bool is_indirect = false);
+    [[nodiscard]] std::vector<Shader::Gcn::OrderedGds::GpuCapturePacket>
+    DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& owner, u32 expected_epoch,
+                                          bool indirect, VAddr address, u32 offset,
+                                          u32 available_bytes);
+
+    struct VertexBufferBindings {
+        VertexInputs<vk::VertexInputAttributeDescription2EXT> attributes;
+        VertexInputs<vk::VertexInputBindingDescription2EXT> bindings;
+        VertexInputs<vk::Buffer> buffers;
+        VertexInputs<vk::DeviceSize> offsets;
+        VertexInputs<vk::DeviceSize> sizes;
+        VertexInputs<vk::DeviceSize> strides;
+    };
+
+    struct IndexBufferBinding {
+        vk::Buffer buffer{};
+        u64 offset{};
+        u32 size{};
+        vk::IndexType type{};
+    };
+
+    VertexBufferBindings PrepareVertexBuffers(const GraphicsPipeline* pipeline);
+    IndexBufferBinding PrepareIndexBuffer(u32 index_offset, bool is_indirect = false);
+    void BindVertexBuffers(vk::CommandBuffer cmdbuf, const VertexBufferBindings& state) const;
+    void BindIndexBuffer(vk::CommandBuffer cmdbuf, const IndexBufferBinding& state) const;
 
     void ResetBindings(bool is_compute);
 
@@ -153,17 +339,18 @@ private:
     const u32 submit_draw_interval;
     u64 last_submit_tick{};
     u32 draws_since_submit{};
+    std::unique_ptr<OcclusionQuery> occlusion;
 
     struct ImageBinding {
         VideoCore::ImageId image_id;
         VideoCore::TextureCache::ImageDesc desc;
     };
-    std::array<ImageBinding, Shader::NUM_IMAGES> image_bindings;
+    std::vector<ImageBinding> image_bindings;
     std::array<ImageBinding, AmdGpu::NUM_COLOR_BUFFERS> cb_descs;
     ImageBinding db_desc;
 
-    boost::container::static_vector<vk::DescriptorImageInfo, Shader::NUM_IMAGES> image_infos;
-    boost::container::static_vector<vk::DescriptorBufferInfo, Shader::NUM_BUFFERS> buffer_infos;
+    std::vector<vk::DescriptorImageInfo> image_infos;
+    std::vector<vk::DescriptorBufferInfo> buffer_infos;
 
     struct BoundBuffer {
         const VideoCore::Buffer* buffer;
@@ -174,12 +361,16 @@ private:
     std::vector<BoundBuffer> bound_buffers;
     std::vector<VideoCore::ImageId> bound_images;
 
-    u32 set_write_index{};
     Pipeline::DescriptorWrites set_writes;
     Shader::PushData push_data;
 
     bool attachment_feedback_loop{};
     bool needs_barrier{};
+    // Explicitly scoped to a future authenticated guest capture pass; never
+    // inferred from compute pipeline existence or a shader hash.
+    Shader::Gcn::OrderedGds::GcnOrderedGdsEpochIssuer ordered_gds_epoch_issuer_{};
+    Shader::Gcn::OrderedGds::VerifiedCikOrderedPackerLedger cik_ordered_packer_ledger_{};
+    const OrderedGdsEpochDeviceBuffers* active_ordered_gds_capture_{};
 };
 
 } // namespace Vulkan

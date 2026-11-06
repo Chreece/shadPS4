@@ -1,0 +1,92 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T13:16:30.855285+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "4afbf1dc55ebb448c5c79ba10dd8c9552b975c4b",
+  "upstream_commit": "8b804805599df20e702d5a16410335b2ceaa0fcc",
+  "retained_commits_rebased": 46,
+  "integration_head": "4b7c9d373d57b9d4a040675824098f4294efc242",
+  "native_archive": {
+    "filename": "universal-two-games-20261106T124042Z-2536499.tar.gz",
+    "sha256": "ab4939a0dbf906be921f1a8bd4ff266158a2c1e265a909fbcedeb05e47a1974e",
+    "library_file_id": "libfile_7015052b18308191b4db47f95c003cc8",
+    "source_commit": "3fbee42c3dec115c7f6062f78c2165767e74e246",
+    "runner_commit": "4cd094b5c855d84bde67a75b57b2fa277310057b",
+    "binary_sha256": "ac15e0ef42f5d06382d58a46d361440ca659228020c903702c681289f02f249c"
+  },
+  "got": {
+    "menu_reached": "user-confirmed; 8s/25s captures precede reported menu",
+    "continued_game": "user-confirmed",
+    "exit_code": -11,
+    "elapsed_seconds": 74.771,
+    "termination_reason": "GAME_EXITED_BEFORE_LIMIT",
+    "failure": "UnresolvedShaderPhiDescriptor dword=0 alternatives=2 incoming0=11 incoming1=11; assertion at MarkReadConstBufferSharpSources",
+    "shader": "00000000b5500bd4",
+    "missing_fill_resolved": false,
+    "conclusion": "No-IRQ candidate progressed beyond previous stall; loading failed in shader compiler before the 118-second stop. Native IR was not dumped, so exact failing operation is unconfirmed."
+  },
+  "gow": {
+    "screenshot_80s_fps": 8,
+    "screenshot_80s_frame_ms": 118.3,
+    "gpu_busy_mean_25_to_80": 27.23913043478261,
+    "gpu_busy_mean_80_to_107": 21.15,
+    "gpu_command_cpu_seconds_110": 82.774107185,
+    "game_main_cpu_seconds_110": 46.093983956,
+    "gpu_cull_monitor_cpu_seconds_110": 11.25333191,
+    "page_protect_calls": 8493938,
+    "page_protect_self_seconds": 21.438099143,
+    "image_readback_scope_calls": 25178649,
+    "image_readback_scope_self_seconds": 2.876662405,
+    "buffer_readback_calls": 16055,
+    "buffer_readback_bytes": 3801434112,
+    "gpu_wait_total_seconds": 27.619582745,
+    "longest_gpu_wait_seconds": 10.22849387,
+    "owned_child_terminated": false,
+    "stop_state": "Main zombie with AK::BankManager in D state waiting in dma_fence_wait_any_timeout",
+    "fps_improvement_proven": false,
+    "conclusion": "Low FPS is confirmed; substantial host-side coherence and command preparation cost; late GPU fence stall and unconfirmed shutdown remain. Do not suppress readbacks or page tracking."
+  },
+  "change": {
+    "production": "Reuse finite-predecessor descriptor splitting for StoreBufferU32/x2/x3/x4; emit an exact predecessor selector and guard each store through the existing guarded-store backend. Loads, atomics, unsupported descriptor producers and resource limits retain existing behavior.",
+    "runner": "Optionally retain first-run shader dumps with performance collection; classify descriptor Phi errors using the compiling thread. Second run keeps shader dumps disabled.",
+    "upstream": "AAC reset-before-initialization fix and debug-level clamping retained; two rebase conflicts resolved by preserving existing bounded-access diagnostics at debug level. Exact tree checked for all 46 retained commits."
+  },
+  "validation": {
+    "release_build": "PASS",
+    "local_binary_sha256": "48563db6e398fb8412cb66dde643daf4c2fe5235b4f5f6dc725a859d8073eb4b",
+    "compiled_src_matches_candidate": true,
+    "startup_checks": 3,
+    "original_gcn_kernels": 4,
+    "baseline": "Original two-ReadConst descriptor Phi reproduces the same assertion; exit 139.",
+    "candidate": "All four kernels translate and pass spirv-val --target-env vulkan1.3.",
+    "independent_spirv_interpreter": {
+      "cases": 16,
+      "word_checks": 8704,
+      "result": "PASS selected buffer writes; unselected buffer, padding and trailing sentinels unchanged",
+      "is_gpu_driver": false
+    },
+    "runner": "Profile capture on/off, Vulkan layers disabled, interleaved compiler thread association and actual GoT assertion classification pass; inherited runner checks pass.",
+    "openorbis": {
+      "library_file_id": "libfile_a4e238f8d63881919b65becce05129fa",
+      "filename": "descriptor-phi-store-openorbis-20261106.zip",
+      "gcn_assembled": true,
+      "c_syntax": "PASS -Wall -Wextra -Werror",
+      "sdk_build": false,
+      "physical_hardware_test": false
+    },
+    "native_candidate_test": false
+  },
+  "pending": [
+    "Native GoT Continue loading with branch-selected stores",
+    "GoT missing fill graphics",
+    "GoW CPU coherence cost and low FPS",
+    "GoW late GPU fence wait / shutdown"
+  ],
+  "policy": {
+    "game_or_shader_specific_emulation": false,
+    "forced_counters": false,
+    "automatic_input": false,
+    "runtime_upstream_freshness_checks": false,
+    "raw_guest_data_published": false
+  }
+}

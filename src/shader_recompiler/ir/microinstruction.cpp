@@ -42,6 +42,7 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::DeviceMemoryBarrier:
     case Opcode::SubgroupBarrier:
     case Opcode::ConditionRef:
+    case Opcode::OrderedGdsStoreState:
     case Opcode::Prologue:
     case Opcode::Epilogue:
     case Opcode::Discard:
@@ -55,6 +56,10 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::StoreBufferU32x2:
     case Opcode::StoreBufferU32x3:
     case Opcode::StoreBufferU32x4:
+    case Opcode::StoreBufferU32Guarded:
+    case Opcode::StoreBufferU32x2Guarded:
+    case Opcode::StoreBufferU32x3Guarded:
+    case Opcode::StoreBufferU32x4Guarded:
     case Opcode::StoreBufferU64:
     case Opcode::StoreBufferF32:
     case Opcode::StoreBufferF32x2:
@@ -111,6 +116,8 @@ bool Inst::MayHaveSideEffects() const noexcept {
     case Opcode::SharedAtomicXor64:
     case Opcode::SharedAtomicCmpSwap32:
     case Opcode::SharedAtomicCmpSwap64:
+    case Opcode::OrderedGdsCheckpointRegister:
+    case Opcode::OrderedGdsCount:
     case Opcode::ImageWrite:
     case Opcode::ImageAtomicIAdd32:
     case Opcode::ImageAtomicSMin32:
@@ -144,8 +151,7 @@ bool Inst::AreAllArgsImmediates() const {
 }
 
 IR::Type Inst::Type() const {
-    if (op == Opcode::Phi) {
-        // The type of a phi node is stored in its flags
+    if (op == Opcode::Phi || op == Opcode::OrderedGdsLoadState) {
         return Flags<IR::Type>();
     }
     if (op == Opcode::GetVirtualRegister) {

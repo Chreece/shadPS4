@@ -33,10 +33,12 @@ void DeadCodeEliminationPass(IR::Program& program);
 void ConstantPropagationPass(IR::BlockList& program);
 void FlattenExtendedUserdataPass(IR::Program& program);
 void ReadLaneEliminationPass(IR::Program& program);
+void FullWaveReductionPass(IR::Program& program, const Profile& profile);
 ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& profile);
 void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& sharp_usages,
                           const Profile& profile);
 void CollectShaderInfoPass(IR::Program& program, const Profile& profile);
+void BufferAccessBoundsPass(IR::Program& program);
 void LowerBufferFormatToRaw(IR::Program& program);
 void LowerUserClipPlanes(IR::Program& program, const RuntimeInfo& runtime_info);
 void LowerFp64ToFp32(IR::Program& program);

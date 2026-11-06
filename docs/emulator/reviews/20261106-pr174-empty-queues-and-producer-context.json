@@ -1,0 +1,797 @@
+{
+  "schema_version": 2,
+  "record_id": "pr174-got-empty-queues-20261106T110337Z-reviewed",
+  "timestamp_utc": "2026-11-06T11:24:06.452634+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "runner_commit": "997a1a4558e5165f5495471b887052a2333dc2fe",
+  "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "archive": "universal-graphics-20261106T110337Z-1803375.tar.gz",
+  "archive_sha256": "3d05d00d28597448e22d84bc4823ecc2d9471ba51bfd70a1a8eb5b8e8321d8a7",
+  "library_file_id": "libfile_f595b6c7c3a081918a95cdc674777daa",
+  "tested_games": [
+    "CUSA11456"
+  ],
+  "main_changed": false,
+  "emulator_source_changed": false,
+  "snapshots": {
+    "80": {
+      "elapsed_seconds": 0.07905729999765754,
+      "captured_threads": 52,
+      "total_threads": 52,
+      "samples_read": 5680,
+      "pointer_context_bytes": 1102848,
+      "truncation": {
+        "threads_truncated": false,
+        "pointer_queue_truncated": true,
+        "code_context_truncated": true,
+        "data_context_truncated": true
+      },
+      "main_runtime_ns": 58405765309,
+      "group": {
+        "address": "0x3fb6590",
+        "state": 1,
+        "job_count": 1,
+        "next_job_index": 0,
+        "queue_class": 1,
+        "next": 0,
+        "previous": 0,
+        "first_job_state": 0,
+        "callback": "0xf60820",
+        "callback_argument": 0
+      },
+      "queues": [
+        {
+          "address": "0x2c7fe08",
+          "mutex": "0x7f3ec00969a0",
+          "condition": "0x7f3ec00a1bb0",
+          "initialized": 1,
+          "head": 0,
+          "tail": 0,
+          "sleeping_workers": 5
+        },
+        {
+          "address": "0x2c7fe38",
+          "mutex": "0x7f3ec0096a20",
+          "condition": "0x7f3ec0096aa0",
+          "initialized": 1,
+          "head": 0,
+          "tail": 0,
+          "sleeping_workers": 5
+        }
+      ],
+      "waiters": [
+        {
+          "name": "JobWorker1",
+          "host_tid": 1804101,
+          "guest_tid": 10,
+          "runtime_ns": 4915520978,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker3",
+          "host_tid": 1804103,
+          "guest_tid": 12,
+          "runtime_ns": 4795972552,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker4",
+          "host_tid": 1804104,
+          "guest_tid": 13,
+          "runtime_ns": 4793732130,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker5",
+          "host_tid": 1804105,
+          "guest_tid": 14,
+          "runtime_ns": 4744476771,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker2",
+          "host_tid": 1804102,
+          "guest_tid": 11,
+          "runtime_ns": 4687107040,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow3",
+          "host_tid": 1804098,
+          "guest_tid": 7,
+          "runtime_ns": 4560331134,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow1",
+          "host_tid": 1804096,
+          "guest_tid": 5,
+          "runtime_ns": 4432099185,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow5",
+          "host_tid": 1804100,
+          "guest_tid": 9,
+          "runtime_ns": 4412468086,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow4",
+          "host_tid": 1804099,
+          "guest_tid": 8,
+          "runtime_ns": 4407843507,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow2",
+          "host_tid": 1804097,
+          "guest_tid": 6,
+          "runtime_ns": 4325261616,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "MovieDecoder",
+          "host_tid": 1804117,
+          "guest_tid": 25,
+          "runtime_ns": 3569105778,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex44",
+          "condition_name": "Cond5",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "FaWorkerIo1",
+          "host_tid": 1804094,
+          "guest_tid": 3,
+          "runtime_ns": 275242462,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex54",
+          "condition_name": "Cond10",
+          "condition_has_waiters": 1
+        }
+      ],
+      "performance_regions": [
+        {
+          "name": "draw",
+          "calls": 19491,
+          "inclusive_ns": 472253058,
+          "self_ns": 234290361,
+          "max_ns": 10622660,
+          "bytes": 0,
+          "last_ns": 33201201446
+        },
+        {
+          "name": "dispatch",
+          "calls": 35872,
+          "inclusive_ns": 2034651912,
+          "self_ns": 120955945,
+          "max_ns": 33116661,
+          "bytes": 0,
+          "last_ns": 33171497413
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 74854,
+          "inclusive_ns": 90674655,
+          "self_ns": 60912295,
+          "max_ns": 3872581,
+          "bytes": 0,
+          "last_ns": 33201190190
+        },
+        {
+          "name": "bind-textures",
+          "calls": 74854,
+          "inclusive_ns": 333704599,
+          "self_ns": 321770409,
+          "max_ns": 26228043,
+          "bytes": 0,
+          "last_ns": 33201190549
+        },
+        {
+          "name": "shader-compile",
+          "calls": 118,
+          "inclusive_ns": 140160108,
+          "self_ns": 129773000,
+          "max_ns": 19952626,
+          "bytes": 0,
+          "last_ns": 33157120619
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 55363,
+          "inclusive_ns": 1705535628,
+          "self_ns": 123279210,
+          "max_ns": 20105887,
+          "bytes": 0,
+          "last_ns": 33201183658
+        },
+        {
+          "name": "image-readback",
+          "calls": 105749,
+          "inclusive_ns": 10065936,
+          "self_ns": 9689882,
+          "max_ns": 852221,
+          "bytes": 19719442580,
+          "last_ns": 33201189714
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 1405,
+          "inclusive_ns": 1693924369,
+          "self_ns": 16145176,
+          "max_ns": 10387030,
+          "bytes": 42741888,
+          "last_ns": 33171111544
+        },
+        {
+          "name": "page-protect",
+          "calls": 26092,
+          "inclusive_ns": 131470187,
+          "self_ns": 131470187,
+          "max_ns": 716050,
+          "bytes": 3764899840,
+          "last_ns": 33171445992
+        },
+        {
+          "name": "submit",
+          "calls": 4367,
+          "inclusive_ns": 44675241,
+          "self_ns": 44675241,
+          "max_ns": 188928,
+          "bytes": 0,
+          "last_ns": 33234450115
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 1406,
+          "inclusive_ns": 1670777131,
+          "self_ns": 1658784399,
+          "max_ns": 10365369,
+          "bytes": 0,
+          "last_ns": 33171097359
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      ],
+      "screenshot_sha256": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956"
+    },
+    "110": {
+      "elapsed_seconds": 0.08063982200110331,
+      "captured_threads": 52,
+      "total_threads": 52,
+      "samples_read": 7204,
+      "pointer_context_bytes": 1102848,
+      "truncation": {
+        "threads_truncated": false,
+        "pointer_queue_truncated": true,
+        "code_context_truncated": true,
+        "data_context_truncated": true
+      },
+      "main_runtime_ns": 88607428243,
+      "group": {
+        "address": "0x3fb6590",
+        "state": 1,
+        "job_count": 1,
+        "next_job_index": 0,
+        "queue_class": 1,
+        "next": 0,
+        "previous": 0,
+        "first_job_state": 0,
+        "callback": "0xf60820",
+        "callback_argument": 0
+      },
+      "queues": [
+        {
+          "address": "0x2c7fe08",
+          "mutex": "0x7f3ec00969a0",
+          "condition": "0x7f3ec00a1bb0",
+          "initialized": 1,
+          "head": 0,
+          "tail": 0,
+          "sleeping_workers": 5
+        },
+        {
+          "address": "0x2c7fe38",
+          "mutex": "0x7f3ec0096a20",
+          "condition": "0x7f3ec0096aa0",
+          "initialized": 1,
+          "head": 0,
+          "tail": 0,
+          "sleeping_workers": 5
+        }
+      ],
+      "waiters": [
+        {
+          "name": "JobWorker1",
+          "host_tid": 1804101,
+          "guest_tid": 10,
+          "runtime_ns": 4915520978,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker3",
+          "host_tid": 1804103,
+          "guest_tid": 12,
+          "runtime_ns": 4795972552,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker4",
+          "host_tid": 1804104,
+          "guest_tid": 13,
+          "runtime_ns": 4793732130,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker5",
+          "host_tid": 1804105,
+          "guest_tid": 14,
+          "runtime_ns": 4744476771,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorker2",
+          "host_tid": 1804102,
+          "guest_tid": 11,
+          "runtime_ns": 4687107040,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex46",
+          "condition_name": "Cond7",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow3",
+          "host_tid": 1804098,
+          "guest_tid": 7,
+          "runtime_ns": 4560331134,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow1",
+          "host_tid": 1804096,
+          "guest_tid": 5,
+          "runtime_ns": 4432099185,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow5",
+          "host_tid": 1804100,
+          "guest_tid": 9,
+          "runtime_ns": 4412468086,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow4",
+          "host_tid": 1804099,
+          "guest_tid": 8,
+          "runtime_ns": 4407843507,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "JobWorkerLow2",
+          "host_tid": 1804097,
+          "guest_tid": 6,
+          "runtime_ns": 4325261616,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex45",
+          "condition_name": "Cond6",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "MovieDecoder",
+          "host_tid": 1804117,
+          "guest_tid": 25,
+          "runtime_ns": 3569105778,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex44",
+          "condition_name": "Cond5",
+          "condition_has_waiters": 1
+        },
+        {
+          "name": "FaWorkerIo1",
+          "host_tid": 1804094,
+          "guest_tid": 3,
+          "runtime_ns": 275242462,
+          "wake_credits": 0,
+          "deferred_waiter_count": 0,
+          "will_sleep": 0,
+          "mutex_owner": 0,
+          "mutex_name": "Mutex54",
+          "condition_name": "Cond10",
+          "condition_has_waiters": 1
+        }
+      ],
+      "performance_regions": [
+        {
+          "name": "draw",
+          "calls": 19491,
+          "inclusive_ns": 472253058,
+          "self_ns": 234290361,
+          "max_ns": 10622660,
+          "bytes": 0,
+          "last_ns": 33201201446
+        },
+        {
+          "name": "dispatch",
+          "calls": 35872,
+          "inclusive_ns": 2034651912,
+          "self_ns": 120955945,
+          "max_ns": 33116661,
+          "bytes": 0,
+          "last_ns": 33171497413
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 74854,
+          "inclusive_ns": 90674655,
+          "self_ns": 60912295,
+          "max_ns": 3872581,
+          "bytes": 0,
+          "last_ns": 33201190190
+        },
+        {
+          "name": "bind-textures",
+          "calls": 74854,
+          "inclusive_ns": 333704599,
+          "self_ns": 321770409,
+          "max_ns": 26228043,
+          "bytes": 0,
+          "last_ns": 33201190549
+        },
+        {
+          "name": "shader-compile",
+          "calls": 118,
+          "inclusive_ns": 140160108,
+          "self_ns": 129773000,
+          "max_ns": 19952626,
+          "bytes": 0,
+          "last_ns": 33157120619
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 55363,
+          "inclusive_ns": 1705535628,
+          "self_ns": 123279210,
+          "max_ns": 20105887,
+          "bytes": 0,
+          "last_ns": 33201183658
+        },
+        {
+          "name": "image-readback",
+          "calls": 105749,
+          "inclusive_ns": 10065936,
+          "self_ns": 9689882,
+          "max_ns": 852221,
+          "bytes": 19719442580,
+          "last_ns": 33201189714
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 1405,
+          "inclusive_ns": 1693924369,
+          "self_ns": 16145176,
+          "max_ns": 10387030,
+          "bytes": 42741888,
+          "last_ns": 33171111544
+        },
+        {
+          "name": "page-protect",
+          "calls": 26092,
+          "inclusive_ns": 131470187,
+          "self_ns": 131470187,
+          "max_ns": 716050,
+          "bytes": 3764899840,
+          "last_ns": 33171445992
+        },
+        {
+          "name": "submit",
+          "calls": 4367,
+          "inclusive_ns": 44675241,
+          "self_ns": 44675241,
+          "max_ns": 188928,
+          "bytes": 0,
+          "last_ns": 33234450115
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 1406,
+          "inclusive_ns": 1670777131,
+          "self_ns": 1658784399,
+          "max_ns": 10365369,
+          "bytes": 0,
+          "last_ns": 33171097359
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      ],
+      "screenshot_sha256": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956"
+    }
+  },
+  "native": {
+    "exit_code": -9,
+    "exit_reason": "TEST_118S_DURATION_LIMIT",
+    "elapsed_seconds": 119.614,
+    "owned_child_terminated": true,
+    "gpu_failure": null,
+    "gpu_memory_fault_reports": 0,
+    "validation_layer_active": false
+  },
+  "restoration": {
+    "installed_binary_changed": false,
+    "ollama_model_statuses": [
+      "RESTORED"
+    ]
+  },
+  "findings": [
+    "Expanded collector captures all 52 native threads at both late snapshots in about 80ms. Main CPU runtime increases while all ten workers remain asleep with unchanged runtime.",
+    "Both observed job queues have null heads and tails and five sleeping workers. The workers have zero wake credits and no deferred wakes; their associated mutexes have no owner. The movie decoder and I/O worker also wait on unowned mutex/condition contexts. These observations do not support a worker mutex deadlock, but cannot rule out earlier failures.",
+    "The main thread walks job records, helps the selected queue, and spins when no runnable work is found. The value at group+4 is a job count, not a completion counter expected to reach zero. Its first job state remains 0; the wait skips state 2. Group state remains 1, whereas captured queue code writes 2 before enqueueing and 3 when the last job is taken. This suggests the group was never published; the producer path is not yet captured, so this remains an inference.",
+    "GpuComm stack context matches Liverpool::Process waiting for commands/submits. All live performance counters are unchanged from 80s to 110s: last submit at 33.234450115s, last draw at 33.201201446s. GpuInterrupt remains in the event wait; no GPU fault is reported. This is not evidence of a long-running current GPU shader.",
+    "Late screenshots are byte-identical black output. The 29 FPS overlay does not show game progress. Protected termination at 119.614s requires SIGKILL; it is not a clean game exit. Ollama is restored and the installed binary remains unchanged.",
+    "Capture limits omit the wait wrapper at 0xb097c0, portions of enqueue code, and a GPU interrupt pointer table. No emulator defect is sufficiently established for a semantic patch."
+  ],
+  "followup": {
+    "change": "Bounded instruction reference context from executable memory referenced by samples and sleeping stacks. Capture pages and follow direct calls/jumps, RIP-relative globals and immediate pointers, then two levels of data pointers. Apply to anonymous/memfd executable mappings without title-specific addresses.",
+    "limits": {
+      "code_pages": 128,
+      "code_bytes_per_page": 4096,
+      "data_blocks": 256,
+      "data_bytes_per_block": 1024,
+      "code_reference_depth": 2,
+      "data_pointer_depth": 2,
+      "shared_snapshot_budget_seconds": 1
+    },
+    "policy": "Read-only owned child access; no ptrace, extra signals, thread suspension, target-memory writes, forced counter values, title/shader conditions or automatic input. Existing protections retained.",
+    "limitations": "Non-atomic observations; decoded references and stack addresses are candidates. Limits and missing decoder are reported. New native collector validation remains pending. Raw guest bytes stay in private native evidence."
+  },
+  "validation": {
+    "live_memory": {
+      "checks": [
+        "production_ELF_symbol_layout",
+        "synthetic_ELF_symbol_layout",
+        "reject_non_child",
+        "faulting_and_waiting_live_1",
+        "faulting_and_waiting_live_2",
+        "faulting_and_waiting_live_3",
+        "faulting_and_waiting_live_4",
+        "faulting_and_waiting_live_5",
+        "faulting_and_waiting_live_6",
+        "missing_symbols_keeps_sleeping_stack",
+        "reject_executable_change",
+        "memory_unavailable_nonfatal",
+        "guest_progress_after_reads",
+        "exited_child_nonfatal"
+      ],
+      "result": "PASS",
+      "native_title_run": "NOT_RUN",
+      "ptrace_prototype": "DISCARDED_KERNEL_EPERM; read-only proc memory used instead"
+    },
+    "queue_context": {
+      "checks": [
+        "all_15_threads_including_low_cpu_sleepers",
+        "live_counters_before_shutdown",
+        "two_level_pointer_chain_leaf_captured",
+        "context_byte_limit",
+        "code_block_limit",
+        "faulting_child_stays_alive"
+      ],
+      "elapsed_seconds": 0.03643664099945454,
+      "context_bytes": 509952,
+      "threads": 15,
+      "native_emulator": "NOT_RUN"
+    },
+    "instruction_reference_fixture": {
+      "checks": [
+        "two_levels_of_direct_calls_and_backward_jump",
+        "rip_relative_global",
+        "two_pointer_levels_from_global",
+        "absolute_immediate_pointer",
+        "bounded_context_bytes",
+        "deduplicated_code_and_data",
+        "expired_deadline",
+        "missing_decoder_nonfatal",
+        "relocation_preserves_high_virtual_address"
+      ],
+      "result": "PASS",
+      "elapsed_seconds": 0.132316928000364,
+      "bytes": 16384,
+      "code_pages": 3,
+      "data_blocks": 4
+    },
+    "live_instruction_reference": {
+      "checks": [
+        "live_anonymous_code_two_calls_global_two_pointers",
+        "leaf_contents_captured",
+        "no_suspend_or_memory_writes",
+        "owned_child_still_running",
+        "one_second_combined_budget"
+      ],
+      "result": "PASS",
+      "snapshot_elapsed_seconds": 0.09373105399936321,
+      "instruction_context_bytes": 15360,
+      "code_pages": 3,
+      "data_blocks": 3,
+      "native_title": "NOT_RUN"
+    },
+    "captured_instruction_replay": {
+      "replay_only": true,
+      "missing_bytes_replaced_with_synthetic_padding": true,
+      "requested_missing_targets": [
+        "0xb097c0",
+        "0xc031f0",
+        "0x1ad3208"
+      ],
+      "bytes": 602112,
+      "elapsed_seconds": 0.30767760399976396,
+      "truncation": {
+        "data_truncated": true
+      }
+    },
+    "inherited_runner_checks": 78,
+    "handoff_cases": 4,
+    "malformed_pin_rejections": 3,
+    "python_compile": "PASS",
+    "bash_syntax": "PASS",
+    "release_build": "PASS_CACHED_NO_WORK",
+    "native_instruction_capture": "NOT_RUN"
+  },
+  "decision": "GOT_STALL_UNRESOLVED_CONTINUE_PRODUCER_CAPTURE_MAIN_UNCHANGED"
+}

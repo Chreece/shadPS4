@@ -1,0 +1,145 @@
+{
+  "schema_version": 2,
+  "record_id": "pr173-got-vulkan-20261106T095425Z-reviewed",
+  "timestamp_utc": "2026-11-06T10:37:45.338958+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "runner_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "archive": "universal-graphics-20261106T095425Z-1261491.tar(1).gz",
+  "library_file_id": "libfile_9194558ffb9881918eddf9c25372f393",
+  "tested_games": [
+    "CUSA11456"
+  ],
+  "main_changed": false,
+  "emulator_source_changed": false,
+  "archive_sha256": "2a560b491c931e4895a7a209131e8681d179d38596b0aa67e6493c88bb63a46e",
+  "native": {
+    "exit_code": 0,
+    "exit_reason": "TEST_118S_DURATION_LIMIT",
+    "elapsed_seconds": 119.5,
+    "owned_child_terminated": true,
+    "gpu_failure": null,
+    "gpu_memory_fault_reports": 0,
+    "validation_layer_active": true,
+    "validation_message_ids": {},
+    "first_validation_failure": null,
+    "gpu_work_entries": 2048,
+    "gpu_work_overwritten": 225002,
+    "performance_records": 0
+  },
+  "screenshots": {
+    "frame-080s.png": "3b59dcc91294cdf488814540e7dcd0eb0ca669d16d91cac9c9ef8daac0646f09",
+    "frame-008s.png": "cb1ca59a34c19fb18960bdbec52dc5f20ea776dda984949bd5e351a2477761a7",
+    "frame-110s.png": "3b59dcc91294cdf488814540e7dcd0eb0ca669d16d91cac9c9ef8daac0646f09",
+    "frame-025s.png": "cb1ca59a34c19fb18960bdbec52dc5f20ea776dda984949bd5e351a2477761a7"
+  },
+  "last_gpu_records": [
+    "GRAPHICS_WORK seq=227046 ms=32157 semaphore=0x5632aaa006c8 tick=3274 kind=shader stage=0 shader=96aa3f2e flatbuf-words=28",
+    "GRAPHICS_WORK seq=227047 ms=32157 semaphore=0x5632aaa006c8 tick=3274 kind=shader stage=1 shader=a894bb5 flatbuf-words=16",
+    "GRAPHICS_WORK seq=227048 ms=32157 semaphore=0x5632aaa006c8 tick=3274 kind=draw indexed=0 vertices=3 instances=1",
+    "GRAPHICS_WORK seq=227049 ms=32158 semaphore=0x5632aaa006c8 tick=3274 kind=submit command-buffers=1 waits=1",
+    "GRAPHICS_WORK seq=227050 ms=32163 semaphore=0x5632aaa00da8 tick=1162 kind=submit command-buffers=1 waits=2"
+  ],
+  "threads": {
+    "25": [
+      {
+        "tid": 1261616,
+        "status": "Name:\tshadPS4:GpuComm\nUmask:\t0077\nState:\tS (sleeping)\nTgid:\t1261582\nNgid:\t0\nPid:\t1261616\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t64\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1261616\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281318236 kB\nVmSize:\t91281030780 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 1741084 kB\nVmRSS:\t 1741084 kB\nRssAnon:\t  563300 kB\nRssFile:\t  125572 kB\nRssShmem:\t 1052212 kB\nVmData:\t91265007000 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    4808 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t0/127210\nSigPnd:\t0000000000000000\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\tffff\nCpus_allowed_list:\t0-15\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t12798\nnonvoluntary_ctxt_switches:\t222\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "5104763052 172982835 13020\n",
+        "syscall": "202 0x5632ac475664 0x189 0x247 0x0 0x0 0xffffffff 0x7fc401dfb068 0x7fc61f98972e\n"
+      },
+      {
+        "tid": 1262161,
+        "status": "Name:\tGame:Main\nUmask:\t0077\nState:\tR (running)\nTgid:\t1261582\nNgid:\t0\nPid:\t1262161\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t64\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1262161\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281318236 kB\nVmSize:\t91281030780 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 1741084 kB\nVmRSS:\t 1741084 kB\nRssAnon:\t  563300 kB\nRssFile:\t  125572 kB\nRssShmem:\t 1052212 kB\nVmData:\t91265007000 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    4808 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t1/127210\nSigPnd:\t0000000000000400\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\t000f\nCpus_allowed_list:\t0-3\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t14035\nnonvoluntary_ctxt_switches:\t1579\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "7944817309 1111961775 15615\n",
+        "syscall": "running\n"
+      }
+    ],
+    "80": [
+      {
+        "tid": 1261616,
+        "status": "Name:\tshadPS4:GpuComm\nUmask:\t0077\nState:\tS (sleeping)\nTgid:\t1261582\nNgid:\t0\nPid:\t1261616\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t256\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1261616\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281483028 kB\nVmSize:\t91281483028 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 3287812 kB\nVmRSS:\t 3287812 kB\nRssAnon:\t  611036 kB\nRssFile:\t  125724 kB\nRssShmem:\t 2551052 kB\nVmData:\t91264430620 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    8840 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t0/127210\nSigPnd:\t0000000000000000\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\tffff\nCpus_allowed_list:\t0-15\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t18784\nnonvoluntary_ctxt_switches:\t298\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "7524656831 200687319 19082\n",
+        "syscall": "202 0x5632aaacc3fc 0x189 0x25e1 0x0 0x0 0xffffffff 0x7fc401dfb218 0x7fc61f98972e\n"
+      },
+      {
+        "tid": 1262161,
+        "status": "Name:\tGame:Main\nUmask:\t0077\nState:\tR (running)\nTgid:\t1261582\nNgid:\t0\nPid:\t1262161\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t256\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1262161\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281483028 kB\nVmSize:\t91281483028 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 3287812 kB\nVmRSS:\t 3287812 kB\nRssAnon:\t  611036 kB\nRssFile:\t  125724 kB\nRssShmem:\t 2551052 kB\nVmData:\t91264430620 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    8840 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t0/127210\nSigPnd:\t0000000000000000\nShdPnd:\t0000000000000000\nSigBlk:\tfffffffe7ffbfeff\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\t000f\nCpus_allowed_list:\t0-3\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t19023\nnonvoluntary_ctxt_switches:\t2382\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "59401332532 1250952425 21406\n",
+        "syscall": "running\n"
+      }
+    ],
+    "110": [
+      {
+        "tid": 1261616,
+        "status": "Name:\tshadPS4:GpuComm\nUmask:\t0077\nState:\tS (sleeping)\nTgid:\t1261582\nNgid:\t0\nPid:\t1261616\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t256\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1261616\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281483028 kB\nVmSize:\t91281483028 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 3287812 kB\nVmRSS:\t 3287812 kB\nRssAnon:\t  611036 kB\nRssFile:\t  125724 kB\nRssShmem:\t 2551052 kB\nVmData:\t91264430620 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    8840 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t0/127210\nSigPnd:\t0000000000000000\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\tffff\nCpus_allowed_list:\t0-15\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t18789\nnonvoluntary_ctxt_switches:\t298\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "7524704127 200687319 19087\n",
+        "syscall": "202 0x5632aaacc3f8 0x189 0x25e6 0x0 0x0 0xffffffff 0x7fc401dfb218 0x7fc61f98972e\n"
+      },
+      {
+        "tid": 1262161,
+        "status": "Name:\tGame:Main\nUmask:\t0077\nState:\tR (running)\nTgid:\t1261582\nNgid:\t0\nPid:\t1262161\nPPid:\t1261491\nTracerPid:\t0\nUid:\t1000\t1000\t1000\t1000\nGid:\t1000\t1000\t1000\t1000\nFDSize:\t256\nGroups:\t20 24 25 27 29 30 44 46 100 102 105 106 121 994 1000 \nNStgid:\t1261582\nNSpid:\t1262161\nNSpgid:\t1261582\nNSsid:\t1261582\nKthread:\t0\nVmPeak:\t91281483028 kB\nVmSize:\t91281483028 kB\nVmLck:\t       0 kB\nVmPin:\t       0 kB\nVmHWM:\t 3287812 kB\nVmRSS:\t 3287812 kB\nRssAnon:\t  611036 kB\nRssFile:\t  125724 kB\nRssShmem:\t 2551052 kB\nVmData:\t91264430620 kB\nVmStk:\t     136 kB\nVmExe:\t   25608 kB\nVmLib:\t  187952 kB\nVmPTE:\t    8840 kB\nVmSwap:\t       0 kB\nHugetlbPages:\t       0 kB\nCoreDumping:\t0\nTHP_enabled:\t1\nuntag_mask:\t0xffffffffffffffff\nThreads:\t55\nSigQ:\t1/127210\nSigPnd:\t0000000000000400\nShdPnd:\t0000000000000000\nSigBlk:\t0000000000000000\nSigIgn:\t0000000000000000\nSigCgt:\t80000001420046fa\nCapInh:\t0000000000000000\nCapPrm:\t0000000000000000\nCapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\nNoNewPrivs:\t0\nSeccomp:\t0\nSeccomp_filters:\t0\nSpeculation_Store_Bypass:\tthread vulnerable\nSpeculationIndirectBranch:\tconditional enabled\nCpus_allowed:\t000f\nCpus_allowed_list:\t0-3\nMems_allowed:\t00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001\nMems_allowed_list:\t0\nvoluntary_ctxt_switches:\t19023\nnonvoluntary_ctxt_switches:\t2776\nx86_Thread_features:\t\nx86_Thread_features_locked:\t\n",
+        "schedstat": "89138845025 1253166785 21800\n",
+        "syscall": "running\n"
+      }
+    ]
+  },
+  "model_restoration": [
+    "RESTORED"
+  ],
+  "findings": [
+    "Black output with a small loading indicator at 80/110 seconds; both PNGs are byte-identical. Host overlay FPS does not show game progress.",
+    "Last recorded draw is at 32.157s and submission at 32.163s. These are recorded operations, not evidence of GPU completion. The work ring retains only 2048 of 227050 entries.",
+    "Vulkan validation is active and reports no IDs/errors. No GPU failure or memory fault is recorded. Absence of validation errors does not establish correct emulation.",
+    "Game:Main runtime grows from 59.401332532s to 89.138845025s between 80s and 110s, while GpuComm remains approximately 7.5247s and sleeps in futex. The exact condition and causal fault remain unknown.",
+    "No waiting shader hash or GPU timeout is identified. Raw guest shader bytes are retained only in the private evidence archive, not added to GitHub.",
+    "The prior performance capture showed timestamp polling and its host fault path, but it did not capture the pointed-to wait data or live thread stacks. CPU-ID/timestamps and shader semantics are unchanged."
+  ],
+  "next_step": "Reuse verified source c7365c9 and native ELF with performance sampling enabled. At 80/110s, read recent published profiler registers, their bounded pointer/stack memory and sleeping-thread syscall stacks from the owned child. No ptrace, signals, thread suspension, writes, game selectors in diagnostic logic or emulator code changes.",
+  "limits": [
+    "Registers are prior profiler samples, at most two seconds old; accompanying memory is observed later while the process runs. This is not a coherent register/memory snapshot.",
+    "Stack addresses are candidate return addresses, not an unwound call stack. Executable symbols are attributed only inside their nm ranges.",
+    "Missing symbols, denied memory reads, exited children and snapshot time exhaustion are recorded; normal runner cleanup remains in force.",
+    "Native execution of the new collector is pending. Full original emulator build is unchanged and cached rebuild reports no work.",
+    "An initial ptrace prototype was rejected by the local kernel (EPERM) and discarded. The delivered collector uses only read-only /proc access to its own child."
+  ],
+  "validation": {
+    "python_compile": "PASS",
+    "bash_syntax": "PASS",
+    "live_memory": {
+      "checks": [
+        "production_ELF_symbol_layout",
+        "synthetic_ELF_symbol_layout",
+        "reject_non_child",
+        "faulting_and_waiting_live_1",
+        "faulting_and_waiting_live_2",
+        "faulting_and_waiting_live_3",
+        "faulting_and_waiting_live_4",
+        "faulting_and_waiting_live_5",
+        "faulting_and_waiting_live_6",
+        "missing_symbols_keeps_sleeping_stack",
+        "reject_executable_change",
+        "memory_unavailable_nonfatal",
+        "guest_progress_after_reads",
+        "exited_child_nonfatal"
+      ],
+      "result": "PASS",
+      "native_title_run": "NOT_RUN",
+      "ptrace_prototype": "DISCARDED_KERNEL_EPERM; read-only proc memory used instead"
+    },
+    "capacity_and_non_pie": {
+      "samples_read": 32768,
+      "sampler_capacity_exceeded": true,
+      "load_bias": 0,
+      "elapsed_seconds": 0.05705339399719378
+    },
+    "inherited_runner_checks": 78,
+    "handoff_cases": 4,
+    "handoff_boundaries": "download and native process invocation mocked",
+    "release_build": "PASS_CACHED_BUILD_NO_WORK",
+    "native_collector": "NOT_RUN"
+  },
+  "decision": "KEEP_PR173_DRAFT_MAIN_UNCHANGED_GOT_CPU_WAIT_UNRESOLVED"
+}

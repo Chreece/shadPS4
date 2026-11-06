@@ -3,6 +3,7 @@
 
 #include "common/assert.h"
 #include "common/debug.h"
+#include "common/performance_diagnostics.h"
 #include "common/thread.h"
 #include "imgui/renderer/texture_manager.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
@@ -26,6 +27,25 @@ Scheduler::~Scheduler() {
 #if TRACY_GPU_ENABLED
     std::free(profiler_scope);
 #endif
+}
+
+static vk::AttachmentStoreOp DepthStencilStoreOp(vk::ImageLayout layout,
+                                                 vk::ImageAspectFlagBits aspect) {
+    switch (layout) {
+    case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+    case vk::ImageLayout::eReadOnlyOptimal:
+        return vk::AttachmentStoreOp::eNone;
+    case vk::ImageLayout::eDepthReadOnlyOptimal:
+    case vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal:
+        return aspect == vk::ImageAspectFlagBits::eDepth ? vk::AttachmentStoreOp::eNone
+                                                         : vk::AttachmentStoreOp::eStore;
+    case vk::ImageLayout::eStencilReadOnlyOptimal:
+    case vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal:
+        return aspect == vk::ImageAspectFlagBits::eStencil ? vk::AttachmentStoreOp::eNone
+                                                           : vk::AttachmentStoreOp::eStore;
+    default:
+        return vk::AttachmentStoreOp::eStore;
+    }
 }
 
 void Scheduler::BeginRendering(const RenderState& new_state) {
@@ -53,7 +73,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
         .loadOp = db.depth_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .storeOp = DepthStencilStoreOp(db.image_layout, vk::ImageAspectFlagBits::eDepth),
         .clearValue =
             vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = std::bit_cast<float>(
                                                                           db.clear_value[0])}},
@@ -62,7 +82,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
         .loadOp = db.stencil_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .storeOp = DepthStencilStoreOp(db.image_layout, vk::ImageAspectFlagBits::eStencil),
         .clearValue = vk::ClearValue{.depthStencil =
                                          vk::ClearDepthStencilValue{.stencil = db.clear_value[1]}},
     };
@@ -115,6 +135,7 @@ void Scheduler::Flush() {
 }
 
 void Scheduler::Finish() {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::GpuWait};
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
     SubmitInfo info{};
@@ -163,7 +184,7 @@ void Scheduler::BeginSession() {
     if (profiler_ctx) {
         static const auto scope_loc =
             GPU_SCOPE_LOCATION("Guest Frame", MarkersPalette::GpuMarkerColor);
-        new (profiler_scope) tracy::VkCtxScope{profiler_ctx, &scope_loc, current_cmdbuf, true};
+        new (profiler_scope) tracy::VkCtxScope{profiler_ctx, &scope_loc, session.primary, true};
     }
 #endif
 }
@@ -183,20 +204,20 @@ void Scheduler::EndSession() {
     }
 
     EndRendering();
-    Check(session.primary.end());
-}
-
-void Scheduler::SubmitExecution(SubmitInfo& info) {
-    std::scoped_lock lk{submit_mutex};
-    const u64 signal_value = work_semaphore.NextTick();
-
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
     if (profiler_ctx) {
         profiler_scope->~VkCtxScope();
-        TracyVkCollect(profiler_ctx, current_cmdbuf);
+        TracyVkCollect(profiler_ctx, session.primary);
     }
 #endif
+    Check(session.primary.end());
+}
+
+void Scheduler::SubmitExecution(SubmitInfo& info) {
+    Common::PerformanceDiagnostics::Scope perf{Common::PerformanceDiagnostics::Region::Submit};
+    std::scoped_lock lk{submit_mutex};
+    const u64 signal_value = work_semaphore.NextTick();
 
     if (on_submit) {
         on_submit(info);
@@ -215,6 +236,9 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     }
     sessions.clear();
 
+    VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, signal_value,
+                                          "kind=submit command-buffers=%zu waits=%u",
+                                          cmd_buffers.size(), info.num_wait_semas);
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 

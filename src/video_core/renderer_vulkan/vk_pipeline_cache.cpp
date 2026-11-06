@@ -1,7 +1,11 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cstdlib>
 #include <ranges>
+#include <string_view>
+#include "common/performance_diagnostics.h"
 
 #include "common/hash.h"
 #include "common/io_file.h"
@@ -9,6 +13,10 @@
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "shader_recompiler/backend/spirv/emit_spirv.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_coverage.h"
+#include "shader_recompiler/frontend/ordered_gds_capture_packet.h"
+#include "shader_recompiler/frontend/ordered_gds_control_flow.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/recompiler.h"
 #include "shader_recompiler/runtime_info.h"
@@ -223,7 +231,7 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
     case HwStage::Compute: {
         const auto& cs_pgm = liverpool->GetCsRegs();
         info.props.num_user_data = cs_pgm.settings.num_user_regs;
-        info.props.num_allocated_vgprs = cs_pgm.settings.num_vgprs * 4;
+        info.props.num_allocated_vgprs = cs_pgm.NumVgprs();
         info.props.fp_denorm_mode32 = cs_pgm.settings.fp_denorm_mode32;
         info.props.fp_denorm_mode16_64 = cs_pgm.settings.fp_denorm_mode64;
         info.props.fp_round_mode32 = cs_pgm.settings.fp_round_mode32;
@@ -233,6 +241,10 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
                                      cs_pgm.num_thread_z.full};
         info.hw.cs.tgid_enable = {cs_pgm.IsTgidEnabled(0), cs_pgm.IsTgidEnabled(1),
                                   cs_pgm.IsTgidEnabled(2)};
+        info.hw.cs.tg_size_enable = cs_pgm.IsTgSizeEnabled();
+        info.hw.cs.ordered_append = cs_pgm.IsTgSizeEnabled() && cs_pgm.IsOrderedAppendEnabled();
+        info.hw.cs.ordered_append_per_group =
+            info.hw.cs.ordered_append && cs_pgm.IsOrderedAppendPerGroup();
         info.hw.cs.shared_memory_size = cs_pgm.SharedMemSize();
         break;
     }
@@ -269,8 +281,49 @@ const Shader::RuntimeInfo& PipelineCache::BuildRuntimeInfo(HwStage stage, SwStag
     return info;
 }
 
+static u32 GuestNumericImageLimit(const Instance& instance, u32 arrays) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    constexpr u32 reserve = Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    const u32 images =
+        std::min(limits.maxDescriptorSetSampledImages, limits.maxPerStageDescriptorSampledImages);
+    const u32 image_count = images > reserve ? (images - reserve) / arrays : 0u;
+    const u32 total_count = limits.maxPerStageResources > reserve + 1u
+                                ? (limits.maxPerStageResources - reserve - 1u) / (arrays + 2u)
+                                : 0u;
+    const u32 count = std::min(image_count, total_count);
+    return count > 1u ? std::min(Shader::MaxGuestIndexedImageEntries, count - 1u) : 0u;
+}
+
+static u32 GuestIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 3u);
+}
+
+static u32 GuestMixedIndexedImageLimit(const Instance& instance) {
+    return GuestNumericImageLimit(instance, 9u);
+}
+
+static u32 GuestIndexedSamplerLimit(const Instance& instance) {
+    const auto limits = instance.GetPhysicalDevice().getProperties().limits;
+    constexpr u32 type_reserve = Shader::NUM_SAMPLERS + 32u;
+    constexpr u32 total_reserve =
+        Shader::NUM_IMAGES + Shader::NUM_BUFFERS + Shader::NUM_SAMPLERS + 32u;
+    const u32 type_hard =
+        std::min(limits.maxDescriptorSetSamplers, limits.maxPerStageDescriptorSamplers);
+    const u32 type_real =
+        type_hard > type_reserve + 3u
+            ? std::min(Shader::MaxGuestIndexedImageEntries, (type_hard - type_reserve) / 2u - 1u)
+            : 0u;
+
+    // Three numeric image arrays and two sampler variants share the stage resource limit.
+    const u32 pair_real = limits.maxPerStageResources > total_reserve + 9u
+                              ? std::min(Shader::MaxGuestIndexedImageEntries,
+                                         (limits.maxPerStageResources - total_reserve) / 5u - 1u)
+                              : 0u;
+    return std::min(type_real, pair_real);
+}
+
 PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
-                             AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift)
+                             AmdGpu::Liverpool* liverpool_, u32 sparse_page_shift, u64 bda_page_count)
     : instance{instance_}, scheduler{scheduler_}, liverpool{liverpool_},
       desc_heap{instance, scheduler.GetWorkSemaphore(), DescriptorHeapSizes} {
     const auto& vk12_props = instance.GetVk12Properties();
@@ -281,6 +334,14 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
         .supported_spirv = SpirvVersion1_6,
         .subgroup_size = instance.SubgroupSize(),
         .sparse_page_shift = sparse_page_shift,
+        .bda_page_count = bda_page_count,
+        .max_guest_indexed_image_entries = GuestIndexedImageLimit(instance),
+        .max_guest_mixed_indexed_image_entries = GuestMixedIndexedImageLimit(instance),
+        .max_guest_indexed_sampler_entries = GuestIndexedSamplerLimit(instance),
+        .supports_sampled_image_nonuniform_indexing =
+            instance.IsSampledImageNonUniformIndexingSupported(),
+        .supports_sampler_array_nonuniform_indexing =
+            instance.IsSamplerArrayNonUniformIndexingSupported(),
         .support_int8 = instance.IsShaderInt8Supported(),
         .support_int16 = instance.IsShaderInt16Supported(),
         .support_int64 = instance.IsShaderInt64Supported(),
@@ -343,6 +404,8 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
 PipelineCache::~PipelineCache() = default;
 
 const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectParams params) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::PipelineLookup};
     draw_indirect_params = params;
     if (!RefreshGraphicsKey()) {
         return nullptr;
@@ -373,6 +436,8 @@ const GraphicsPipeline* PipelineCache::GetGraphicsPipeline(const DrawIndirectPar
 }
 
 const ComputePipeline* PipelineCache::GetComputePipeline() {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::PipelineLookup};
     if (!RefreshComputeKey()) {
         return nullptr;
     }
@@ -385,13 +450,43 @@ const ComputePipeline* PipelineCache::GetComputePipeline() {
         it.value() = std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
                                                        *pipeline_cache, compute_key, *infos[0],
                                                        modules[0], sdata, false);
-        RegisterPipelineData(compute_key, sdata);
-        ++num_new_pipelines;
+        // Continuation metadata is not part of the disk cache format.
+        if (!infos[0]->uses_ordered_gds) {
+            RegisterPipelineData(compute_key, sdata);
+            ++num_new_pipelines;
+        }
 
         if (EmulatorSettings.IsShaderCollect()) {
             auto& m = modules[0];
             module_related_pipelines[m].emplace_back(compute_key);
         }
+    }
+    return it->second.get();
+}
+
+const ComputePipeline* PipelineCache::GetOrderedGdsCapturePipeline() {
+    // A distinct compile/cache operation: this cannot substitute the
+    // original shader module in a normal game dispatch. The calling
+    // Rasterizer must explicitly own and authenticate every wave first.
+    Shader::Backend::Bindings binding{};
+    const auto& cs_program = liverpool->GetCsRegs();
+    const auto params = AmdGpu::GetParams(cs_program);
+    const auto [info, module, permutation_hash] =
+        GetProgram(HwStage::Compute, SwStage::Compute, params, binding, true);
+    ASSERT_MSG(info && info->uses_ordered_gds && info->hw_stage == HwStage::Compute &&
+                   !info->ordered_gds_sites.empty(),
+               "original GCN capture pipeline requires decoded compute ordered-count sites");
+    const ComputePipelineKey key{permutation_hash};
+    const auto [it, is_new] = ordered_capture_compute_pipelines.try_emplace(key);
+    if (is_new) {
+        ComputePipeline::SerializationSupport sdata{};
+        it.value() =
+            std::make_unique<ComputePipeline>(instance, scheduler, desc_heap, profile,
+                                              *pipeline_cache, key, *info, module, sdata, false);
+        LOG_INFO(Render_Vulkan, "Compiled original-GCN first-pass capture pipeline {:#x}",
+                 permutation_hash);
+        // The incomplete capture pipeline must never enter the normal
+        // serialized-pipeline registry or substitute a game compute module.
     }
     return it->second.get();
 }
@@ -627,19 +722,201 @@ bool PipelineCache::RefreshComputeKey() {
 
 vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::RuntimeInfo& runtime_info,
                                               const std::span<const u32>& code, size_t perm_idx,
-                                              Shader::Backend::Bindings& binding) {
+                                              Shader::Backend::Bindings& binding,
+                                              bool ordered_capture_only) {
+    Common::PerformanceDiagnostics::Scope perf{
+        Common::PerformanceDiagnostics::Region::ShaderCompile};
     LOG_INFO(Render_Vulkan, "Compiling {} shader {:#x} {}", info.hw_stage, info.pgm_hash,
              perm_idx != 0 ? "(permutation)" : "");
     DumpShader(code, info.pgm_hash, info.hw_stage, perm_idx, "bin");
 
     const auto ir_program = Shader::TranslateProgram(code, pools, info, runtime_info, profile);
-    auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
-    DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx, "spv");
+
+    const char* const probe_flag = std::getenv("SHADPS4_PR117_CAPTURE_ONCE");
+    const bool one_shot_probe = !ordered_capture_only && info.uses_ordered_gds &&
+                                info.hw_stage == HwStage::Compute && probe_flag &&
+                                std::string_view{probe_flag} == "1";
+    const bool capture_variant = ordered_capture_only || one_shot_probe;
+
+    if (info.uses_ordered_gds) {
+        // Validate the REAL post-SSA/optimization IR, not merely that the
+        // unstructured GCN translator attempted to capture register values.
+        // Structured cloning is allowed only with a complete set per clone.
+        Shader::Gcn::OrderedGds::LiveCheckpointCoverage coverage(
+            info.ordered_gds_site_pcs, runtime_info.props.num_allocated_vgprs);
+        for (const Shader::IR::Block* const block : ir_program.blocks) {
+            for (const Shader::IR::Inst& ir_inst : block->Instructions()) {
+                if (ir_inst.GetOpcode() != Shader::IR::Opcode::OrderedGdsCheckpointRegister) {
+                    continue;
+                }
+                const auto site = ir_inst.Arg(0);
+                const auto bank = ir_inst.Arg(1);
+                const auto index = ir_inst.Arg(2);
+                const auto value = ir_inst.Arg(3);
+                ASSERT_MSG(site.IsImmediate() && bank.IsImmediate() && index.IsImmediate() &&
+                               !value.IsEmpty(),
+                           "Guest ordered GDS IR capture has incomplete operands");
+                coverage.Record(site.U32(), bank.U32(), index.U32());
+            }
+        }
+        for (const auto& result : coverage.RequireComplete()) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: "
+                        "site={:#x}, copies={}, register_records={}; "
+                        "checkpoint coverage complete",
+                        result.site_pc, result.complete_copies, result.register_records);
+        }
+        // Static site identities are not dynamic wave ordering.
+        using Shader::Gcn::OrderedGds::FlowKind;
+        using Shader::Gcn::OrderedGds::FlowStep;
+        using Shader::Gcn::OrderedGds::SiteTopology;
+        std::vector<FlowStep> steps;
+        steps.reserve(ir_program.ins_list.size());
+        u32 guest_pc{};
+        u32 sites{};
+        for (const auto& inst : ir_program.ins_list) {
+            FlowKind kind = FlowKind::Next;
+            switch (inst.opcode) {
+            case Shader::Gcn::Opcode::S_BRANCH:
+                kind = FlowKind::DirectBranch;
+                break;
+            case Shader::Gcn::Opcode::S_CBRANCH_SCC0:
+            case Shader::Gcn::Opcode::S_CBRANCH_SCC1:
+            case Shader::Gcn::Opcode::S_CBRANCH_VCCZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_VCCNZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_EXECZ:
+            case Shader::Gcn::Opcode::S_CBRANCH_EXECNZ:
+                kind = FlowKind::ConditionalBranch;
+                break;
+            case Shader::Gcn::Opcode::S_ENDPGM:
+                kind = FlowKind::EndProgram;
+                break;
+            case Shader::Gcn::Opcode::S_SETPC_B64:
+            case Shader::Gcn::Opcode::S_SWAPPC_B64:
+            case Shader::Gcn::Opcode::S_RFE_B64:
+            case Shader::Gcn::Opcode::S_CBRANCH_I_FORK:
+            case Shader::Gcn::Opcode::S_CBRANCH_G_FORK:
+            case Shader::Gcn::Opcode::S_CBRANCH_JOIN:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGUSER:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS_OR_USER:
+            case Shader::Gcn::Opcode::S_CBRANCH_CDBGSYS_AND_USER:
+            case Shader::Gcn::Opcode::S_SETHALT:
+            case Shader::Gcn::Opcode::S_SENDMSGHALT:
+            case Shader::Gcn::Opcode::S_TRAP:
+                kind = FlowKind::UnknownControlFlow;
+                break;
+            default:
+                break;
+            }
+            const bool ordered = inst.opcode == Shader::Gcn::Opcode::DS_ORDERED_COUNT;
+            const bool branches =
+                kind == FlowKind::ConditionalBranch || kind == FlowKind::DirectBranch;
+            steps.push_back({guest_pc, inst.length, kind,
+                             branches ? inst.BranchTarget(guest_pc) : 0u, ordered});
+            if (ordered) {
+                ++sites;
+                const u32 control =
+                    u32(inst.control.ds.offset0) | (u32(inst.control.ds.offset1) << 8u);
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS preflight: static site={:#x}, control={:#x}, "
+                            "count={} (execution remains gated)",
+                            guest_pc, control, sites);
+            }
+            guest_pc += inst.length;
+        }
+        const auto flow = Shader::Gcn::OrderedGds::AnalyzeOrderedGdsFlow(steps);
+        const auto topology = [&]() -> const char* {
+            switch (flow.topology) {
+            case SiteTopology::NoSites:
+                return "none";
+            case SiteTopology::OneSite:
+                return "single-site";
+            case SiteTopology::MutuallyExclusivePaths:
+                return "exclusive-paths";
+            case SiteTopology::BothSitesMayRun:
+                return "potentially-sequential";
+            case SiteTopology::CyclicOrRepeatedSites:
+                return "potentially-cyclic";
+            case SiteTopology::Indeterminate:
+                return "unknown";
+            }
+            return "unknown";
+        }();
+        LOG_WARNING(Render_Recompiler,
+                    "Ordered GDS decoded-ISA CFG: topology={}, sites={}, "
+                    "site0-to-site1={}, site1-to-site0={}, may_bypass_all={}, "
+                    "unknown_control={}; this does not reveal runtime wave "
+                    "paths or actual guest wave creation order",
+                    topology, flow.ordered_site_pcs.size(), flow.branch_path_from_first_to_second,
+                    flow.branch_path_from_second_to_first, flow.may_bypass_all_sites,
+                    flow.has_unknown_or_invalid_control_flow);
+        // The actual decoded per-site destination is required for
+        // checkpoint restoration; a GPU packet must not invent VDST.
+        ASSERT_MSG(info.ordered_gds_sites.size() == info.ordered_gds_site_pcs.size(),
+                   "Missing independently decoded ordered-GDS guest VDST metadata");
+        for (const auto& site : info.ordered_gds_sites) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS guest ISA: site={:#x} VDST=v{} control={:#x} "
+                        "(checkpoint and continuation site)",
+                        site.pc, site.destination_vgpr, site.encoded_control);
+        }
+        LOG_WARNING(Render_Recompiler,
+                    "Ordered GDS static guest sites={} (per-wave site selection "
+                    "requires capture; not one full wave batch per site)",
+                    info.ordered_gds_site_pcs.size());
+        if (info.hw_stage == HwStage::Compute) {
+            LOG_WARNING(Render_Recompiler,
+                        "Ordered GDS guest checkpoint prerequisites: allocated_vgprs={}, "
+                        "shared_lds_bytes={}, continuation_words_per_invocation={}",
+                        u32(runtime_info.props.num_allocated_vgprs),
+                        runtime_info.hw.cs.shared_memory_size, info.ordered_gds_state_words);
+            const auto& regs = liverpool->GetCsRegs();
+            const auto& local = runtime_info.hw.cs.workgroup_size;
+            const auto layout = Shader::Gcn::OrderedGds::DispatchLayout::Create(
+                {regs.dim_x, regs.dim_y, regs.dim_z}, {local[0], local[1], local[2]}, 64);
+            if (layout) {
+                const u64 capture_bytes =
+                    layout->TotalSlots() * sizeof(Shader::Gcn::OrderedGds::GpuCapturePacket);
+                const u64 resume_bytes =
+                    layout->TotalSlots() * sizeof(Shader::Gcn::OrderedGds::GpuResumePacket);
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS GPU packet ABI: guest_wave_slots={}, "
+                            "capture_bytes={}, resume_bytes={}",
+                            layout->TotalSlots(), capture_bytes, resume_bytes);
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS compute preflight (CS-register snapshot): "
+                            "groups=({},{},{}), local=({},{},{}), guest_wave64_slots={}, "
+                            "waves_per_group={}; these are logical capture slots NOT "
+                            "guest creation order, indirect dispatch may differ",
+                            regs.dim_x, regs.dim_y, regs.dim_z, local[0], local[1], local[2],
+                            layout->TotalSlots(), layout->WavesPerGroup());
+            } else {
+                LOG_WARNING(Render_Recompiler,
+                            "Ordered GDS compute preflight: CS-register layout invalid "
+                            "or exceeds bounded capture limit; indirect dispatch group "
+                            "counts cannot be inferred here");
+            }
+        }
+    }
+    if (capture_variant) {
+        ASSERT_MSG(info.uses_ordered_gds && info.hw_stage == HwStage::Compute,
+                   "capture-only module must be original ordered-GDS compute guest");
+    }
+    auto spv = capture_variant
+                   ? Shader::Backend::SPIRV::EmitSPIRVOrderedGdsCapturePass(profile, runtime_info,
+                                                                            ir_program, binding)
+                   : Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, ir_program, binding);
+    DumpShader(spv, info.pgm_hash, info.hw_stage, perm_idx,
+               capture_variant ? "pr117-live-capture.spv" : "spv");
 
     vk::ShaderModule module;
 
-    auto patch = GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
-    const bool is_patched = patch && EmulatorSettings.IsPatchShaders();
+    // Ordered continuations require the compiler-generated packet and state ABI.
+    auto patch = info.uses_ordered_gds
+                     ? std::optional<std::vector<u32>>{}
+                     : GetShaderPatch(info.pgm_hash, info.hw_stage, perm_idx, "spv");
+    const bool is_patched = !info.uses_ordered_gds && patch && EmulatorSettings.IsPatchShaders();
     if (is_patched) {
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
@@ -647,9 +924,11 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         module = CompileSPV(spv, instance.GetDevice());
     }
 
-    RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
-
-    const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx);
+    if (!capture_variant) {
+        RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);
+    }
+    const auto name = GetShaderName(info.hw_stage, info.pgm_hash, perm_idx) +
+                      (capture_variant ? ".gds_capture" : "");
     Vulkan::SetObjectName(instance.GetDevice(), module, name);
     if (EmulatorSettings.IsShaderCollect()) {
         DebugState.CollectShader(name, info.sw_stage, module, spv, code,
@@ -660,18 +939,24 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
 
 PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_stage,
                                                 const Shader::ShaderParams& params,
-                                                Shader::Backend::Bindings& binding) {
+                                                Shader::Backend::Bindings& binding,
+                                                bool ordered_capture_only) {
     auto runtime_info = BuildRuntimeInfo(hw_stage, sw_stage);
-    auto [it_pgm, new_program] = program_cache.try_emplace(params.hash);
+    // A capture variant has different CFG exits and resource bindings.
+    auto& shader_cache = ordered_capture_only ? ordered_capture_program_cache : program_cache;
+    auto [it_pgm, new_program] = shader_cache.try_emplace(params.hash);
     if (new_program) {
         it_pgm.value() = std::make_unique<Program>(hw_stage, sw_stage, params);
         auto& program = it_pgm.value();
         auto start = binding;
-        const auto module = CompileModule(program->info, runtime_info, params.code, 0, binding);
+        const auto module = CompileModule(program->info, runtime_info, params.code, 0, binding,
+                                          ordered_capture_only);
         auto spec = Shader::StageSpecialization(program->info, runtime_info, profile, start);
         const auto perm_hash = HashCombine(params.hash, 0);
 
-        RegisterShaderMeta(program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+        if (!program->info.uses_ordered_gds) {
+            RegisterShaderMeta(program->info, spec.fetch_shader_data, spec, perm_hash, 0);
+        }
         program->AddPermut(module, std::move(spec));
         if (auto& fetch = program->modules[0].spec.fetch_shader_data; !fetch.Empty()) {
             fetch_shader = &fetch;
@@ -680,34 +965,69 @@ PipelineCache::Result PipelineCache::GetProgram(HwStage hw_stage, SwStage sw_sta
     }
 
     auto& program = it_pgm.value();
-    auto& info = program->info;
-    info.pgm_base = params.Base(); // Needs to be actualized for inline cbuffer address fixup
-    info.user_data = params.user_data;
-    info.RefreshFlatBuf();
-    auto spec = Shader::StageSpecialization(info, runtime_info, profile, binding);
-
-    size_t perm_idx = program->modules.size();
-    u64 perm_hash = HashCombine(params.hash, perm_idx);
-
-    vk::ShaderModule module{};
-
-    const auto it = std::ranges::find(program->modules, spec, &Program::Module::spec);
-    if (it == program->modules.end()) {
-        auto new_info = Shader::Info(hw_stage, sw_stage, params);
-        module = CompileModule(new_info, runtime_info, params.code, perm_idx, binding);
-
-        RegisterShaderMeta(info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
-        program->AddPermut(module, std::move(spec));
-    } else {
+    const auto first_binding = binding;
+    bool ordered_search{};
+    for (size_t probe = 0; !program->modules.empty() && probe <= program->modules.size(); ++probe) {
+        const size_t perm_idx = probe == 0 ? program->last_used_module : probe - 1;
+        if (probe != 0 && perm_idx == program->last_used_module && !ordered_search) {
+            continue;
+        }
+        auto& saved = program->modules[perm_idx];
+        if (!saved.spec.Valid() || !saved.module) {
+            continue;
+        }
+        auto& info = saved.GetInfo(program->info);
+        if (info.sw_stage != SwStage::TessellationControl &&
+            info.sw_stage != SwStage::TessellationEval && saved.spec.runtime_info != runtime_info) {
+            continue;
+        }
+        if ((!saved.spec.buffers.empty() || !saved.spec.images.empty() ||
+             !saved.spec.samplers.empty()) &&
+            saved.spec.start != first_binding) {
+            continue;
+        }
+        info.pgm_base = params.Base();
+        info.user_data = params.user_data;
+        if (!info.UniformBufferBoundsCompatible()) {
+            continue;
+        }
+        info.RefreshFlatBuf();
+        if (!info.IndexedResourcesCompatible()) {
+            continue;
+        }
+        const auto current =
+            Shader::StageSpecialization(info, runtime_info, profile, first_binding);
+        if (!(saved.spec == current)) {
+            continue;
+        }
+        if (probe == 0 && perm_idx != 0 &&
+            current.bitset.count() != current.buffers.size() + current.images.size()) {
+            ordered_search = true;
+            continue;
+        }
+        program->last_used_module = perm_idx;
         info.AddBindings(binding);
-        module = it->module;
-        perm_idx = std::distance(program->modules.begin(), it);
-        perm_hash = HashCombine(params.hash, perm_idx);
+        if (auto& fetch = saved.spec.fetch_shader_data; !fetch.Empty()) {
+            fetch_shader = &fetch;
+        }
+        return std::make_tuple(&info, saved.module, HashCombine(params.hash, perm_idx));
     }
+
+    const size_t perm_idx = program->modules.size();
+    const auto perm_hash = HashCombine(params.hash, perm_idx);
+    auto own_info = std::make_unique<Shader::Info>(hw_stage, sw_stage, params);
+    const auto module = CompileModule(*own_info, runtime_info, params.code, perm_idx, binding,
+                                      ordered_capture_only);
+    auto spec = Shader::StageSpecialization(*own_info, runtime_info, profile, first_binding);
+    if (!own_info->uses_ordered_gds) {
+        RegisterShaderMeta(*own_info, spec.fetch_shader_data, spec, perm_hash, perm_idx);
+    }
+    auto* selected_info = own_info.get();
+    program->AddPermut(module, std::move(spec), std::move(own_info));
     if (auto& fetch = program->modules[perm_idx].spec.fetch_shader_data; !fetch.Empty()) {
         fetch_shader = &fetch;
     }
-    return std::make_tuple(&program->info, module, perm_hash);
+    return std::make_tuple(selected_info, module, perm_hash);
 }
 
 std::optional<vk::ShaderModule> PipelineCache::ReplaceShader(vk::ShaderModule module,

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include "core/emulator_settings.h"
+#include "common/assert.h"
 #include "shader_recompiler/ir/program.h"
 #include "shader_recompiler/profile.h"
 
@@ -136,16 +136,36 @@ void Visit(Info& info, const IR::Inst& inst, Profile const& profile) {
         info.has_storage_images = true;
         break;
     case IR::Opcode::QuadBroadcast:
-        info.uses_group_quad = true;
-        break;
+        if (info.hw_stage != HwStage::Compute) {
+            info.uses_group_quad = true;
+            break;
+        }
+        [[fallthrough]];
     case IR::Opcode::Shuffle:
     case IR::Opcode::ShuffleXor:
+        if (info.hw_stage == HwStage::Compute) {
+            info.uses_group_ballot = true;
+            info.uses_lane_id = true;
+        }
         info.uses_group_shuffle = true;
         break;
-    case IR::Opcode::ReadLane:
-    case IR::Opcode::ReadFirstLane:
-    case IR::Opcode::WriteLane:
+    case IR::Opcode::GroupReduceUMin:
+    case IR::Opcode::GroupReduceOr:
         info.uses_group_ballot = true;
+        info.uses_group_shuffle = true;
+        break;
+    case IR::Opcode::ReadFirstLane:
+        info.uses_group_shuffle |= !inst.Arg(1).IsImmediate() || !inst.Arg(1).U1();
+        [[fallthrough]];
+    case IR::Opcode::ReadLane:
+        info.uses_group_ballot = true;
+        break;
+    case IR::Opcode::WriteLane:
+        if (info.hw_stage == HwStage::Compute) {
+            info.loads.Set(IR::Attribute::LocalInvocationIndex);
+        } else {
+            info.uses_lane_id = true;
+        }
         break;
     case IR::Opcode::Discard:
     case IR::Opcode::DiscardCond:
@@ -186,15 +206,18 @@ void Visit(Info& info, const IR::Inst& inst, Profile const& profile) {
     case IR::Opcode::DataAppend:
     case IR::Opcode::DataConsume:
     case IR::Opcode::Ballot:
-    case IR::Opcode::InverseBallot:
     case IR::Opcode::BallotFindLsb:
         info.uses_group_ballot = true;
         [[fallthrough]];
+    case IR::Opcode::InverseBallot:
     case IR::Opcode::LaneId:
         info.uses_lane_id = true;
         break;
     case IR::Opcode::Memtime:
         info.uses_shader_clock = true;
+        break;
+    case IR::Opcode::ReadConstBuffer:
+        info.uses_dma |= !inst.Arg(0).IsImmediate();
         break;
     case IR::Opcode::ReadConst:
         AddFlatbuf(info);
@@ -223,12 +246,9 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
         }
     }
 
-    if (!EmulatorSettings.IsDirectMemoryAccessEnabled() || !profile.support_bda) {
-        info.uses_dma = false;
-        info.readconst_types = Info::ReadConstType::None;
-    }
-
     if (info.uses_dma) {
+        ASSERT_MSG(profile.support_bda,
+                   "Unflattened constant read requires buffer device address support");
         info.buffers.push_back({
             .used_types = IR::Type::U64,
             .buffer_type = BufferType::BdaPagetable,
@@ -239,7 +259,7 @@ void CollectShaderInfoPass(IR::Program& program, const Profile& profile) {
             .buffer_type = BufferType::FaultBuffer,
             .is_written = true,
         });
-        LOG_ERROR(Render, "Enabling DMA for shader {:#x}", info.pgm_hash);
+        LOG_INFO(Render, "Enabling GPU constant reads for shader {:#x}", info.pgm_hash);
     }
 }
 
