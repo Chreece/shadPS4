@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "record_id": "c925-fragment-draw-regen-preflight-repair-final-20261029",
+  "recorded_on": "2026-10-29",
+  "journal_scope": "UNIVERSAL_SHADPS4",
+  "record_type": "FINAL_PINNED_RUNNER_REPAIR_NO_HOST_RUNTIME",
+  "related_prs": [
+    114
+  ],
+  "parent_failure": "20261029T131431333376Z-fragment-draw-preflight.json",
+  "historical_correction": "Earlier preparation record references helper d7dc... and runner 4fb...; subsequent source review found that ninja -t commands includes unrelated prerequisite custom shell commands. Final helper filters exact output candidates before parsing, to avoid premature refusal or execution of unrelated commands. These are additional local-test fixes to the diagnostic runner, NOT emulator rendering fixes.",
+  "files": {
+    "direct_ninja": {
+      "path": "tools/development/c925_menu_fragment_focus/direct_ninja.py",
+      "commit": "ccec11e2216cfaa5e78607092d424c118bd6aec9",
+      "sha256": "cba0f46505d188c422297f49ad1d03aacad0442dbacca64b2651531b73f77d09",
+      "git_blob": "691f4d868ca55e96bd2b6bd413064301dc5b1497"
+    },
+    "runner": {
+      "path": "tools/development/c925_menu_fragment_focus/run_draw_probe.py",
+      "commit": "65b6a104c27ca52f9903e083b12171cb0c792e6c",
+      "sha256": "75878a934d6de912c72f8feaff753db1838684f23e2323e2b1fcbc3d9a29f0e9",
+      "git_blob": "083933ad417c6b7542ec7d6bde93c03dee708a1e"
+    },
+    "test": {
+      "path": "tools/development/c925_menu_fragment_focus/test_direct_ninja.py",
+      "sha256": "4f12ca2178ba9988b1ed70a5ed15268a386d405fc87fb600c6e394fc9e589617",
+      "git_blob": "40f1f05bb470b5fd12e35f891b7f8b81cb79cfa4"
+    }
+  },
+  "local_results": {
+    "test_direct_ninja": "PASS real CMake/Ninja toy; CMake regeneration requested in dry run; exact one-object compile and link executed without regeneration; no build `.o.d` depfile; generated diagnostic exit differs from original",
+    "source_guard": "PASS wrong source path refuses target",
+    "real_provenance_fixture": "PASS extracted production draw-log helper under GCC and Clang strict warning flags",
+    "restore": "PASS normal/interrupted/external-edit refused source/object/ELF checkpoint restoration",
+    "python_compile": "PASS all final Python runner/helper tests"
+  },
+  "native_host_build": "NOT_RUN",
+  "native_game": "NOT_RUN",
+  "renderer_change": "NONE",
+  "what_does_not_change": "Existing PR109 ELF and prior GoT/GoW shader fixes remain intact; no scene/menu graphics acceptance claimed.",
+  "next": "One retry using fully pinned updated PR114 runner; if on-host CMake/Ninja command shape is unsupported it fails safely before patch and supplies command diagnostics; otherwise bounded menu-only fragment draw and exact original-byte restoration. Do not repeat baseline/linear readbacks or infer frozen menu from identical screenshots."
+}

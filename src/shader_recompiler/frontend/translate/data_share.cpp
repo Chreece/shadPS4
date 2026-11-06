@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+
+#include "shader_recompiler/frontend/ordered_gds_checkpoint.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/ir/reg.h"
 #include "shader_recompiler/runtime_info.h"
@@ -80,6 +83,8 @@ void Translator::EmitDataShare(const GcnInst& inst) {
         return DS_CONSUME(inst);
     case Opcode::DS_APPEND:
         return DS_APPEND(inst);
+    case Opcode::DS_ORDERED_COUNT:
+        return DS_ORDERED_COUNT(inst);
     case Opcode::DS_WRITE_B16:
         return DS_WRITE(16, false, false, false, inst);
     case Opcode::DS_WRITE_B64:
@@ -103,7 +108,7 @@ void Translator::EmitDataShare(const GcnInst& inst) {
 
 void Translator::V_READFIRSTLANE_B32(const GcnInst& inst) {
     const IR::U32 value{GetSrc(inst.src[0])};
-    SetDst(inst.dst[0], ir.ReadFirstLane(value));
+    SetDst(inst.dst[0], ir.ReadFirstLane(value, ir.GetExec()));
 }
 
 void Translator::V_READLANE_B32(const GcnInst& inst) {
@@ -365,6 +370,157 @@ void Translator::DS_APPEND(const GcnInst& inst) {
     const IR::U32 gds_offset = ir.IAdd(base, ir.Imm32(inst_offset));
     const IR::U32 prev = ir.DataAppend(ir.ShiftRightLogical(gds_offset, ir.Imm32(2u)));
     SetDst(inst.dst[0], prev);
+}
+
+void Translator::RecordOrderedGdsCheckpoint(const IR::U32& site_pc, const IR::U64& exec_mask,
+                                            const IR::U32& source_value, u32 next_guest_pc,
+                                            u32 destination_vgpr, u32 encoded_control) {
+    // Preserve every GCN SGPR (not only user data) and every allocated
+    // VGPR at the real instruction site. Register readers here enter the
+    // existing SSA rewrite while the per-register capture op is a required
+    // side effect. A backend checkpoint writer is still mandatory.
+    ASSERT_MSG(runtime_info.hw_stage == HwStage::Compute,
+               "Ordered GDS wave checkpoint requires a compute shader");
+    const u32 vgpr_count = runtime_info.props.num_allocated_vgprs;
+    ASSERT_MSG(vgpr_count > 0 && vgpr_count <= IR::NumVectorRegs,
+               "Invalid allocated GCN VGPR checkpoint count");
+    ASSERT_MSG(next_guest_pc >= 8u && destination_vgpr < vgpr_count,
+               "Invalid decoded GCN checkpoint next PC or VDST");
+
+    // Vulkan arrival order cannot establish guest creation order. Capture
+    // physical wave slot and wave64-relative lane from actual compute
+    // builtins. The host separately derives guest ordering from live M0.
+    const auto& local = runtime_info.hw.cs.workgroup_size;
+    const u64 threads = u64(local[0]) * local[1] * local[2];
+    ASSERT_MSG(threads > 0 && threads <= 1024u,
+               "Invalid GCN checkpoint compute workgroup dimensions");
+    const u32 waves_per_group = u32((threads + 63u) / 64u);
+    const IR::U32 local_index = ir.GetAttributeU32(IR::Attribute::LocalInvocationIndex);
+    const IR::U32 lane = ir.IMod(local_index, ir.Imm32(64u));
+    const IR::U32 wave = ir.IDiv(local_index, ir.Imm32(64u));
+    const IR::U32 group_index = ir.GetAttributeU32(IR::Attribute::WorkgroupIndex);
+    const IR::U32 logical_slot{ir.IAdd(ir.IMul(group_index, ir.Imm32(waves_per_group)), wave)};
+    const auto capture = [&](u32 bank, u32 index, const IR::U32& value) {
+        ir.OrderedGdsCheckpointRegister(site_pc, ir.Imm32(bank), ir.Imm32(index), value,
+                                        logical_slot, lane);
+    };
+    for (u32 reg = 0; reg < IR::NumScalarRegs; ++reg) {
+        capture(0, reg, ir.GetScalarReg<IR::U32>(IR::ScalarReg(reg)));
+    }
+    for (u32 reg = 0; reg < vgpr_count; ++reg) {
+        capture(1, reg, ir.GetVectorReg<IR::U32>(IR::VectorReg(reg)));
+    }
+    // M0 / VCC / SCC and EXEC are independent architectural state. Never
+    // replace them with placeholders or a derived logical wave slot.
+    capture(2, 0, ir.GetM0());
+    capture(2, 1, ir.GetVccLo());
+    capture(2, 2, ir.GetVccHi());
+    capture(2, 3, IR::U32{ir.Select(ir.GetScc(), ir.Imm32(1u), ir.Imm32(0u))});
+    const IR::Value exec_halves{ir.UnpackUint2x32(exec_mask)};
+    capture(2, 4, IR::U32{ir.CompositeExtract(exec_halves, 0)});
+    capture(2, 5, IR::U32{ir.CompositeExtract(exec_halves, 1)});
+
+    // Write only fields justified by the actual GCN instruction and current
+    // wave. These DWORDs share the ABI offsets used by the GPU SSBO writer.
+    // The genuine epoch and continuation token must be supplied by a future
+    // verified dispatch orchestrator, never inferred from physical GPU
+    // arrival. Translator tags/flags are invalid placeholders. Only the
+    // capture-only GPU backend can stamp validity after verifying the exact
+    // host epoch/token plus full-wave64, zero-LDS checkpoint prerequisites;
+    // this still does NOT enable shader continuation.
+    capture(3, 0, ir.Imm32(0u)); // Invalid until authenticated continuation.
+    capture(3, 1, site_pc);
+    capture(3, 2, ir.Imm32(next_guest_pc));
+    capture(3, 3, logical_slot);
+    capture(3, 4, ir.Imm32(destination_vgpr));
+    capture(3, 5, ir.Imm32(u32(IR::NumScalarRegs)));
+    capture(3, 6, ir.Imm32(vgpr_count));
+    capture(3, 7, ir.Imm32(Shader::Gcn::OrderedGds::GcnWaveLanes));
+    capture(3, 8, ir.Imm32(0u)); // Never claim valid without epoch/token.
+    capture(3, 9, ir.Imm32(0u)); // Reserved field.
+    capture(3, 10, ir.Imm32(Shader::Gcn::OrderedGds::GcnCheckpointAbiVersion));
+    // Authenticated epoch and token are transported separately from the
+    // REAL scheduler-owned GPU buffer. These live IR op operands are only
+    // placeholders; the SPIR-V backend loads the corresponding authority
+    // DWORDs rather than inventing a guest creation identity or token.
+    capture(5, 0, ir.Imm32(0u));
+    capture(5, 1, ir.Imm32(0u));
+    capture(5, 2, ir.Imm32(0u));
+
+    // Produce the ACTUAL GPU packet DWORDs from this decoded guest DS site,
+    // live pre-DS M0/EXEC and real physical wave slot. The dedicated packet
+    // SSBO is distinct from the SGPR/VGPR checkpoint SSBO and ordinary GDS.
+    // Host epoch/continuation token are NOT invented by the guest shader.
+    // The translator leaves tag/epoch/token/flags at zero. The independent
+    // GPU authority descriptor supplies epoch/token and allows capture-only
+    // stamp validation, but a synchronized two-pass scheduler is still absent.
+    const IR::U1 active = ir.INotEqual(exec_mask, ir.Imm64(u64{0}));
+    const IR::U32 source_lane{ir.Select(active, ir.FindILsb(exec_mask), ir.Imm32(~u32{0}))};
+    const IR::U32 read_lane{ir.Select(active, source_lane, ir.Imm32(0u))};
+    const IR::U32 payload{ir.Select(active, ir.ReadLane(source_value, read_lane), ir.Imm32(0u))};
+    capture(4, 0, ir.Imm32(0u)); // Invalid capture until runtime auth.
+    capture(4, 1, ir.Imm32(0u)); // No synthetic epoch.
+    capture(4, 2, site_pc);
+    capture(4, 3, ir.Imm32(encoded_control));
+    capture(4, 4, logical_slot);
+    capture(4, 5, ir.GetM0());
+    capture(4, 6, IR::U32{ir.CompositeExtract(exec_halves, 0)});
+    capture(4, 7, IR::U32{ir.CompositeExtract(exec_halves, 1)});
+    capture(4, 8, source_lane);
+    capture(4, 9, payload);
+    capture(4, 10, ir.Imm32(0u)); // No synthetic continuation token.
+    capture(4, 11, ir.Imm32(0u));
+    capture(4, 12, ir.Imm32(0u)); // Explicitly NOT a valid capture.
+    capture(4, 13, ir.Imm32(0u));
+    capture(4, 14, ir.Imm32(0u));
+    capture(4, 15, ir.Imm32(0u));
+}
+
+void Translator::DS_ORDERED_COUNT(const GcnInst& inst) {
+    const u32 offset0 = u32(inst.control.ds.offset0);
+    const u32 offset1 = u32(inst.control.ds.offset1);
+    ASSERT_MSG(inst.control.ds.gds && (offset0 & 3u) == 0u,
+               "Ordered GDS requires GDS bit and aligned counter index");
+    ASSERT_MSG((offset1 & 2u) == 0u || (offset1 & 1u) != 0u,
+               "Ordered GDS wave_done requires wave_release");
+    // Preserve the live M0 register, the per-lane ADDR value and EXEC. Neither
+    // an unsequenced atomic nor a placeholder result can implement the
+    // required wave creation order. The IR opcode is deliberately distinct.
+    info.uses_ordered_gds = true;
+    const IR::U32 control = ir.Imm32(offset0 | (offset1 << 8u));
+    // pc already advanced by inst.length: preserve the static guest site
+    // separately from the dynamic execution epoch (e.g. repeated loops).
+    const u32 guest_site_pc = pc - inst.length;
+    auto& sites = info.ordered_gds_site_pcs;
+    if (std::find(sites.begin(), sites.end(), guest_site_pc) == sites.end()) {
+        // Record the destination from the actual decoded GCN instruction,
+        // not an unverified GPU packet or a title-specific shader offset.
+        ASSERT_MSG(inst.dst[0].field == OperandField::VectorGPR && inst.dst[0].code < 256,
+                   "invalid guest ordered-count VDST");
+        ASSERT_MSG(inst.src[0].field == OperandField::VectorGPR && inst.src[0].code < 256,
+                   "invalid guest ordered-count ADDR");
+        sites.push_back(guest_site_pc);
+        info.ordered_gds_sites.push_back({
+            .pc = guest_site_pc,
+            .destination_vgpr = inst.dst[0].code,
+            .encoded_control = offset0 | (offset1 << 8u),
+            .source_vgpr = inst.src[0].code,
+        });
+    }
+    const IR::U32 site_pc = ir.Imm32(guest_site_pc);
+    const IR::U64 exec_mask = ir.Ballot(ir.GetExec());
+    const IR::U32 source_value{GetSrc(inst.src[0])};
+    // Capture values BEFORE the guest ordered operation mutates VDST. The
+    // true old counter value must arrive from an ordered host resolution,
+    // followed by shader re-entry at site_pc + inst.length without replaying
+    // pre-DS guest writes.
+    RecordOrderedGdsCheckpoint(site_pc, exec_mask, source_value, pc, inst.dst[0].code,
+                               offset0 | (offset1 << 8u));
+    const IR::U32 old_value =
+        ir.OrderedGdsCount(ir.GetM0(), source_value, exec_mask, control, site_pc);
+    const auto destination = IR::VectorReg(inst.dst[0].code);
+    ir.SetVectorReg(destination,
+                    IR::U32{ir.Select(ir.GetExec(), old_value, ir.GetVectorReg(destination))});
 }
 
 void Translator::DS_CONSUME(const GcnInst& inst) {

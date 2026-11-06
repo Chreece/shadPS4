@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "record_id": "gcn-ordered-gds-frontend-ir-20261029",
+  "recorded_at": "2026-10-29",
+  "scope": "Universal emulator shader-recompiler frontend/IR and host-side ordered GDS continuation",
+  "related_user_goal": "Correct DS_ORDERED_COUNT, avoid fake atomics and game hacks, preserve private tests/known working fixes and merge only verified production changes",
+  "private_capture": {
+    "shader": "cs_0xdbaa6ae4",
+    "size_bytes": 24024,
+    "sha256": "97d6b31e16cc6c7660b78792faa15df49f49d10dad9ed97faa98fd3e137f999e",
+    "sites": [
+      {
+        "offset": "0x4158",
+        "operation": "Exchange",
+        "offset1": "0x13",
+        "m0_source_register": "s46"
+      },
+      {
+        "offset": "0x41d4",
+        "operation": "Add",
+        "offset1": "0x03",
+        "m0_source_register": "s16"
+      }
+    ],
+    "actual_runtime_m0": "NOT_RECORDED",
+    "wave_order": "NOT_RECORDED",
+    "guest_shader_bytes_published": false
+  },
+  "pull_request": {
+    "number": 117,
+    "url": "https://github.com/Chreece/shadPS4/pull/117",
+    "branch": "feature/ordered-gds-wave-executor-20261029",
+    "head_commit": "a332192bc58168a997575caf8572769447d3fec3",
+    "state": "DRAFT_UNMERGED",
+    "files_changed": 19
+  },
+  "front_end_changes": [
+    "src/shader_recompiler/frontend/translate/data_share.cpp: single DS_ORDERED_COUNT switch+method; GDS bit and index alignment assertions; preserve raw offsets, GetM0, GetSrc ADDR and GetExec",
+    "src/shader_recompiler/ir/opcodes.inc and ir_emitter.h/.cpp: distinct OrderedGdsCount IR opcode, arguments (runtime M0, ADDR, EXEC, OFFSET1:OFFSET0), U32 result",
+    "src/shader_recompiler/info.h and ir/microinstruction.cpp: uses_ordered_gds signal, opcode is side effect and cannot be dead-code eliminated",
+    "src/shader_recompiler/backend/spirv/emit_spirv_instructions.h + emit_spirv.cpp: one declaration and one implementation of explicit runtime refusal; preflight asserts no unsupported ordered-GDS before module construction",
+    "exactly one source definition and no atomic substitution; duplicate definitions and switch cases removed on branch before testing"
+  ],
+  "host_executor_changes": [
+    "src/shader_recompiler/frontend/ordered_gds.h: decode GDS count and complete wave collector, transactional Add/Exchange only when all wave requests, live M0, evaluated payload and initialized counters provided",
+    "Removed earlier false assumption that ordered-count payload on GCN equals popcount(EXEC) — not proven. AMD LLVM lowerings accept explicit value to add/swap; require target guest-ISA evaluated payload",
+    "Reject no-active-lane payload; treating empty wave as zero valued Exchange could reset a real counter; do not infer synthetic results",
+    "src/shader_recompiler/frontend/ordered_gds_continuation.h: host-only captured-wave tokens, epoch boundary, resolve all requests in guest-wave creation order, resume each token once, refuse stale/duplicate/out-of-order"
+  ],
+  "tests": {
+    "front_end_method_compilation": "Actual extracted DS_ORDERED_COUNT translator+IR emitter method bodies compiled using typed recording collaborators; 5 cases pass GCC and Clang with strict C++23 flags. This is not full emulator native build.",
+    "static_source_contracts": "14+ checks PASS on exact GitHub PR source; one opcode/case/declaration/function, DCE side effect, live M0/EXEC/ADDR preservation, backend explicit refusal, no unordered atomic substitution.",
+    "host_complete_batch": "99 wave batches PASS with GCC and Clang C++23 strict release and ASan+UBSan. Test includes missing initial counter, missing/repeated wave, invalid flags, Add/Exchange, wrap, active-wave payload refusal.",
+    "host_continuation": "198 staged epochs across 99 wave counts PASS with GCC/Clang strict release, ASan+UBSan; out-of-order capture, correct result to each opaque continuation token, missing/duplicate/stale refusal, no GPU spinlock, previous GDS state carried into next epoch.",
+    "reproducible_test_runner": "tests/run_ordered_gds_cpu.sh on PR branch; tests source and two host modules with GCC or Clang, optional sanitizers; locally equivalent tests pass",
+    "ci_workflow": ".github/workflows/ordered-gds-cpu.yml checks CPU-only PR with GCC/Clang; no remote CI run observed at time of record"
+  },
+  "failed_experiments": [
+    "PR draft initially accumulated double DS_ORDERED_COUNT declaration, duplicated IR emitter, opcode and switch case due concurrent branch edits; caught by PR diff inspection and explicitly cleaned before source-contract tests",
+    "Earlier offline GCN ordered-count payload resolver assumed popcount(EXEC); deeper AMD/LLVM ISA review showed unsupported, removed and replaced by mandatory caller-supplied evaluated payload",
+    "First local continuation test compile lacked -Isrc include root; retried correctly and passed; not an emulator compiler failure"
+  ],
+  "native_emulator_build": "NOT_RUN for current PR117 code",
+  "vulkan_gpu_execution": "NOT_IMPLEMENTED; no Vulkan backend ordered-wave scheduler, host GPU capture buffer, state continuation or safe replay",
+  "game_test": "NOT_RUN; running GoW still requires proper guest wave preservation and would assert if DS_ORDERED_COUNT reached",
+  "main_merge": "PR116 squash-merged prior independent renderer corrections at 2313c8102520191f7998bd93d42e6043f8ece138; this PR117 remains draft/unmerged",
+  "caveats": [
+    "Host-only model requires known wave creation sequence, runtime M0, evaluated ISA payload and preinitialized GDS counter state. These are not available from static shader bytes.",
+    "Workgroup execution order in Vulkan not guaranteed. Atomic operations or GPU spin-wait would violate guest ordered semantics or deadlock.",
+    "Epoch boundary is caller-supplied, not proof every wave reaches the same instruction; multi-pass render/compute shader continuation needs a dedicated safe capture-and-resume protocol.",
+    "Separate SRT Phi and walker errors remain unresolved; no gameplay recovered."
+  ],
+  "decision": "RETAIN_DRAFT_GDS_FRONTEND_AND_HOST_CONTINUATION; DO_NOT_MERGE_AS_GAMEPLAY_FIX_OR_LAUNCH_GPU; MERGE_ONLY_VERIFIED_NATIVE_FIXES; UPDATE_UNIVERSAL_DIARY"
+}

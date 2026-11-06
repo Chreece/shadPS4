@@ -1,0 +1,862 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-04T15:22:17.483230+00:00",
+  "request_id": "5f9dd835-8c71-462b-a98a-21b53b84832b",
+  "native": {
+    "artifact": {
+      "file": "universal-two-games-20261104T074847Z-2006386.tar(1).gz",
+      "sha256": "a750e58baa010553e8e041567194b84b3ac024944e2db4e17fe7fa5ec2c8b738",
+      "library_file_id": "libfile_7535582bd3288191ab0df90a824dda45"
+    },
+    "source_commit": "b6e225c5cbd13700b91b230009d3149d14477a9e",
+    "upstream_commit": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "binary_sha256": "8b4dd3127ece691f43139c91d3d97922dcffae2995a006b890ad1fce90b4bf6d",
+    "build": {
+      "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+      "lines": 3293,
+      "errors": 0,
+      "warnings": 116,
+      "complete_log_reviewed": true,
+      "warning_contexts_reviewed": true,
+      "warnings_resolved": false
+    },
+    "got": {
+      "result": "GPU_CONTEXT_LOST",
+      "elapsed_seconds": 62.284,
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "visuals": {
+        "8s": "emulator loading screen",
+        "25s": "visible PlayStation intro montage",
+        "menu": false,
+        "gameplay": false
+      },
+      "audio": "NOT_VERIFIED",
+      "fps": "30 FPS overlay observed; not a sustained performance benchmark",
+      "console_lines": 6876,
+      "console_bytes": 938972,
+      "warning_lines": 422,
+      "error_lines": 1307
+    },
+    "gow": {
+      "result": "SKIPPED_AFTER_GOT_GPU_CONTEXT_LOSS",
+      "game_launched": false,
+      "graphics": "NOT_TESTED",
+      "audio": "NOT_TESTED",
+      "fps": "NOT_TESTED"
+    },
+    "diagnostics": {
+      "validation_active": true,
+      "vuid_count": 0,
+      "gpu_memory_fault_reports": 0,
+      "automatic_coherence_enabled": true,
+      "ordered_gds_capture_requested": false,
+      "entries": 44,
+      "bytes": 6101,
+      "truncated": false,
+      "global_overwritten": 151788,
+      "sampled_event_counts": {
+        "enabled": 1,
+        "buffer-readback": 1024,
+        "image-readback": 8,
+        "image-read-demand": 8,
+        "conditional-exec": 8,
+        "image-buffer-write": 64,
+        "draw-preparation-flush": 2,
+        "gpu-wait": 16,
+        "copy-layers": 6
+      }
+    },
+    "pending_windows": [
+      {
+        "completed": 3675,
+        "requested": 3677,
+        "first_recorded_ms": 40013,
+        "work": "detile/upload; compute745c455a and e1fb67ac; fullscreen draws; tick3677 readbacks",
+        "first_timeout_ms": 41037
+      },
+      {
+        "completed": 3738,
+        "requested": 3739,
+        "first_recorded_ms": 50587,
+        "work": "fullscreen draws; detile/upload;8MiB upload; small readbacks",
+        "timeout_count16_ms": 56745
+      }
+    ],
+    "trace_limit": "CPU-recorded work and advancing timeline observations do not isolate a guilty shader or prove successful GPU completion; driver soft recovery is possible.",
+    "compiled_shaders": [
+      {
+        "file": "cs_0x0000000015d7e72a_0.spv",
+        "sha256": "e987171909996c58223b118c2eb6f33c9a31e7cc25fb637497585b50c967371d",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x0000000015d7e72a_1.spv",
+        "sha256": "d7deb0d5fdfd46f93e718bbff25cb7613648f81721ee2c939cdb612f53013146",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x0000000017c90240_0.spv",
+        "sha256": "8d18dcba49601a5d0e7225d00f5ee7573a1e9bd7875162cd192164f3c907a29d",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000273a7c18_0.spv",
+        "sha256": "f5d521c312919521cfbe76a8aa53081131b02e7db86fe7782bef86e17bfe0d35",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000273a7c18_1.spv",
+        "sha256": "a3f0c0139b5923ca911bdc90cc521f781e6f732c449efbbf7059593db39c70b2",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x000000005e89a8b4_0.spv",
+        "sha256": "1dbcb0ba1cc9fcbbf1ed7ad2f855e86b6d846db384b954e2309e8ddd1e69d71d",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000628dd8fd_0.spv",
+        "sha256": "5239fdae1a0c32f9901017c51b937ce57e43a3d59c8afc3392652e3ee8f2cca2",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000628dd8fd_1.spv",
+        "sha256": "eda9fc24786f531356f1e7d0ea955ae2d0475836da2a7f54ef9d24c6e307948c",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000745c455a_0.spv",
+        "sha256": "fc5e20c82372c832ef94e058f35ccff5ca5b8376f4603dced9aa7cf4b5de878e",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 9,
+        "control_barriers": 0
+      },
+      {
+        "file": "cs_0x00000000e1fb67ac_0.spv",
+        "sha256": "db9be96f9e73453230242557a29efb08f15533055067f8685f79a009d03b38ee",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000361a48f5_0.spv",
+        "sha256": "fecfeab5ad4493150a4e0fa89fd526b6b3272bf0028cf2327d61ab5d1d236b23",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000551d6087_0.spv",
+        "sha256": "55e9381c24bc5eb7e0840f6fb043e55c5c2eb9ce99d5c537b79b40b129c3cfef",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x000000006d1490f4_0.spv",
+        "sha256": "4b2168c68636768356efd1d8098ce4f10f5f83f42fd1de2775895f1dbe9fe09d",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x000000008d32401e_0.spv",
+        "sha256": "81ec20dc31a0cde40b1d956dd82bb630e73e1483f05caab3ca5be6bd90d0444e",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x0000000096aa3f2e_0.spv",
+        "sha256": "1d31756ac623602bdcd07533486222e022057c181203440bcd4e150aad02679c",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000b80f7eb2_0.spv",
+        "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000b80f7eb2_1.spv",
+        "sha256": "a5996690f9ecdb0e63c12c39af74920b826aebdfbfae210b29914a0d3fabb084",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000b80f7eb2_2.spv",
+        "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000b80f7eb2_3.spv",
+        "sha256": "13174e3a9d02643f8ca5afea64fb1894e57ae684ad3d60e389d2c3229a04e605",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "fs_0x00000000b80f7eb2_4.spv",
+        "sha256": "051498d4c8e1dbf1d7ad8c0ba0a7a208770830c44e85667a04f576af19372149",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_0.spv",
+        "sha256": "8ae73aaf4c153c8700d67ce96cc213af29d960988bafe482fbfb7386ac12e1bd",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_1.spv",
+        "sha256": "0e9ec8ca96fca82b613ed321349c07df88139e72a910e38f7d01f99e5f68724e",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_10.spv",
+        "sha256": "e820c6400740dc5c19b8b4422b4993ae9403630c36b89c0bd5ec5c8b85314374",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_2.spv",
+        "sha256": "764f47037543ffe5cf54b3ee7a34e7512d2969edb043e1bf73164ab28d1f42b3",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_3.spv",
+        "sha256": "7f5aa187d3620927a6947885cfcc5b3d087490baede2a91bb6ea12b0a2f6d145",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_4.spv",
+        "sha256": "7656a1c1abe5a400eb31db5d7c5604a6c3c5325a4993b556b3127f9c782684bc",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_5.spv",
+        "sha256": "500b83fb16a3c4c6a10e0a3f9b77de3dcdcdf1d4fad9d10b056989c15bb14faf",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_6.spv",
+        "sha256": "7a4d9e52115adee29418eeee7aa11754b077705bc657ffe4eb9188540674c3c4",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_7.spv",
+        "sha256": "f8f3367dcbbbc2e6a73153e542a9d058ea025c159f32cc83108a0336bd6e2acc",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_8.spv",
+        "sha256": "0dc1f67b0b1c49a251ea936a31cd5727ed9220fe5e8d6b3fb51bee91e7f2314a",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000000a894bb5_9.spv",
+        "sha256": "f1d3c5cc666d943f6a1cceb3d489aecbff95bf2d9aeadce29a48031f86ba6edf",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000003bb29d09_0.spv",
+        "sha256": "20fdffdac3db5939165e0dcb79eba4345c0372373c18b91220c8ccf20a74a166",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000003bb29d09_1.spv",
+        "sha256": "88a424f82dac4e5d1d9fb20cd5312d50ba14d0749fdc5d8ed220b613e7c0bdb9",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000003bb29d09_2.spv",
+        "sha256": "3b099ac7b16cd5d0d2887abcb9196db01e95c77e03a48640b0402346f3b4cef5",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000003bb29d09_3.spv",
+        "sha256": "d3ac11f891aaa73ddbc8edbb374018a6322a49eeb5f26e40df252f10fabd960c",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x0000000061cf8491_0.spv",
+        "sha256": "937fd52f67ec196147c745934bc97f89f1b89e98923f04a6174b59a5379e1c75",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x0000000061cf8491_1.spv",
+        "sha256": "210fb40dff37fa266f94f7baf45b337572ef495111bd624df137679151e48197",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x0000000061cf8491_2.spv",
+        "sha256": "a6fbee7aec6e28cbf9a4ced4240ad3d82101d83264ef4420f7eb5889637ca411",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x0000000061cf8491_3.spv",
+        "sha256": "b59b2562987fafc9bde8b68908441fcb663ad6c00009aef6426b8207983e2b3d",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x0000000061cf8491_4.spv",
+        "sha256": "b77c2adde21de55cc17d7f70f68a444bf17ab9b340acacec6c239bcf73f3cb0b",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      },
+      {
+        "file": "vs_0x000000009911cadd_0.spv",
+        "sha256": "7bb6a41cd99b1e49fda110858ee19b90e050cf62b7ce7e71f7c275b25da84fe6",
+        "validation_exit": 0,
+        "validation": "",
+        "memory_barriers": 0,
+        "control_barriers": 0
+      }
+    ],
+    "first_compute_shader": {
+      "hash": "745c455a",
+      "gcn_sha256": "9e99e8f767f3f43a18e921b01d7222b3b1d2f30c94c6c4b735f3709b9fe63e0b",
+      "spirv_sha256": "fc5e20c82372c832ef94e058f35ccff5ca5b8376f4603dced9aa7cf4b5de878e",
+      "memory_barriers": 9,
+      "control_barriers": 0,
+      "cause_of_crash_proven": false
+    },
+    "model_lease": {
+      "model": "qwen3.8-greek:latest",
+      "context_length": 8192,
+      "expires_at": "2319-02-14T07:35:14.668457+00:00",
+      "digest": "7ce8a9f7064e5f40ad46aef05eb696d93817764d331bac7c7b5e63847e8ae9c6",
+      "size_vram": 17477350194,
+      "status": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+    },
+    "decision": "PR140 native crash fix NOT_DEMONSTRATED; retain generic swizzle correction as draft; no main promotion."
+  },
+  "rebase": {
+    "old_upstream": "f3c572879c0f1e9dc0cf46ecded22d8e8764d9e0",
+    "new_upstream": "cb133ca777bb0052fb45b2a07020f8ce0342829e",
+    "retained_head": "0f1fd064fb8acffba19a88c2654f768a997e780d",
+    "published_head": "8dde9090484c51ad023fc2c58b23ded110b617d5",
+    "published_tree": "5457bf5c7982be9ee895fd29065534fc45146122",
+    "commits_replayed": 42,
+    "range_diff_equivalent_patches": 42,
+    "conflicts": 0,
+    "recursive_pinned_dependencies": 54,
+    "prior_branches_preserved": true,
+    "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "mapping": [
+      {
+        "original": "8c35ee7807152143556d5af19de87639a53bafe7",
+        "local": "71ca09c1650e8683cdeb9d8df58f416098e91fcc",
+        "published": "86619a7aa6d3c9a6aa48332779755f7cf375a524",
+        "tree": "ac1dd3d13e651cb1384b2038a0b203958d0f5ade"
+      },
+      {
+        "original": "9652fa4052b45409f283d3858d798628d553ccc3",
+        "local": "85e80cc2843affc813b022106764f00272271bc7",
+        "published": "d292ad62e47b5542ae3142fe91d8cceda16c4d82",
+        "tree": "0c86844f7869f7e37ce74948e24d8e65c7e31ab3"
+      },
+      {
+        "original": "2d28ada728df4a58b54ee99f3be12a9e0c8276a1",
+        "local": "f0bd091221223246b492559c86d985be29b1d613",
+        "published": "7092364845d0ae636362d5ee1f8ac412dc8c5e98",
+        "tree": "6b1fd9f073b859e61340712872629e2d15919da2"
+      },
+      {
+        "original": "d47eaff3eda5fce774f281c341e4503b3aa59c19",
+        "local": "b0485c9991238275adf2be103894d56d62192f25",
+        "published": "cb1975e266c059a759785e7a9fde8c8ff8db202d",
+        "tree": "c710ebe42d7408942c193f696bb75926d6a836c9"
+      },
+      {
+        "original": "7961f97ccaaed5e76d28462fcb5327ed84d0067f",
+        "local": "81feb66f9dc4e424f1ba672cc2bd87605228987b",
+        "published": "080f7bbb8f1fd792f9b2499f4b4be963e9af7a2a",
+        "tree": "2edb1fe2052e766e8983d2440d709a3d295d91cc"
+      },
+      {
+        "original": "b98bb516681e5b3ec0ec9f95b3d5ddd7237e9fcb",
+        "local": "79f5ed595944947b71cfe84182373039c4f2a581",
+        "published": "824f5dc588b7fbe732bb26325bd7a94a285773c1",
+        "tree": "7e42511066c6a8f407665132ce83283d0e731e1c"
+      },
+      {
+        "original": "eb3fd096622399bfe5c9ae1d9f7b9c57e6c6bb97",
+        "local": "f0aae0ed3cb0249f67178b7d23ba2e60921fe4bc",
+        "published": "1d02931faf2101e279761c573f990aecdc1eae30",
+        "tree": "0bc68736c31903da46af751f505ef8b6a5f30420"
+      },
+      {
+        "original": "44ba1630422754656eb806c45061f15e405bfbda",
+        "local": "4be297544f377575947e80259ed30112dad6968e",
+        "published": "12da6eae5fa8de5785be496db2aa160f4324c5be",
+        "tree": "3dc09303e01d080c8e20ef3519317be416433e10"
+      },
+      {
+        "original": "6903febbdaabf083cc5aa892f9eccbee0b6b9417",
+        "local": "30c266737e392d24571c4f7d4cf78fdb2b499067",
+        "published": "384c24ccb851f41d297c1afde894e7e7116ae03a",
+        "tree": "7e1517119fc1c1c018eb499abca35f9a887b3b71"
+      },
+      {
+        "original": "f70c652fe094f40a279178dd52d25346cac2ff04",
+        "local": "d8ce5e259967428dff63327f7b206a0325da72fd",
+        "published": "1f2879e93e9fcd0b1e238ab40902850e0a1c1e94",
+        "tree": "060ce3b805ec8442e37a48a82b403e5915007f6b"
+      },
+      {
+        "original": "7c81984b793463d712398b76d20657980c2b3db6",
+        "local": "4ace227469aefdc48e8e12033a937b9744786b47",
+        "published": "7882f2af1d066c9759e0442fcf07c55f4d7e0d26",
+        "tree": "60555f679c674863c69b32958120719d9b7bca6f"
+      },
+      {
+        "original": "05ab3f085f2e22df283748a46ab24177ee635d56",
+        "local": "89f221ea6c08f1d0d459218a7c347b5a5b2bf5a8",
+        "published": "39f09ca0042b06b2244b7ba1e527f826afe78bf1",
+        "tree": "014aa1c88e513cbeb12deb5d2793141d50c78fbe"
+      },
+      {
+        "original": "fbbbbb3ff23aafb868ab9a0b269a972aa678fe4b",
+        "local": "fb85c564c47fd57f9e38e90cbda8fa2f03d5f958",
+        "published": "474ee1af5c0e4bd7f19e8cccf2f281af964a4b56",
+        "tree": "83d55dc618f156ee5696673f544e190b84c84652"
+      },
+      {
+        "original": "d5ce056063e319940acb33a5934a62275c7a9357",
+        "local": "31bc0e6d2c3591582ce8d8edcf38864be9eeb0f7",
+        "published": "152e98b8a969a7bf70eb07f4a3d52350614c7f8e",
+        "tree": "b37627cd18ee79ee982fb942a8e1b146417dc2b4"
+      },
+      {
+        "original": "0b82000703c0606245a34bd86ac2abd0114d2ea8",
+        "local": "b08b7f2e40c45544e359552e2eda1a6e642abd22",
+        "published": "4aa818057f17f1f1f7ed1380ba13116e00c39bba",
+        "tree": "b4c13d0510a9b2ddf9d43f7ed914e61ceca59d60"
+      },
+      {
+        "original": "15e87cf31ab785ee52240b40f7263ca40bac72b0",
+        "local": "1374375465b55903fa79474ad3a28df1f1352d4b",
+        "published": "8f5d3f89f003ab7acbcb8ccb73c8fa8cac76699e",
+        "tree": "6b03b663c20c323cd03813be7d03d01e4795cb5e"
+      },
+      {
+        "original": "1022b5e6815213e54362008f62683c96217df75c",
+        "local": "91393f46735363ca4bcde164c610c94a102aa36b",
+        "published": "46930784dee463cccf70cc51edf1b8f08fc401dd",
+        "tree": "c09029e7979323e60f936a39dc859ab60eb2698d"
+      },
+      {
+        "original": "9e193a33b2638a24d3b7dbe7067da18621ce7379",
+        "local": "296f85b513179578d76862e9ca300e368eb89775",
+        "published": "cf78d3f879cbdc030cde6135960e0ed807868efe",
+        "tree": "34d7006b0b94488c4313a19d515cd5caab89f2f6"
+      },
+      {
+        "original": "7091355a85c62e2b108b5df3cf6f3b649b3cdfee",
+        "local": "8acab095790a20432d5d770fee64b0eb895a20c0",
+        "published": "883410234794272398d33db652b437d773eaf528",
+        "tree": "4f0498235c1906ec923c3112270e01d4f12a79e9"
+      },
+      {
+        "original": "612dce4372d33e72c31d72eae6136dad73285b1a",
+        "local": "8a84baf6dd07f2eac15b125e4f37d1d4b069cde5",
+        "published": "45e7a6843d57e37ce9ad56a52dd93f06258129fc",
+        "tree": "47f7fc6d29c0dcefeb0e17c30e23f478b2c72a47"
+      },
+      {
+        "original": "206b874930128d1ab7a8170bc0098ffce130746c",
+        "local": "42b0401c387e534caeb2f8341a3ba789389b149c",
+        "published": "c770910d8be8274b0ad7c7bff72454cac0a940ff",
+        "tree": "2b4070641f11c84802f8dd5b28c51dcdccb764ba"
+      },
+      {
+        "original": "995b22ecb13fa1606196fd2037d7c1da8571e5d1",
+        "local": "a26b60bc273d106897d0d5d3978db84b56dfd4e1",
+        "published": "85ece1cc02af8e5f1d7d440ba0d763ee9c71d375",
+        "tree": "04646452ae9bad5b1a92d5f66dbd01f3cde7e3ad"
+      },
+      {
+        "original": "69deddc27ac06d4571f01a450f9e12ea3fe127f8",
+        "local": "ecb0c8c4b49d3d8dc80c8f597f8a5e9809f5e71a",
+        "published": "622a3cd2746a501e7894929d247df1ddbcab5764",
+        "tree": "0f5f214643b2d509e39ffdee3f8db211105850f9"
+      },
+      {
+        "original": "a7f70cd8a35dcf6aa95cbbf7157533e8c98c02a6",
+        "local": "708705a941c392f881d5fea8dbae57bfa0a415db",
+        "published": "d0669a4e4ddec7669a05f518207a1408bb84e91b",
+        "tree": "9a40752ceb432bcc1ee087c40153397a6538b830"
+      },
+      {
+        "original": "6d11d5541d078c0040d92676d70911e2aa2a1fcf",
+        "local": "e51c3a9557285ae1b9194de083cc2613c4e5844f",
+        "published": "f29092e437182e63d72098f4ea89eddcb3fc7080",
+        "tree": "3e8b8fc8b025f81d554e4a9a5bad9106d3c7be80"
+      },
+      {
+        "original": "8b6396c807db480823e455d7680ca4578d559938",
+        "local": "5c613ff63694788ad64f781ac6a988753856dbf7",
+        "published": "a9f17b468bf742689876ea38ce26678f26806a2e",
+        "tree": "53ab98aa0f4c1acf7e0380abee3aedf09c96c1a9"
+      },
+      {
+        "original": "2812bc6f3e0c9f1d333d2062cab27907ff49d35c",
+        "local": "6bab3f08b92b32fcd3e26677dacb3fe81838b328",
+        "published": "4b408e5d9ce971d7b79def3fd43bd4ab93830de9",
+        "tree": "2079a5954eebb321c149e6ca6cc1b5809fcf5130"
+      },
+      {
+        "original": "e61db6125991597203095da53f61fb6daa3c4c22",
+        "local": "d8eb59d5d62e14594119431dd97792f50dc4b219",
+        "published": "5604906ddf3a6673ad99df4155a5e5286b67bdc2",
+        "tree": "0b1c531a89fcab47b2408f83be14f6920090f24b"
+      },
+      {
+        "original": "7fb734fc992ca97a62a6ddb305ca831856dc6e00",
+        "local": "6d65d3a8e5417489cde9263e96a9199b7bbd6c39",
+        "published": "d91494fcb41076d1b1b2259fed836f0d06af8a4c",
+        "tree": "420bf9bdb6dca88ee1b86c0351f2b31298d83327"
+      },
+      {
+        "original": "14be58fe509b735927d4e829fd0e90a318f008c6",
+        "local": "6ee777a5218a5acfd9d3e0f11dfc8b3755f12792",
+        "published": "7ed5764fa06748069bf01947fe5acf7b7aa70163",
+        "tree": "a690194d14f2b8a3fb5928aae5eb82869c21fd73"
+      },
+      {
+        "original": "711fd6def7d7208ae5e674c17cee239630862b28",
+        "local": "cdc6dc2a19fb474c6acbd0c50fdfbb13f0431f70",
+        "published": "a639839a863b5d36c28d84eb427a15233dd89288",
+        "tree": "64c8416530bffc9c7f49b5126daad0fa8590f33d"
+      },
+      {
+        "original": "67b85cc6864f4556b78375ad01f2f1a1757367a1",
+        "local": "abb5a9c6f5c30423ab589eb45468bd94813a6095",
+        "published": "815b1f7a992305c1004c68e4cee6eb8c669f93f5",
+        "tree": "9578cb520dbc2840b41b3bc5c42d1a4b62afc76b"
+      },
+      {
+        "original": "af408e934828dee81e9c9b39de7cba5cb9dc38fd",
+        "local": "0e3b85017bdd992b67ef35f7ce851171f9956436",
+        "published": "96f337f5cb210a44292d030d00212e7278c0df8e",
+        "tree": "53a8d0fba39e28c8b90e80128be445d79e52205f"
+      },
+      {
+        "original": "9c47eb0cc742bd7465985ba573470dd50182c62e",
+        "local": "fa7936c53a9a7dfa52d7e01245cfcdf0cc21c7cb",
+        "published": "5c035513e70c95e217ff0ee93b71d4b76726a662",
+        "tree": "1db090ae70c6610b8280dcf31dba2237c7698c58"
+      },
+      {
+        "original": "8a6ab29340a1865c1fc5a1645b30cf4a92cdaa2e",
+        "local": "4002fcf28d1c17209b8c0396642f4ac14715b51e",
+        "published": "02254d071a471ab73f83ca30a297f9c0a1b03232",
+        "tree": "cdad5e84c67100f07ab527d3b59c80a2dbe827a5"
+      },
+      {
+        "original": "da9cd063ba984b45a5a0cb64ab98f5b3e0798672",
+        "local": "d4a63390c9e12db887e407fabc44d0b0b2920856",
+        "published": "08c95d245c871cd857bab30bbfd80a4c0f2fbe57",
+        "tree": "df79e1efce96dc44a447da6b678d72646b231b31"
+      },
+      {
+        "original": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+        "local": "8864a24f2964ff42c1e0d2b8cc9f2fbc67d876e9",
+        "published": "8c6ac8309fb1499ea00b968cba9b92dc502b1198",
+        "tree": "7bd2889856ad91b13978d04e5a2bcf9ccb30be95"
+      },
+      {
+        "original": "bc32d6747cc93e8d900659a809b432978f4aef9e",
+        "local": "d59e50b5c8181ee4b207170d5adb500468d59a61",
+        "published": "e169f92641f54febc003e9649bb24b362a45631c",
+        "tree": "776a7f8f3f2bfcdf09a083b032c90cb0e230d81e"
+      },
+      {
+        "original": "1d2db851f4305e609fd07d0883ec0363fb09c674",
+        "local": "5ebe65229a252c404fccda05ad3b8b35817d28b3",
+        "published": "23ce365c236c4df6c0d8b9e842d5c408ee974ffb",
+        "tree": "aabc42ec75a89f360c851b06ca10157e09527b4f"
+      },
+      {
+        "original": "55a838837773d1f9dac3314c049ff468be733c8b",
+        "local": "be755e2dbe5b32155fa39820fe5bc6163083fc28",
+        "published": "acb9ddf4afee7232d2c4f82447f59c5bdcd54b4a",
+        "tree": "b488edad6a3a6ae42a3795e3ba135af340227e1c"
+      },
+      {
+        "original": "b6e225c5cbd13700b91b230009d3149d14477a9e",
+        "local": "e5353526b6bc69872943115c348699959cf5edda",
+        "published": "56a8a99ddf2df495c4c65aaeca313fcebb4f6235",
+        "tree": "48ed2630554309ded333e9c61349b2b52a377462"
+      },
+      {
+        "original": "0f1fd064fb8acffba19a88c2654f768a997e780d",
+        "local": "3b3d46bb7c79bee826ef5f4ff2762d22e41768bc",
+        "published": "8dde9090484c51ad023fc2c58b23ded110b617d5",
+        "tree": "5457bf5c7982be9ee895fd29065534fc45146122"
+      }
+    ],
+    "pr": 141,
+    "review_base": "review/upstream-cb133ca7-20261104",
+    "main_promotion": false
+  },
+  "fix": {
+    "old_behavior": "IR SubgroupBarrier used OpMemoryBarrier: per-invocation memory ordering without cross-invocation control synchronization.",
+    "new_behavior": "OpControlBarrier(Subgroup,Subgroup,AcquireRelease|WorkgroupMemory), adding UniformMemory for persistent ordered-GDS LDS.",
+    "scope": "Existing compute shared-memory barrier sites; automatic source semantics; no new game, shader hash, vendor, option or config selector.",
+    "preserved": "Barrier placement; explicit workgroup and memory barriers; existing narrower-host handling; prior swizzle/full-wave/automatic coherence/DS changes.",
+    "cache_version": {
+      "from": 25,
+      "to": 26
+    },
+    "source_commit": "db6a40920fee72803d7da4d9426413a570f3b7f3",
+    "tree": "dfa2edeb4fe228fed42297d7ed539d843aca038a",
+    "changed_files": 3,
+    "insertions": 4,
+    "deletions": 4,
+    "pr": 142,
+    "native_cause_proven": false,
+    "references": [
+      "https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html",
+      "https://github.com/KhronosGroup/GLSL/blob/main/extensions/khr/GL_KHR_shader_subgroup.txt"
+    ]
+  },
+  "validation": {
+    "full_clang18_release_build": "PASS",
+    "full_build_lines": 3006,
+    "full_build_errors": 0,
+    "full_build_warnings": 81,
+    "committed_source_rebuild": "PASS",
+    "binary_sha256": "2c9ce0c47467b63cf8fc476f17ed41ad6ec7d5ad45a1229068c8526871c59296",
+    "cli_startup_scenarios": 3,
+    "cli_startup": "PASS",
+    "universal_cpu_suite": "PASS",
+    "barrier_case_pairs": 42,
+    "spirv_modules_validated": 84,
+    "byte_identical_unaffected_cases": 20,
+    "two_invocation_schedule_projection": {
+      "old": {
+        "completed_schedules": 20,
+        "incorrect_schedules": 8
+      },
+      "new": {
+        "completed_schedules": 8,
+        "incorrect_schedules": 0
+      }
+    },
+    "coverage": {
+      "local_sizes": [
+        32,
+        64,
+        128
+      ],
+      "subgroup_sizes": [
+        32,
+        64
+      ],
+      "existing_needs_lds_barriers": [
+        false,
+        true
+      ],
+      "flow": [
+        "no LDS",
+        "uniform exchange",
+        "divergent branch"
+      ],
+      "persistent_lds_memory_flags": true,
+      "explicit_workgroup_and_memory_barriers_unchanged": true,
+      "spirv_version": "1.6 (actual runtime profile)",
+      "vulkan_validation_target": "1.3"
+    },
+    "retained_reduction_replay": {
+      "instructions": 2380,
+      "blocks": 115,
+      "width32_reductions": 0,
+      "width64_reductions": 2
+    },
+    "retained_swizzle": {
+      "capability_cases": 12,
+      "spirv_modules": 18,
+      "interpreted_lane_results": 179988,
+      "missing_source_zero_checks": 61944
+    },
+    "retained_matcher": {
+      "checks": 1408,
+      "asan": "PASS",
+      "ubsan": "PASS",
+      "leak_detection": "UNVERIFIED; sandbox /proc failure; rerun with detect_leaks=0",
+      "implementation_unchanged": true
+    },
+    "gpu_run": false,
+    "new_repository_tests": false,
+    "performance": "UNMEASURED"
+  },
+  "local_attempts": "All full emulator builds and retained CPU suites passed. Local validation limitations and failed attempts retained:\n1. Artificial SPIR-V1.3 profiles:36/78 initial new modules and36/78 old modules fail because StorageBuffer8BitAccess needs an undeclared extension. Runtime profile uses SPIR-V1.6. Final42cases per emitter use that actual runtime version, all84modules pass. No production source was changed to mask this unsupported-profile failure.\n2. Initial retained-swizzle checker launch used python with a restricted PATH lacking that alias (exit127); rerun using python3 passed.\n3. Retained matcher LeakSanitizer could not enumerate /proc task data in this environment. Rerun with ASAN_OPTIONS=detect_leaks=0 passed1408 ASan/UBSan checks; leak checking is unverified.\n4. Concurrent history fetch auto-recursed into dependencies still being initialized and returned nonzero; main upstream ref was fetched correctly. Recursive submodule initialization completed and all54pinned commits matched. Later publication fetches disabled recursive dependency fetching.\n5. Git push dry-run was unavailable (no Git HTTPS credentials). Publication used the connected GitHub API; all42 rebased trees verified exactly against local trees. No existing branch force-pushed.\nNo failed validation launched a game. No GPU is exposed in this workspace.\n",
+  "homebrew": {
+    "file": "lds-subgroup-openorbis-20261104.zip",
+    "bytes": 6047,
+    "sha256": "9bc7b5bef33855e1369aa046ad46d6350db5a2b5846a0a1b8ed8b4b3b1b5d835",
+    "library_file_id": "libfile_2108dcbe605c8191949a3c1d6cd8e390",
+    "contains_game_code": false,
+    "workgroups": [
+      32,
+      64,
+      128
+    ],
+    "exec_masks": 72,
+    "dispatches": 216,
+    "expected_observations": 48384,
+    "assembly": "PASS gfx700",
+    "host_c_syntax": "PASS -Wall -Wextra -Werror",
+    "sdk_link": "UNVERIFIED",
+    "hardware_execution": "UNVERIFIED",
+    "fence_timeout_seconds": 5
+  },
+  "host_artifact": {
+    "file": "lds-subgroup-host-validation-20261104.zip",
+    "bytes": 518019,
+    "sha256": "ebc16226b374827042f729377830b4e364d737a287ed4427ce4f877c2319bcfc",
+    "library_file_id": "libfile_1c6da2a796d88191bf73bfaae837a20d",
+    "contains_game_code": false
+  },
+  "handoff": {
+    "source": "db6a40920fee72803d7da4d9426413a570f3b7f3",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "onepaste_sha256": "785d4c1440cda33e8d062a300d3686778300bbb8b51e7ca932ea88e0dea40fa3",
+    "checks": [
+      "bash syntax",
+      "valid checksum handoff",
+      "corrupt checksum blocks handoff",
+      "download failure blocks handoff",
+      "spaces in temporary path",
+      "temporary-file cleanup"
+    ],
+    "result": "PASS_NETWORK_AND_NATIVE_LAUNCH_BOUNDARIES_MOCKED_GPU_NOT_RUN",
+    "runner_unchanged": true,
+    "first_game": "CUSA11456",
+    "same_binary_for_gow": true,
+    "launch_bound_seconds": [
+      118,
+      2
+    ],
+    "vram_min_gib": 8,
+    "automatic_input": false,
+    "per_game_options": false
+  },
+  "limits": [
+    "GPU loss remains unresolved; this source has not run on the user GPU.",
+    "No GoT menu/gameplay/audio acceptance; GoW not run in the attachment.",
+    "Host schedule model and SPIR-V validation do not prove hardware progress or performance.",
+    "This does not complete guest-wave64 cross-half behavior on every subgroup32 path, general EXEC resurrection, fragment swizzle semantics or DS seed/re-entry.",
+    "Stream-buffer retirement across preparation flushes remains a separate unproven lifetime concern; no speculative change included.",
+    "Main and protected native binaries/saves/services remain unchanged."
+  ],
+  "journal_prefix": {
+    "rows": 475,
+    "sha256": "68aed9fbdba0d1cfd72ed4f8b13179e8f51fc490bd5b38273de6b0083ddeb3be"
+  },
+  "next_step": "Run the immutable candidate with the unchanged bounded GoT-then-GoW runner; GoW only after a confirmed safe exit. Compare intro/menu progress, GPU-wait windows and emitted subgroup control barriers, with identical global settings. Stop later games and model restoration after GPU failure/live or unconfirmed exit. No main promotion until native GPU/lifetime and cross-title acceptance."
+}

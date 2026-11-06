@@ -1,0 +1,31 @@
+# C925 reuse of shared PR109 sparse-buffer limit correction
+
+This package adapts the **existing PR109 algorithm**, not a duplicate renderer fix, to the retained GoT C925 source. The latest actual GoT validation run (`got-c925-menu-resource-validation-20261029T064217332723Z.tar.gz`, SHA256 `c202c18ad48084f55609d31f222833dc5fc616ca44a095fe617e756f0aa41d13`) successfully compiled PR108, then stopped at `VUID-VkBufferCreateInfo-size-06409`: a 4,294,967,296-byte buffer exceeds the device's 4,294,967,292-byte limit. It stopped after 5.189 seconds, before any menu screenshots. This is a per-buffer API limit, **not free VRAM** and not yet proof of the cause of missing material fills.
+
+GoW's shared PR109 already has the same observed violation and its general source correction. The reviewed donor is `scripts/patchsets/sparse-buffer-host-limit-20261029.patch` at `385e31fa6f8c1bcb1d5ed030f1267f1168b28ec8`, Git blob `078127d4c82dd44631f4437267656ad504fc2cc6`. The runner verifies that immutable patch and that the copied planner, arena-selection and alias/backing methods agree before changing source.
+
+## What is retained and adapted
+
+The host limit bounds block-aligned sparse **views**, not guest buffers. Complete requested guest ranges, including tail bytes and old 4-GiB boundary crossings, remain covered. Overlapping views bind the same existing and future physical backing, with supported sparse aliasing enabled and explicit conservative alias dependencies. Original BDA ownership stays stable. Truly unrepresentable single resources and unsupported alias capabilities fail explicitly; no fabricated contents or silent truncation.
+
+C925 exposes `ForEachDmaBuffer` as a public header iterator, unlike the GoW source. Its iterator now uses the backing's original owner instead of a replaceable coarse address-space hint, preserving the existing chunking and coverage checks. The adapter retains C925's bounded residency logs and unchanged download/readback, image-coherence and CMask helpers. No shader source, guest resource extent, saved rendering option, frame-selection logic or validation filter is changed.
+
+Five existing source files and one new header are involved. Four full preimages are SHA-256 checked against uploaded bytes. **The complete current host `vk_instance.h` was not uploaded**: its unique reviewed getter context is checked, the full host file is captured before transformation, and a missing/changed context stops without patching. No assertion that a small local context fixture represents that whole header is made.
+
+## Local tests actually completed
+
+- The exact transformed C925 arena/residency/alias functions and actual public DMA iterator are extracted into the **unchanged PR109 sparse recorder fixture**. GCC and Clang C++23 `-O2 -Wall -Wextra -Werror -pedantic`: the baseline reproduces the exact 06409 size violation; corrected **288 range cases and 7 lifecycle scenarios PASS**. Clang ASan/UBSan corrected fixture also passes. These are CPU recording tests, not Vulkan-device execution.
+- **16 Python tests PASS**, final rerun 0.261 seconds with ResourceWarning treated as error. Actual source tests check four archived preimages, byte-preserved readback helpers, changed-source/header refusal, source capture before refusal, reapplication, real Git forward/reverse byte roundtrip, source/ELF rollback and refusal to overwrite external edits.
+- Runner tests explicitly mock layer/contract/native-build/game/headroom actions. They verify success archival, build rollback, no mutation after contract/layer failure, changed ELF/source refusal, model restoration on prelaunch failure, and recording a new VUID rather than claiming graphics acceptance. They are not a real host build or GPU run.
+- Local donor-parser testing uses a synthetic patch built from the reviewed method text. The full immutable donor patch is verified on the host before mutation. The original fixture's Git blob is checked exactly.
+- Local production-header coverage is four captured whole files plus a small `MaxMemoryAllocationSize` context fixture; actual Vulkan-Hpp headers are unavailable in the model container. The host compiles the generated baseline/corrected fixtures and the new accessor/feature-ordering contract against its real headers **before source mutation**. Full native compile/link is mandatory afterward.
+- Published Git blobs for the four Python files match the locally tested byte hashes. `test_c925_sparse.py` requires a sibling `source/` containing the privately captured source snapshot; raw captured project/game data are not committed.
+- **No new native emulator compile, GPU validation or visual result for this adaptation has yet occurred.**
+
+## Host runner and safeguards
+
+`run_c925_sparse.py` requires the retained PR108 ELF `cf775560a8eea04cffea06db21d296ecd9274a7fc9332a8cf48a6720784f0d6d`, the prior trial record, all retained shader/renderer hashes, and the actual ImGui corrected blob. It checks for concurrent builds/emulators, validates the layer and real-header contracts, copies the existing private profile, checkpoints the ELF, then performs one incremental Ninja build with complete logs and visible progress/heartbeats. Build failure restores unchanged source and the prior ELF, while refusing to overwrite an external source edit.
+
+Only a successful verified build may run GoT, using the existing first-error core/synchronization validation observer, no input and a 118-second TERM plus two-second KILL limit for the owned process. The 8-GiB VRAM requirement and same-server actual-context/expiry Ollama restoration remain. Original saves/configuration, protected GoT/GoW binaries, SSH, Sunshine/X11 and launcher are not rewritten. Validation stops and incomplete visuals remain negative/limited outcomes; menu screenshot equality is never a freeze criterion.
+
+Evidence is written to `~/projects/shadps4/logs/got-c925-sparse-host-limit-*.tar.gz`, including full source before/after, native build errors and next validation diagnostic. Contract executables are omitted from the archive. This is an isolated source adapter, **not a completed fork-main production C++ forward-port or latest-upstream rebase**. Official upstream main checked during preparation: `0614ce324be092791b758d79f93d9f1ca5b10a81`.

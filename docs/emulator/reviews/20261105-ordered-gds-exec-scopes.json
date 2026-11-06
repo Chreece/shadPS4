@@ -1,0 +1,165 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-05T05:03:20.501723+00:00",
+  "source_commit": "350a89fc598306b3c06362eec8285b9fb4657ef1",
+  "source_tree": "5bcbe0c7c56a18b4579a556c0838ebcea0fbf758",
+  "upstream_commit": "e2991c4692c17fec5704f2223bb3915c09176d64",
+  "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "main_changed": false,
+  "archive": {
+    "filename": "universal-two-games-20261105T042422Z-1884780.tar.gz",
+    "library_file_id": "libfile_eac849253e6081918de64ca94649cba6",
+    "sha256": "3b8c780590f2eb3b3f5aa4947426bfab0b7d4f81df0625b40ea02bd043eb083f",
+    "size_bytes": 4432390
+  },
+  "native_result": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261105T042423Z-1884815",
+    "timestamp_utc": "2026-11-05T04:24:30.734032+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "NEW_UPSTREAM_REQUIRES_INTEGRATION",
+    "result": "BLOCKED_UPSTREAM_ADVANCED",
+    "exit_code": 3,
+    "requested_commit": "b4e8a206d513630aad255012feab2ec3250f9013",
+    "source_commit": "b4e8a206d513630aad255012feab2ec3250f9013",
+    "upstream_commit": "e2991c4692c17fec5704f2223bb3915c09176d64",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261105T042423Z-1884815.tar.gz",
+    "decision": "REINTEGRATE_LATEST_UPSTREAM_BEFORE_BUILD"
+  },
+  "rebase": {
+    "old_integration_head": "0eb9ac3c5331635c4ede89a02a55bcd04db1bf59",
+    "retained_commits": 57,
+    "published_rebased_head": "951c27cde9b12fb445f1507e5562cad5849093c6",
+    "retained_tree": "355771a294ea67af7341cef2c982685390b0924f",
+    "conflicts": [
+      "src/emulator.cpp",
+      "src/core/libraries/kernel/file_system.cpp"
+    ],
+    "resolutions": [
+      "Keep upstream init thread; retain atomic startup progress stages inside it.",
+      "Keep upstream filesystem remove for unopened paths; preserve saved native-to-guest errno and missing-path failure."
+    ],
+    "prior_journal_rows": 564,
+    "prior_journal_sha256": "ccd00426de98a450155b7ec601ac98677cfab2c1df38c8261e2ef01e2feefdb1",
+    "unchanged_patch_entries": 56,
+    "adapted_patch_entries": 1
+  },
+  "ds_change": {
+    "files": 2,
+    "insertions": 8,
+    "deletions": 3,
+    "scope": "DS_ORDERED_COUNT splits implicit EXEC scopes and preserves inactive destination VGPR values. No title/hash/vendor/address selectors or per-game setting.",
+    "donor_ref": "nikmparis217-ux/shadPS4/pr-ds-ordered-count",
+    "donor_head": "c69a82869b429382985642d191a953b316808800",
+    "not_restored": "Inter-workgroup spin wait has no portable forward-progress guarantee."
+  },
+  "validation": {
+    "cfg": {
+      "cases": 1536,
+      "baseline_failures": 768,
+      "candidate_failures": 0,
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "leak_sanitizer": "disabled because ptrace environment prevents LeakSanitizer",
+      "production_source_sha256": "68fb328147093d927861fc7049eddc9c63a6f74b5d834529228f93c97f75f843"
+    },
+    "universal_cpu_suite": "PASS",
+    "full_target_build": "PASS GCC 14.2 Release, complete shadps4 target; headless host configuration",
+    "production_ir": {
+      "programs": 18,
+      "checks": 29376,
+      "candidate": "PASS",
+      "baseline": "EXPECTED FAIL at check 7 (first inactive-lane assertion), exit 1",
+      "scope": "Actual translator output; chosen counter value tests writeback only, no GPU/counter execution."
+    },
+    "native_gpu": "NOT_RUN",
+    "graphics_verified": false,
+    "unlink": {
+      "cases": 14,
+      "result": "PASS",
+      "boundary": "actual syscall and IOFile, synthetic mount/handle table"
+    },
+    "host_build_environment": {
+      "compiler": "GCC 14.2",
+      "build_type": "Release",
+      "window_backends": "SDL X11, Wayland, KMSDRM disabled for headless host only; native runner unchanged",
+      "dependencies": "libudev, uuid and X11 development headers/libraries extracted to task-local prefix; no system installation",
+      "gpu_execution": false
+    },
+    "initial_failures": [
+      "Missing magic_enum include in standalone CFG compile; corrected include path.",
+      "LeakSanitizer unavailable under ptrace; ASan/UBSan rerun with detect_leaks=0.",
+      "Full build missing libudev and uuid development headers; local dependency prefix supplied.",
+      "Unlink fixture extraction marker and mount-table API were stale; temporary fixture adapted, production code unchanged.",
+      "Full build rejected untyped IR::Value passed to SetVectorReg; explicit IR::U32 conversion added. Changed production translation unit subsequently compiled.",
+      "Vulkan platform translation unit also required X11/Xlib.h despite SDL headless configuration; local X11 development headers supplied."
+    ],
+    "binary_sha256": "174c8612846009338528e00741bd5380b9de01a9b47a75bf933222bb63cb259c",
+    "binary_embedded_source": "350a89fc598306b3c06362eec8285b9fb4657ef1",
+    "cli_startup": {
+      "scenarios": 3,
+      "result": "PASS",
+      "gpu_run": false
+    },
+    "formatting": "PASS clang-format 23.1.5 changed files and git diff --check"
+  },
+  "hardware_probe": {
+    "file": "ds-exec-openorbis-20261105",
+    "scope": "18 single-wave dispatches varying EXEC and source operands; sentinel vector writes on both sides of ordered count; preserves required GWS wait clause.",
+    "assembly": "PASS LLVM 19.1.7 Bonaire",
+    "host_c_syntax": "PASS C11 -Wall -Wextra -Werror",
+    "openorbis_link": "NOT_RUN",
+    "ps4_execution": "NOT_RUN"
+  },
+  "primary_references": [
+    {
+      "url": "https://reviews.llvm.org/D52944",
+      "support": "Bonaire ordered swap/add need explicit branch to skip when EXEC=0 because the instruction has side effects."
+    }
+  ],
+  "remaining": [
+    "Verified dedicated-counter initialization and lifetime.",
+    "Actual compiled GPU continuation at the post-DS PC, without replaying guest effects.",
+    "Explicit guest-branch/partial-host-wave capture behavior is not resolved by the implicit-scope patch.",
+    "Native GoW progression and GoT rendering, same-scene, cross-title and cross-platform validation."
+  ],
+  "decision": "KEEP_DRAFT_NO_MAIN_PROMOTION; partial DS correctness fix, not completed DS execution.",
+  "next_native_check": {
+    "source": "350a89fc598306b3c06362eec8285b9fb4657ef1",
+    "runner": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "bash": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=350a89fc598306b3c06362eec8285b9fb4657ef1\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "expectation": "GoW still expected to reach retained ordered-GDS guard. Tests retained texture-upload sessions on GoT; no claim of DS continuation.",
+    "boundary_fixture": "ONEPASTE pass exit=0 handoff=True PASS\nONEPASTE bad_checksum exit=1 handoff=False PASS\nONEPASTE download_fail exit=22 handoff=False PASS\nDownload and native-run boundaries stubbed; no games launched.\n",
+    "term_seconds": 118,
+    "kill_grace_seconds": 2,
+    "minimum_free_vram_gib": 8,
+    "exact_conditional_model_leases": true,
+    "stop_after_gpu_loss_or_live_child": true,
+    "automatic_input": false,
+    "per_game_settings": false
+  },
+  "prs": [
+    154,
+    155
+  ],
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/ds-ordered-exec-evidence-20261105.zip",
+    "size_bytes": 118334,
+    "sha256": "2c19e20026a681d163f14a55da2167f559a685416072f6f676ff766fe8f8ea97",
+    "entries": 42,
+    "library_file_id": "libfile_908da68e8d348191b6adedc9345cb3d4",
+    "url": "https://chatgpt.com/library?file_id=libfile_908da68e8d348191b6adedc9345cb3d4&account_id=personal"
+  },
+  "journal": {
+    "rows_before": 564,
+    "rows_after": 574,
+    "prefix_preserved": true,
+    "sha256": "b0e7763c1258728108482af2f3e18647329f14db776de0f2bffe4d579c8b988d"
+  }
+}

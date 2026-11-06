@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "recorded": "2026-10-26",
+  "fork_main_at_queue": "f7a2b03cf4b03a55b59dbafb064eee211e18d42e",
+  "upstream_at_audit": "2cdefaa1298c6e4ece6c74bd84e90f3906282d51",
+  "entries": [
+    {
+      "pr": 63,
+      "name": "native emulator-owned CPUID without DynamoRIO",
+      "source_branch": "fix/native-cpuid-no-dynamorio-20261025",
+      "source_sha": "a82db5964bd8a48305213171862d23268602a50c",
+      "decision": "KEEP_GENERIC_BUILD_PASS",
+      "tests": "2026-10-26 linked native executable 3e5c8c3f; no-DynamoRIO CMake/Ninja/CLI verified",
+      "runtime": "PENDING_GOW_GOT_120S",
+      "main": "NOT_MERGED",
+      "dependency_pr": 60,
+      "next": "cross-title startup/gamepad/renderer test and latest-upstream forward port"
+    },
+    {
+      "pr": 60,
+      "name": "kernel sanitizer and thread atexit HLE",
+      "source_branch": "fix/restore-generic-kernel-hooks-20261025",
+      "source_sha": "104cec069b7f53a69d9f8d9760d3adc5bcae892b",
+      "decision": "KEEP_GENERIC_REGRESSIONS_PASS",
+      "tests": "two HLE CTest suites passed; duplicate linker corrected, combined link succeeded",
+      "runtime": "PREVIOUS_TRANSLATED_RUNTIME_SIGABRT_NULL_READ; native runtime not yet verified",
+      "main": "NOT_MERGED",
+      "dependency_pr": null,
+      "next": "run same native source through both games; forward-port minimal kernel changes"
+    },
+    {
+      "pr": 52,
+      "name": "GPU-selected strided T# material index layouts",
+      "source_branch": "fix/generic-indexed-strided-record-index-20261025",
+      "source_sha": null,
+      "decision": "KEEP_GOT_GENERIC_RESOURCE_CAPABILITY",
+      "tests": "39 native recognition events including 536-byte records",
+      "runtime": "GOT_WORLD_STILL_MISSING",
+      "main": "NOT_MERGED",
+      "dependency_pr": null,
+      "next": "rebase exact tested source to latest upstream main+shared core, test GoW and GoT"
+    },
+    {
+      "pr": 57,
+      "name": "Precise mode linear GPU image readbacks",
+      "source_branch": "test/generic-precise-linear-image-coherence-20261025",
+      "source_sha": null,
+      "decision": "KEEP_GOT_VISUAL_AND_GENERIC_COHERENCE",
+      "tests": "32 sampled queues/32 copies, silhouettes stopped blinking",
+      "runtime": "GOT_WORLD_STILL_MISSING",
+      "main": "NOT_MERGED",
+      "dependency_pr": 52,
+      "next": "cross-title readback correctness/performance and main-targeted isolated source port"
+    },
+    {
+      "pr": 62,
+      "name": "GPU-indexed shader source rejection diagnostics",
+      "source_branch": "diagnostics/gpu-indexed-sharp-rejections-20261025",
+      "source_sha": null,
+      "decision": "KEEP_DIAGNOSTICS_ONLY",
+      "tests": "58 rejected-source events over 40 shaders",
+      "runtime": "GOT_WORLD_DARK",
+      "main": "NOT_MERGED",
+      "dependency_pr": 57,
+      "next": "use evidence to find real descriptor readiness gates; no rendering claim"
+    },
+    {
+      "pr": 64,
+      "name": "guarded real uniform S# for GPU-indexed T# tables",
+      "source_branch": "test/generic-indexed-image-uniform-sampler-20261025",
+      "source_sha": null,
+      "decision": "KEEP_GOT_GENERIC_BINDING_CAPABILITY",
+      "tests": "13 native real-binding events across 7 shaders; no device loss",
+      "runtime": "GOT_TERRAIN_INCOMPLETE_AND_SLOW",
+      "main": "NOT_MERGED",
+      "dependency_pr": 57,
+      "next": "prove no cross-title or FPS regression before selective promotion"
+    },
+    {
+      "pr": 66,
+      "name": "discard incomplete SRT walker machine code",
+      "source_branch": "fix/generic-srt-emission-checkpoint-20261026",
+      "source_sha": null,
+      "decision": "REVIEW_PENDING",
+      "tests": "open PR audit only, result not provided in this task",
+      "runtime": "UNKNOWN",
+      "main": "NOT_MERGED",
+      "dependency_pr": null,
+      "next": "read native CTest and GoT+GoW evidence and decide KEEP or REJECT"
+    },
+    {
+      "pr": 35,
+      "name": "prior main synchronization direction is reversed",
+      "source_branch": "main",
+      "source_sha": "01beb8e0fbbea4462bbc661f0019624e959c53dd",
+      "decision": "TRACKING_ONLY",
+      "tests": "fork main diverges 84 fork-only/159 upstream-only at 2026-10-26 audit",
+      "runtime": "NOT_APPLICABLE",
+      "main": "NOT_VALID_UPSTREAM_REBASE",
+      "dependency_pr": null,
+      "next": "replace by verified fresh upstream rebase preview and new main-targeted PR"
+    }
+  ]
+}
