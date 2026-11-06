@@ -5,6 +5,9 @@
 OPCODE(Phi,                                                 Opaque,                                                                                         )
 OPCODE(Void,                                                Void,                                                                                           )
 OPCODE(ConditionRef,                                        U1,             U1,                                                                             )
+OPCODE(OrderedGdsResumeSite,                                 U32,                                                                                            )
+OPCODE(OrderedGdsLoadState,                                  Opaque,         U32,                                                                            )
+OPCODE(OrderedGdsStoreState,                                 Void,           U32,            Opaque,                                                         )
 
 // Special operations
 OPCODE(Prologue,                                            Void,                                                                                           )
