@@ -12,6 +12,8 @@ write a bounded, source-attributed archive for the shared emulator diary.
 
 from __future__ import annotations
 import argparse
+import bisect
+import struct
 import hashlib
 import json
 import os
@@ -182,6 +184,188 @@ def capture_owned_stop_state(pid, out, proc=Path('/proc'),
     except OSError as error:
         state['error']=str(error)
     save(out/filename,state)
+
+
+def prepare_live_symbols(binary):
+    result = {'binary': str(binary), 'functions': [], 'sampler': {}}
+    try:
+        with binary.open('rb') as stream:
+            header = stream.read(64)
+            if header[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H', header, 18)[0] != 62:
+                raise ValueError('ELF64_LITTLE_ENDIAN_X86_64_REQUIRED')
+            kind = struct.unpack_from('<H', header, 16)[0]
+            offset = struct.unpack_from('<Q', header, 32)[0]
+            size, count = struct.unpack_from('<HH', header, 54)
+            if kind not in (2, 3) or size != 56 or count > 128:
+                raise ValueError('UNSUPPORTED_ELF_LAYOUT')
+            stream.seek(offset)
+            segments = [struct.unpack('<IIQQQQQQ', stream.read(size)) for _ in range(count)]
+            initial = next(s for s in segments if s[0] == 1 and s[2] == 0)
+            result['initial_vaddr'] = initial[3]
+        symbols = subprocess.run(['nm', '-S', '-n', '-C', str(binary)],
+                                 capture_output=True, text=True, timeout=10, check=True).stdout
+        prefix = 'Common::PerformanceDiagnostics::(anonymous namespace)::'
+        expected = {'samples': 32768 * 152, 'sample_count': 4, 'started': 16}
+        for line in symbols.splitlines():
+            fields = line.split(maxsplit=3)
+            if len(fields) != 4:
+                continue
+            address, length, kind, name = fields
+            if name.startswith(prefix) and name[len(prefix):] in expected:
+                key = name[len(prefix):]
+                if int(length, 16) != expected[key]:
+                    raise ValueError('UNSUPPORTED_SAMPLER_LAYOUT: ' + key)
+                result['sampler'][key] = int(address, 16)
+            if kind in 'tTwW':
+                result['functions'].append((int(address, 16), int(length, 16), name))
+        result['function_addresses'] = [f[0] for f in result['functions']]
+        if set(result['sampler']) != set(expected):
+            result['sampler_error'] = 'SAMPLER_SYMBOLS_UNAVAILABLE'
+    except (OSError, ValueError, StopIteration, struct.error, subprocess.SubprocessError) as error:
+        result['error'] = str(error)
+    return result
+
+
+def capture_owned_live_memory(pid, out, second, symbols):
+    record = {'pid': pid, 'threads': [], 'method': 'owned-child-proc-memory-read-only',
+              'coherent_snapshot': False, 'signals_sent': False,
+              'registers_are_prior_profiler_samples': True,
+              'stack_code_candidates_are_not_unwound_frames': True,
+              'maximum_threads': 8, 'maximum_sample_age_ms': 2000}
+    began = time.monotonic()
+    deadline = began + 1.0
+    mem = None
+    try:
+        process = Path('/proc') / str(pid)
+        stat = (process / 'stat').read_text().rsplit(') ', 1)[1].split()
+        if int(stat[1]) != os.getpid():
+            raise RuntimeError('NOT_OWNED_DIRECT_CHILD')
+        if Path(os.readlink(process / 'exe')).resolve() != Path(symbols['binary']).resolve():
+            raise RuntimeError('OWNED_EXECUTABLE_CHANGED')
+        maps = []
+        for line in (process / 'maps').read_text().splitlines():
+            fields = line.split(maxsplit=5)
+            start, end = (int(value, 16) for value in fields[0].split('-'))
+            maps.append({'start': start, 'end': end, 'permissions': fields[1],
+                         'offset': int(fields[2], 16),
+                         'path': fields[5] if len(fields) > 5 else ''})
+        record['maps'] = maps
+        initial = next(r for r in maps if r['path'] == symbols['binary'] and r['offset'] == 0)
+        bias = initial['start'] - symbols.get('initial_vaddr', 0)
+        record['load_bias'] = bias
+        mem = os.open(process / 'mem', os.O_RDONLY | os.O_CLOEXEC)
+
+        def read(address, size):
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                return b''
+            region = next((r for r in maps if r['start'] <= address < r['end']
+                           and r['permissions'].startswith('r')), None)
+            if region is None:
+                return b''
+            try:
+                return os.pread(mem, min(size, region['end'] - address), address)
+            except (OSError, OverflowError):
+                return b''
+
+        def location(address):
+            region = next((r for r in maps if r['start'] <= address < r['end']
+                           and 'x' in r['permissions']), None)
+            if region is None:
+                return None
+            entry = {'address': address, 'module': region['path'],
+                     'file_offset': address - region['start'] + region['offset']}
+            if region['path'] == symbols['binary']:
+                relative = address - bias
+                index = bisect.bisect_right(symbols.get('function_addresses', []), relative) - 1
+                if index >= 0:
+                    start, length, name = symbols['functions'][index]
+                    if start <= relative < start + length:
+                        entry.update(symbol=name, symbol_offset=relative - start)
+            return entry
+
+        def memory(regs):
+            stack = read(regs['rsp'], 2048)
+            entry = {'code': {'address': max(0, regs['rip'] - 16),
+                              'hex': read(max(0, regs['rip'] - 16), 96).hex()},
+                     'instruction_location': location(regs['rip']),
+                     'stack': {'address': regs['rsp'], 'hex': stack.hex()},
+                     'register_memory': {key: {'address': value, 'hex': data.hex()}
+                        for key, value in regs.items() if key not in ('rip', 'rsp')
+                        and (data := read(value, 64))},
+                     'stack_code_candidates': []}
+            for offset in range(0, len(stack) - 7, 8):
+                candidate = location(int.from_bytes(stack[offset:offset + 8], 'little'))
+                if candidate:
+                    entry['stack_code_candidates'].append(dict(candidate, stack_offset=offset))
+            return entry
+
+        latest = {}
+        sampler = symbols.get('sampler', {})
+        if symbols.get('error') or symbols.get('sampler_error'):
+            record['sampler_error'] = symbols.get('error') or symbols['sampler_error']
+        elif set(sampler) == {'samples', 'sample_count', 'started'}:
+            try:
+                count = struct.unpack('<I', read(bias + sampler['sample_count'], 4))[0]
+                seconds, nanoseconds = struct.unpack('<qq', read(bias + sampler['started'], 16))
+                now_ms = (time.monotonic_ns() - seconds * 10**9 - nanoseconds) // 10**6
+                record.update(samples_attempted=count, sampler_now_ms=now_ms,
+                              sampler_capacity_exceeded=count > 32768)
+                names = 'rip rsp rbp rax rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15'.split()
+                sample_bytes = min(count, 32768) * 152
+                buffer = bytearray()
+                while len(buffer) < sample_bytes:
+                    chunk = read(bias + sampler['samples'] + len(buffer), sample_bytes - len(buffer))
+                    if not chunk:
+                        break
+                    buffer.extend(chunk)
+                record['samples_read'] = len(buffer) // 152
+                for index in range(len(buffer) // 152 - 1, -1, -1):
+                    raw = buffer[index * 152:(index + 1) * 152]
+                    if len(raw) != 152 or raw[0] != 1:
+                        continue
+                    ready, tid, timestamp, *values = struct.unpack('<B3xIQ17Q', raw)
+                    age = now_ms - timestamp
+                    if not 0 <= age <= 2000:
+                        continue
+                    entries = latest.setdefault(tid, [])
+                    if len(entries) < 3 and not any(x['registers']['rip'] == values[0] for x in entries):
+                        entries.append({'sample_index': index, 'sample_ms': timestamp,
+                                        'age_ms': age, 'registers': dict(zip(names, values))})
+                    if time.monotonic() >= deadline:
+                        break
+            except struct.error:
+                record['sampler_error'] = 'SAMPLER_MEMORY_UNAVAILABLE'
+        tasks = []
+        for task in (process / 'task').iterdir():
+            try:
+                runtime = int((task / 'schedstat').read_text().split()[0])
+                tasks.append((runtime, int(task.name), (task / 'comm').read_text().strip()))
+            except (OSError, ValueError):
+                continue
+        for runtime, tid, name in sorted(tasks, reverse=True)[:8]:
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                break
+            item = {'tid': tid, 'name': name, 'runtime_ns': runtime, 'samples': []}
+            record['threads'].append(item)
+            for sample in latest.get(tid, []):
+                item['samples'].append(dict(sample, memory=memory(sample['registers'])))
+            try:
+                syscall = (process / 'task' / str(tid) / 'syscall').read_text().split()
+                item['syscall'] = syscall
+                if len(syscall) >= 3 and syscall[0] != 'running':
+                    regs = dict(zip(('rsp', 'rip'), (int(v, 0) for v in syscall[-2:])))
+                    item['blocked_syscall_memory'] = dict(registers=regs, memory=memory(regs))
+            except (OSError, ValueError) as error:
+                item['syscall_error'] = str(error)
+    except (OSError, RuntimeError, ValueError, StopIteration) as error:
+        record['error'] = str(error)
+    finally:
+        if mem is not None:
+            os.close(mem)
+        record['elapsed_seconds'] = time.monotonic() - began
+        save(out / f'owned-live-memory-{second:03d}s.json', record)
 
 
 def summarize(console,out):
@@ -432,6 +616,7 @@ def main():
             'audio_audible_acceptance':'NOT_OBSERVED',
             'gameplay_acceptance':'NOT_OBSERVED','screenshots':[],
             'owned_child_terminated':False,'exit_code':None}
+    live_symbols = prepare_live_symbols(binary) if launch['performance_diagnostics_requested'] else None
     console=report/'full-console.log'
     child=None
     began=time.monotonic()
@@ -481,6 +666,8 @@ def main():
                         taken.add(second)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
+                        if second in (80, 110) and live_symbols is not None:
+                            capture_owned_live_memory(child.pid, report, second, live_symbols)
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
