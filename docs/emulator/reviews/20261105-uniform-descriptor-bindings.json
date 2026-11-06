@@ -581,17 +581,21 @@
     "homebrew": "Original OpenOrbis probe shared: eight scalar-selection and eight fragment-derived cases, 50,176 interior pixels if complete, two-second fence timeout. Assembly and host syntax pass. SDK linking and PS4 hardware execution unrun.",
     "rejected_attempts": [
       "External compiler fixture first used nonexistent ABGR32 enum spelling; corrected to ABGR_32. Attempted execution before corrected build produced the expected missing-executable failure.",
-      "External Vulkan fixture first omitted Vulkan1.1/1.2 storage and int8 feature chain; validation rejected shader creation before drawing. Enabling supported features produced eight passing draws with zero errors."
+      "External Vulkan fixture first omitted Vulkan1.1/1.2 storage and int8 feature chain; validation rejected shader creation before drawing. Enabling supported features produced eight passing draws with zero errors.",
+      "Initial packaging-journal update resolved the parent of a relative dot path incorrectly and stopped before writing; corrected to an absolute script directory. No emulator source or journal row was changed by the failed attempt."
     ],
-    "handoff": "PASS success, bad checksum and failed download with external boundaries stubbed; no games launched."
+    "handoff": "PASS success, bad checksum and failed download with external boundaries stubbed; no games launched.",
+    "homebrew_alignment_review": "Final hardware-probe packaging uses 64x64 textures with 256-byte rows instead of 32x32/128-byte rows. Host C syntax passes again; SDK linking and PS4 execution remain unrun. Emulator source and all compiler/Vulkan results are unchanged. Artifact version1 replaces version0; historical journal records retain the original artifact hash."
   },
   "artifact": {
     "filename": "uniform-descriptor-bindings-evidence-20261105.zip",
-    "sha256": "1a1fac114abc00bd21c1ae3010ce193eaaf03cdca991b3d95db8ad73434aa1fa",
-    "bytes": 42986,
+    "sha256": "361a5e95279ca119214c1fa3f0c3e608f24258722ef2474309b2de8e6e136464",
+    "bytes": 43003,
     "files": 36,
+    "version": 1,
     "library_file_id": "libfile_2c88512875dc8191a90456709bdf19a7",
-    "url": "https://chatgpt.com/library?file_id=libfile_2c88512875dc8191a90456709bdf19a7&account_id=personal"
+    "url": "https://chatgpt.com/library?file_id=libfile_2c88512875dc8191a90456709bdf19a7&account_id=personal",
+    "previous_version_sha256": "1a1fac114abc00bd21c1ae3010ce193eaaf03cdca991b3d95db8ad73434aa1fa"
   },
   "next_run": {
     "source_commit": "cc89522cf98e076fd384ff95d4dd4d0c450044a7",
