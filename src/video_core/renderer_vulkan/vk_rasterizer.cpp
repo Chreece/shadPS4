@@ -2460,6 +2460,49 @@ void Rasterizer::BindTextures(const Shader::Info& stage, Shader::Backend::Bindin
     }
 }
 
+static vk::ImageAspectFlags DepthStencilWriteAspects(const AmdGpu::Regs& regs, bool depth_clear,
+                                                     bool stencil_clear) {
+    vk::ImageAspectFlags aspects{};
+    if (regs.depth_buffer.DepthValid() &&
+        (depth_clear || (regs.depth_control.depth_enable && regs.depth_control.depth_write_enable &&
+                         !regs.depth_render_control.depth_clear_enable))) {
+        aspects |= vk::ImageAspectFlagBits::eDepth;
+    }
+    const auto writes_stencil = [](u32 mask, AmdGpu::StencilFunc fail, AmdGpu::StencilFunc pass,
+                                   AmdGpu::StencilFunc depth_fail) {
+        return mask != 0 &&
+               (fail != AmdGpu::StencilFunc::Keep || pass != AmdGpu::StencilFunc::Keep ||
+                depth_fail != AmdGpu::StencilFunc::Keep);
+    };
+    const auto& stencil = regs.stencil_control;
+    const bool stencil_write =
+        regs.depth_control.stencil_enable && !regs.depth_render_control.stencil_clear_enable &&
+        (writes_stencil(regs.stencil_ref_front.stencil_write_mask, stencil.stencil_fail_front,
+                        stencil.stencil_zpass_front, stencil.stencil_zfail_front) ||
+         (regs.depth_control.backface_enable &&
+          writes_stencil(regs.stencil_ref_back.stencil_write_mask, stencil.stencil_fail_back,
+                         stencil.stencil_zpass_back, stencil.stencil_zfail_back)));
+    if (regs.depth_buffer.StencilValid() && (stencil_clear || stencil_write)) {
+        aspects |= vk::ImageAspectFlagBits::eStencil;
+    }
+    return aspects;
+}
+
+static vk::ImageLayout DepthStencilLayout(bool has_stencil, vk::ImageAspectFlags writes) {
+    const bool depth_write = bool(writes & vk::ImageAspectFlagBits::eDepth);
+    const bool stencil_write = bool(writes & vk::ImageAspectFlagBits::eStencil);
+    if (!has_stencil) {
+        return depth_write ? vk::ImageLayout::eDepthAttachmentOptimal
+                           : vk::ImageLayout::eDepthReadOnlyOptimal;
+    }
+    if (depth_write) {
+        return stencil_write ? vk::ImageLayout::eDepthStencilAttachmentOptimal
+                             : vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal;
+    }
+    return stencil_write ? vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal
+                         : vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+}
+
 RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
     attachment_feedback_loop = false;
     const auto& regs = liverpool->regs;
@@ -2547,23 +2590,32 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
         texture_cache.TouchMeta(htile_address, slice, false);
         ASSERT(desc.view_info.range.extent.levels == 1 && !image.binding.needs_rebind);
 
-        const bool has_stencil = image.info.props.has_stencil;
-        // Stencil writes can be enabled while depth writes are off.
-        const bool stencil_write =
-            has_stencil && regs.depth_control.stencil_enable && !desc.view_info.is_storage;
-        const auto new_layout = desc.view_info.is_storage
-                                    ? has_stencil ? vk::ImageLayout::eDepthStencilAttachmentOptimal
-                                                  : vk::ImageLayout::eDepthAttachmentOptimal
-                                : stencil_write
-                                    ? vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal
-                                : has_stencil ? vk::ImageLayout::eDepthStencilReadOnlyOptimal
-                                              : vk::ImageLayout::eDepthReadOnlyOptimal;
-        needs_barrier |= runtime.Transit(&image, new_layout,
-                                         vk::PipelineStageFlagBits2::eEarlyFragmentTests |
-                                             vk::PipelineStageFlagBits2::eLateFragmentTests,
-                                         vk::AccessFlagBits2::eDepthStencilAttachmentWrite |
-                                             vk::AccessFlagBits2::eDepthStencilAttachmentRead,
-                                         desc.view_info.range);
+        const auto writes =
+            DepthStencilWriteAspects(regs, is_depth_clear, is_stencil_clear) & image.aspect_mask;
+        const auto new_layout = DepthStencilLayout(image.info.props.has_stencil, writes);
+        auto stages = vk::PipelineStageFlagBits2::eEarlyFragmentTests |
+                      vk::PipelineStageFlagBits2::eLateFragmentTests;
+        vk::AccessFlags2 access = vk::AccessFlagBits2::eDepthStencilAttachmentRead;
+        if (writes) {
+            access |= vk::AccessFlagBits2::eDepthStencilAttachmentWrite;
+        }
+        if (image.binding.is_bound) {
+            stages |= vk::PipelineStageFlagBits2::eAllGraphics;
+            access |= vk::AccessFlagBits2::eShaderRead;
+            const auto& stencil = regs.stencil_control;
+            VideoCore::GraphicsDiagnostics::Emit(
+                VideoCore::GraphicsDiagnostics::Event::DepthStencilAccess,
+                "writes=%#x layout=%u depth-clear=%u stencil-clear=%u stencil-test=%u "
+                "backface=%u front-mask=%#x back-mask=%#x front-ops=%u,%u,%u back-ops=%u,%u,%u",
+                u32(writes), u32(new_layout), u32(is_depth_clear), u32(is_stencil_clear),
+                u32(regs.depth_control.stencil_enable), u32(regs.depth_control.backface_enable),
+                u32(regs.stencil_ref_front.stencil_write_mask),
+                u32(regs.stencil_ref_back.stencil_write_mask), u32(stencil.stencil_fail_front),
+                u32(stencil.stencil_zpass_front), u32(stencil.stencil_zfail_front),
+                u32(stencil.stencil_fail_back), u32(stencil.stencil_zpass_back),
+                u32(stencil.stencil_zfail_back));
+        }
+        needs_barrier |= runtime.Transit(&image, new_layout, stages, access, desc.view_info.range);
 
         state.width = std::min<u32>(state.width, image.info.size.width);
         state.height = std::min<u32>(state.height, image.info.size.height);

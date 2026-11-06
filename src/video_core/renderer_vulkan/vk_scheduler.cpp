@@ -29,6 +29,25 @@ Scheduler::~Scheduler() {
 #endif
 }
 
+static vk::AttachmentStoreOp DepthStencilStoreOp(vk::ImageLayout layout,
+                                                 vk::ImageAspectFlagBits aspect) {
+    switch (layout) {
+    case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+    case vk::ImageLayout::eReadOnlyOptimal:
+        return vk::AttachmentStoreOp::eNone;
+    case vk::ImageLayout::eDepthReadOnlyOptimal:
+    case vk::ImageLayout::eDepthReadOnlyStencilAttachmentOptimal:
+        return aspect == vk::ImageAspectFlagBits::eDepth ? vk::AttachmentStoreOp::eNone
+                                                         : vk::AttachmentStoreOp::eStore;
+    case vk::ImageLayout::eStencilReadOnlyOptimal:
+    case vk::ImageLayout::eDepthAttachmentStencilReadOnlyOptimal:
+        return aspect == vk::ImageAspectFlagBits::eStencil ? vk::AttachmentStoreOp::eNone
+                                                           : vk::AttachmentStoreOp::eStore;
+    default:
+        return vk::AttachmentStoreOp::eStore;
+    }
+}
+
 void Scheduler::BeginRendering(const RenderState& new_state) {
     if (is_rendering && render_state == new_state) {
         return;
@@ -54,7 +73,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
         .loadOp = db.depth_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .storeOp = DepthStencilStoreOp(db.image_layout, vk::ImageAspectFlagBits::eDepth),
         .clearValue =
             vk::ClearValue{.depthStencil = vk::ClearDepthStencilValue{.depth = std::bit_cast<float>(
                                                                           db.clear_value[0])}},
@@ -63,7 +82,7 @@ void Scheduler::BeginRendering(const RenderState& new_state) {
         .imageView = db.image_view,
         .imageLayout = db.image_layout,
         .loadOp = db.stencil_clear ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-        .storeOp = vk::AttachmentStoreOp::eStore,
+        .storeOp = DepthStencilStoreOp(db.image_layout, vk::ImageAspectFlagBits::eStencil),
         .clearValue = vk::ClearValue{.depthStencil =
                                          vk::ClearDepthStencilValue{.stencil = db.clear_value[1]}},
     };

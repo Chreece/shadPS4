@@ -37,6 +37,7 @@ enum class Event {
     ImageProtectRead,
     ImageProtectWrite,
     ViewportLayout,
+    DepthStencilAccess,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
@@ -64,7 +65,8 @@ inline constexpr std::array names{"enabled",
                                   "image-protect-none",
                                   "image-protect-read",
                                   "image-protect-write",
-                                  "viewport-layout"};
+                                  "viewport-layout",
+                                  "depth-stencil-access"};
 static_assert(names.size() == static_cast<size_t>(Event::Count));
 
 inline unsigned long long ElapsedMs() {
