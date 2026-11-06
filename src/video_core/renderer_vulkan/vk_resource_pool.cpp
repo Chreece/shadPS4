@@ -110,7 +110,8 @@ DescriptorHeap::DescriptorHeap(const Instance& instance, Semaphore* work_semapho
                                std::span<const vk::DescriptorPoolSize> pool_sizes_,
                                u32 descriptor_heap_count_)
     : device{instance.GetDevice()}, work_semaphore{work_semaphore_},
-      descriptor_heap_count{descriptor_heap_count_}, pool_sizes{pool_sizes_} {
+      descriptor_heap_count{descriptor_heap_count_},
+      pool_sizes{pool_sizes_.begin(), pool_sizes_.end()} {
     CreateDescriptorPool();
 }
 
@@ -145,6 +146,9 @@ vk::DescriptorSet DescriptorHeap::Commit(
         }
     }
 
+    if (!PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>(pool_sizes, required)) {
+        pool_sizes = ExpandDescriptorPoolSizes<vk::DescriptorPoolSize>(pool_sizes, required);
+    }
     const auto covers = [&](std::span<const vk::DescriptorPoolSize> capacity) {
         return PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>(capacity, required);
     };
@@ -155,10 +159,21 @@ vk::DescriptorSet DescriptorHeap::Commit(
         pending_pools.push_back({curr_pool, work_semaphore->CurrentTick(),
                                  std::move(curr_pool_sizes), curr_pool_max_sets,
                                  curr_pool_flags});
-        auto reusable = std::find_if(pending_pools.begin(), pending_pools.end(),
-                                    [&](const PendingPool& candidate) {
-            return work_semaphore->IsFree(candidate.tick) && covers(candidate.sizes);
+        std::erase_if(pending_pools, [&](const PendingPool& candidate) {
+            if (!work_semaphore->IsFree(candidate.tick) ||
+                PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>(candidate.sizes,
+                                                                         pool_sizes)) {
+                return false;
+            }
+            device.destroyDescriptorPool(candidate.pool);
+            return true;
         });
+        auto reusable = std::find_if(
+            pending_pools.begin(), pending_pools.end(), [&](const PendingPool& candidate) {
+                return work_semaphore->IsFree(candidate.tick) &&
+                       PoolCoversDescriptorRequirements<vk::DescriptorPoolSize>(candidate.sizes,
+                                                                                pool_sizes);
+            });
         if (reusable != pending_pools.end()) {
             curr_pool = reusable->pool;
             curr_pool_sizes = std::move(reusable->sizes);
