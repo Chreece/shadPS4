@@ -853,9 +853,7 @@ std::map<Shader::Gcn::OrderedGds::CounterKey, u32> Rasterizer::ResolveVerifiedOr
     Shader::Gcn::OrderedGds::OrderedCounterSeedOrigin seed_origin) {
     using namespace Shader::Gcn::OrderedGds;
 
-    // Validate the dedicated CIK counter provenance and site dimensions
-    // BEFORE reading any GPU packets or mutating the resume device buffer.
-    // Passing a raw ordinary-GDS RAM snapshot must always fail closed.
+    // Validate counter provenance before reading packets or uploading resume state.
     auto counters = MakeExplicitOrderedCounterSeed(seed, seed_origin);
     SparseOrderedGdsEpoch host{creation.Size(), std::move(counters), verified_sites};
 
@@ -868,8 +866,7 @@ std::map<Shader::Gcn::OrderedGds::CounterKey, u32> Rasterizer::ResolveVerifiedOr
     UploadOrderedGdsPackets(device_resume, resume_offset,
                             std::span<const GpuResumePacket>{resume.data(), resume.size()});
 
-    // Return the updated dedicated packer state only after upload succeeds.
-    // The caller must retain this across epochs and dispatch boundaries.
+    // Upload prepares a continuation; it does not commit guest GDS changes.
     return host.CounterSnapshot();
 }
 
@@ -891,10 +888,8 @@ Rasterizer::ResolveOwnedCikComputeOrderedGdsFromLedger(
     if (owned.AuthorizedEpoch() != epoch) {
         throw std::invalid_argument("CIK ledger resolution has no authenticated GPU epoch");
     }
-    // Every dispatch carries the UPDATED dedicated packer state from the
-    // preceding successful GPU handoff. Source is verified externally.
-    // GPU readback, packet validation and upload are performed by the real
-    // Rasterizer bridge. Failure leaves ledger values intact and burns epoch.
+    // The ledger must be re-established from synchronized GDS for this dispatch.
+    // Failure leaves ledger values intact and burns the epoch.
     const auto seed = cik_ordered_packer_ledger_.BeginEpoch(context_identity, epoch);
     try {
         auto result = ResolveOwnedCikComputeOrderedGdsEpoch(
