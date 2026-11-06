@@ -11,6 +11,7 @@
 #if defined(__linux__) && defined(ARCH_X86_64)
 #include <cerrno>
 #include <csignal>
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/ucontext.h>
@@ -43,7 +44,7 @@ timespec started{};
 
 void SampleCpu(int, siginfo_t*, void* context) {
     const int saved_errno = errno;
-    if (sampling.load(std::memory_order_relaxed)) {
+    if (sampling.load(std::memory_order_acquire)) {
         const auto index = sample_count.fetch_add(1, std::memory_order_relaxed);
         if (index < SampleCapacity) {
             auto& sample = samples[index];
@@ -82,7 +83,7 @@ void StartCpuSampling() {
         return;
     }
     const itimerval timer{{0, 20000}, {0, 20000}};
-    sampling.store(true, std::memory_order_relaxed);
+    sampling.store(true, std::memory_order_release);
     if (setitimer(ITIMER_PROF, &timer, nullptr) != 0) {
         sampling.store(false, std::memory_order_relaxed);
         const int error = errno;
@@ -126,26 +127,45 @@ void DumpCpuSamples() {
     std::fprintf(stderr, "PERF_CPU_SUMMARY attempted=%u capacity=%zu unique=%zu reported=%zu\n",
                  attempted, SampleCapacity, ranked.size(),
                  std::min<std::size_t>(ranked.size(), 256));
+    const int memory_fd = open("/proc/self/mem", O_RDONLY | O_CLOEXEC);
     for (std::size_t i = 0; i < std::min<std::size_t>(ranked.size(), 256); ++i) {
         const auto& item = ranked[i];
         const auto& last = *item.last;
-        std::fprintf(stderr, "PERF_CPU_SAMPLE tid=%u count=%u first_ms=%llu last_ms=%llu", last.tid,
-                     item.count, static_cast<unsigned long long>(item.first->milliseconds),
-                     static_cast<unsigned long long>(last.milliseconds));
+        std::array<char, 2048> line{};
+        std::size_t length = 0;
+        const auto append = [&](const char* format, auto... args) {
+            const auto available = line.size() - length;
+            const int written = std::snprintf(line.data() + length, available, format, args...);
+            if (written > 0) {
+                length += std::min<std::size_t>(written, available - 1);
+            }
+        };
+        append("PERF_CPU_SAMPLE tid=%u count=%u first_ms=%llu last_ms=%llu", last.tid, item.count,
+               static_cast<unsigned long long>(item.first->milliseconds),
+               static_cast<unsigned long long>(last.milliseconds));
         for (std::size_t reg = 0; reg < RegisterNames.size(); ++reg) {
-            std::fprintf(stderr, " %s=%llx", RegisterNames[reg],
-                         static_cast<unsigned long long>(last.registers[reg]));
+            append(" %s=%llx", RegisterNames[reg],
+                   static_cast<unsigned long long>(last.registers[reg]));
         }
         std::array<unsigned char, 64> code{};
         const std::uint64_t address = last.registers[0] >= 16 ? last.registers[0] - 16 : 0;
         const iovec local{code.data(), code.size()};
         const iovec remote{reinterpret_cast<void*>(address), code.size()};
-        const auto read = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
-        std::fprintf(stderr, " code_address=%llx code=", static_cast<unsigned long long>(address));
-        for (ssize_t byte = 0; byte < read; ++byte) {
-            std::fprintf(stderr, "%02x", code[byte]);
+        auto read = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+        if (read < 0 && memory_fd >= 0) {
+            read = pread(memory_fd, code.data(), code.size(), static_cast<off_t>(address));
         }
-        std::fputc('\n', stderr);
+        const int read_error = read < 0 ? errno : 0;
+        append(" code_address=%llx code_bytes=%zd code_errno=%d code=",
+               static_cast<unsigned long long>(address), read, read_error);
+        for (ssize_t byte = 0; byte < read; ++byte) {
+            append("%02x", code[byte]);
+        }
+        append("\n");
+        std::fwrite(line.data(), 1, length, stderr);
+    }
+    if (memory_fd >= 0) {
+        close(memory_fd);
     }
 }
 #else
