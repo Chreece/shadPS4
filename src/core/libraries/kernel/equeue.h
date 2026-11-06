@@ -176,19 +176,17 @@ public:
     bool HasPendingIoEvents();
 
     bool AddSmallTimer(EqueueEvent& event);
-    bool HasSmallTimer() {
-        std::scoped_lock lock{m_mutex};
-        return !m_small_timers.empty();
-    }
     bool RemoveSmallTimer(u64 id) {
-        if (HasSmallTimer()) {
+        bool removed;
+        {
             std::scoped_lock lock{m_mutex};
-            return m_small_timers.erase(id) > 0;
+            removed = m_small_timers.erase(id) > 0;
         }
-        return false;
+        if (removed) {
+            m_cond.notify_all();
+        }
+        return removed;
     }
-
-    int WaitForSmallTimer(OrbisKernelEvent* ev, int num, u32 micros);
 
     bool EventExists(u64 id, s16 filter);
 

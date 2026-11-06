@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
 #include <future>
 #include "common/alignment.h"
 #include "common/arch.h"
@@ -18,6 +19,9 @@
 #include <csignal>
 #include <pthread.h>
 #include <unistd.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
 #ifdef ARCH_X86_64
 #include <xmmintrin.h>
 #endif
@@ -144,6 +148,14 @@ void NativeThread::Initialize() {
     sig_stack.ss_size = sig_stack_size;
     sig_stack.ss_flags = 0;
     ASSERT_MSG(sigaltstack(&sig_stack, nullptr) == 0, "Failed to set signal stack: {}", errno);
+#endif
+#ifdef __linux__
+    if (prctl(PR_SET_TIMERSLACK, 1UL, 0UL, 0UL, 0UL) != 0) {
+        static std::atomic<bool> warned{};
+        if (!warned.exchange(true)) {
+            LOG_WARNING(Core, "Unable to reduce guest timer coalescing: {}", errno);
+        }
+    }
 #endif
 #if defined(__linux__) && defined(ARCH_X86_64)
     EnableCpuIdFaulting();
