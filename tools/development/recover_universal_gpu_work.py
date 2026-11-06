@@ -12,7 +12,7 @@ import re
 import shutil
 import tarfile
 
-COLLECTOR_SHA256 = '3dc7b64a23c10a55ee4e6fb580e4a92e94ef53bded15db08dfb75247128dbfa0'
+COLLECTOR_SHA256 = 'ac31fdf2f5a991bef96ec870ea022e0fd0ed394838a3fdefa574a4690b3dc526'
 
 
 def digest(path):

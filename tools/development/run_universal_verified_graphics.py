@@ -806,7 +806,10 @@ def main():
                 shutil.copyfile(capture, target)
                 record['ordered_gds_evidence'].append({
                     'file': target.name, 'bytes': size, 'sha256': digest(target),
-                    'guest_continuation_executed': False})
+                    'guest_continuation_executed': None,
+                    'evidence_kind': ('host_device_authority_and_gpu_resume'
+                                      if capture.name.endswith('.inputs.bin')
+                                      else 'raw_gpu_checkpoint')})
         record['shader_diagnostics'] = collect_shader_diagnostics(
             runtime, out, out / 'capture/full-console.log', record['ordered_gds_evidence'])
         if (record['ordered_gds_capture_requested'] and record['ordered_gds_evidence'] and
