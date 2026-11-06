@@ -12,6 +12,8 @@ write a bounded, source-attributed archive for the shared emulator diary.
 
 from __future__ import annotations
 import argparse
+import bisect
+import struct
 import hashlib
 import json
 import os
@@ -21,6 +23,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 
 ERROR_TERMS = (
@@ -182,6 +185,475 @@ def capture_owned_stop_state(pid, out, proc=Path('/proc'),
     except OSError as error:
         state['error']=str(error)
     save(out/filename,state)
+
+
+def prepare_live_symbols(binary):
+    result = {'binary': str(binary), 'functions': [], 'sampler': {}}
+    try:
+        with binary.open('rb') as stream:
+            header = stream.read(64)
+            if header[:6] != b'\x7fELF\x02\x01' or struct.unpack_from('<H', header, 18)[0] != 62:
+                raise ValueError('ELF64_LITTLE_ENDIAN_X86_64_REQUIRED')
+            kind = struct.unpack_from('<H', header, 16)[0]
+            offset = struct.unpack_from('<Q', header, 32)[0]
+            size, count = struct.unpack_from('<HH', header, 54)
+            if kind not in (2, 3) or size != 56 or count > 128:
+                raise ValueError('UNSUPPORTED_ELF_LAYOUT')
+            stream.seek(offset)
+            segments = [struct.unpack('<IIQQQQQQ', stream.read(size)) for _ in range(count)]
+            initial = next(s for s in segments if s[0] == 1 and s[2] == 0)
+            result['initial_vaddr'] = initial[3]
+        symbols = subprocess.run(['nm', '-S', '-n', '-C', str(binary)],
+                                 capture_output=True, text=True, timeout=10, check=True).stdout
+        prefix = 'Common::PerformanceDiagnostics::(anonymous namespace)::'
+        expected = {'samples': 32768 * 152, 'sample_count': 4, 'started': 16}
+        for line in symbols.splitlines():
+            fields = line.split(maxsplit=3)
+            if len(fields) != 4:
+                continue
+            address, length, kind, name = fields
+            if name == 'Common::PerformanceDiagnostics::counters' and int(length, 16) == 13 * 48:
+                result['counters'] = int(address, 16)
+            if name.startswith(prefix) and name[len(prefix):] in expected:
+                key = name[len(prefix):]
+                if int(length, 16) != expected[key]:
+                    raise ValueError('UNSUPPORTED_SAMPLER_LAYOUT: ' + key)
+                result['sampler'][key] = int(address, 16)
+            if kind in 'tTwW':
+                result['functions'].append((int(address, 16), int(length, 16), name))
+        result['function_addresses'] = [f[0] for f in result['functions']]
+        if set(result['sampler']) != set(expected):
+            result['sampler_error'] = 'SAMPLER_SYMBOLS_UNAVAILABLE'
+    except (OSError, ValueError, StopIteration, struct.error, subprocess.SubprocessError) as error:
+        result['error'] = str(error)
+    return result
+
+
+def anonymous_executable(region):
+    return bool(region and 'x' in region['permissions'] and (
+        not region['path'] or region['path'].startswith(('/memfd:', '[anon:'))))
+
+
+def capture_reverse_context(read, mapping, threads, deadline):
+    result = {'blocks': [], 'seeds': [], 'references': [], 'references_are_candidates': True,
+              'maximum_scan_bytes': 32 * 1024 * 1024, 'maximum_seeds': 16,
+              'maximum_code_pages': 64, 'maximum_references': 256, 'scanned_bytes': 0}
+    regions, seeds, pages = {}, {}, set()
+    for thread in threads:
+        for sample in thread['samples']:
+            regs = sample['registers']
+            region = mapping(regs['rip'])
+            if not anonymous_executable(region):
+                continue
+            regions[region['start']] = region
+            for name, address in regs.items():
+                target = mapping(address)
+                if name in ('rip', 'rsp', 'rbp') or abs(address - regs['rsp']) < 65536:
+                    continue
+                if target is None or 'r' not in target['permissions'] or 'x' in target['permissions']:
+                    continue
+                if len(seeds) >= result['maximum_seeds']:
+                    result['seeds_truncated'] = True
+                    break
+                start = max(target['start'], address // 512 * 512)
+                seeds[start] = min(start + 512, target['end'])
+                raw = read(address, 64)
+                for offset in range(0, len(raw) - 7, 8):
+                    value = int.from_bytes(raw[offset:offset + 8], 'little')
+                    if anonymous_executable(mapping(value)) and len(seeds) < result['maximum_seeds']:
+                        seeds[value] = value + 1
+    result['seeds'] = [{'start': start, 'end': end} for start, end in sorted(seeds.items())]
+    starts = sorted(seeds)
+    if not starts:
+        return result
+    pattern = re.compile(rb'(?=[\x89\x8b\x8d\xc6\xc7][\x05\x0d\x15\x1d\x25\x2d\x35\x3d])')
+    for region in regions.values():
+        position = region['start']
+        while position < region['end']:
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                return result
+            available = result['maximum_scan_bytes'] - result['scanned_bytes']
+            if available <= 0:
+                result['scan_truncated'] = True
+                return result
+            size = min(1024 * 1024, region['end'] - position, available)
+            raw = read(position, min(size + 16, region['end'] - position))
+            result['scanned_bytes'] += min(size, len(raw))
+            for match in pattern.finditer(raw):
+                if time.monotonic() >= deadline:
+                    result['budget_exhausted'] = True
+                    return result
+                offset = match.start()
+                if offset >= size or offset + 6 > len(raw):
+                    continue
+                immediate = 4 if raw[offset] == 0xc7 else 1 if raw[offset] == 0xc6 else 0
+                if offset + 6 + immediate > len(raw):
+                    continue
+                target = (position + offset + 6 + immediate +
+                          struct.unpack_from('<i', raw, offset + 2)[0]) & ((1 << 64) - 1)
+                index = bisect.bisect_right(starts, target) - 1
+                if index < 0 or target >= seeds[starts[index]]:
+                    continue
+                if len(result['references']) >= result['maximum_references']:
+                    result['references_truncated'] = True
+                    return result
+                instruction = position + offset
+                result['references'].append({'instruction': instruction, 'target': target,
+                                              'opcode_byte': raw[offset]})
+                page = max(region['start'], instruction // 4096 * 4096)
+                if page in pages:
+                    continue
+                if len(pages) >= result['maximum_code_pages']:
+                    result['code_truncated'] = True
+                    continue
+                pages.add(page)
+                result['blocks'].append({'address': page, 'code': True,
+                    'hex': read(page, min(4096, region['end'] - page)).hex()})
+            if not raw:
+                result['read_incomplete'] = True
+                break
+            position += size
+    return result
+
+
+def capture_instruction_context(read, mapping, pointers, deadline):
+    result = {'blocks': [], 'references_are_candidates': True,
+              'maximum_code_pages': 128, 'maximum_data_blocks': 1536,
+              'maximum_data_blocks_per_depth': 512,
+              'maximum_code_reference_depth': 2, 'maximum_data_pointer_depth': 2}
+    if shutil.which('objdump') is None:
+        result['error'] = 'OBJDUMP_UNAVAILABLE'
+        return result
+    pages, data_blocks = {}, {}
+    pending_data = []
+    data_depth_counts = [0, 0, 0]
+
+    def queue(address, origin, depth, data_depth=0):
+        region = mapping(address)
+        if region is None or not region['permissions'].startswith('r'):
+            return
+        code = 'x' in region['permissions']
+        if code and depth > result['maximum_code_reference_depth']:
+            return
+        if code and region['path'] and not region['path'].startswith(('/memfd:', '[anon:')):
+            return
+        size = 4096 if code else 1024
+        start = max(region['start'], address // size * size)
+        collection = pages if code else data_blocks
+        if start in collection:
+            return
+        if not code and data_depth_counts[data_depth] >= result['maximum_data_blocks_per_depth']:
+            result['data_truncated'] = True
+            return
+        if len(collection) >= result['maximum_code_pages' if code else 'maximum_data_blocks']:
+            result['code_truncated' if code else 'data_truncated'] = True
+            return
+        collection[start] = {'address': start, 'origin': origin,
+                             'depth': depth if code else data_depth,
+                             'code': code, 'size': min(size, region['end'] - start)}
+        if not code:
+            data_depth_counts[data_depth] += 1
+            pending_data.append(collection[start])
+
+    for item in pointers:
+        if item['code'] and item['depth'] == 0:
+            queue(item['pointer'], item['origins'][0], 0)
+    for depth in range(result['maximum_code_reference_depth'] + 1):
+        batch = [item for item in pages.values() if item['depth'] == depth]
+        if not batch:
+            break
+        chunks = []
+        for item in batch:
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                break
+            raw = read(item['address'], item['size'])
+            result['blocks'].append(dict(item, hex=raw.hex()))
+            chunks.append(raw.ljust(4096, b'\x00'))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            result['budget_exhausted'] = True
+            break
+        try:
+            with tempfile.TemporaryDirectory(prefix='shadps4-code-context-') as directory:
+                binary = Path(directory) / 'context.bin'
+                binary.write_bytes(b''.join(chunks))
+                decoded = subprocess.run(
+                    ['objdump', '-D', '-b', 'binary', '-m', 'i386:x86-64',
+                     '--no-show-raw-insn', str(binary)],
+                    capture_output=True, text=True, timeout=remaining, check=True).stdout
+        except (OSError, subprocess.SubprocessError) as error:
+            result['error'] = type(error).__name__
+            result['budget_exhausted'] = time.monotonic() >= deadline
+            break
+        for line in decoded.splitlines():
+            if time.monotonic() >= deadline:
+                result['budget_exhausted'] = True
+                break
+            match = re.match(r'^\s*([0-9a-f]+):\s+(\S+)\s*(.*)$', line)
+            if not match:
+                continue
+            offset, mnemonic, operands = int(match[1], 16), match[2], match[3]
+            index = offset // 4096
+            if index >= len(batch):
+                continue
+            item = batch[index]
+            adjustment = item['address'] - index * 4096
+            origin = f'instruction:{adjustment + offset:#x}'
+            if depth < result['maximum_code_reference_depth'] and (
+                    mnemonic.startswith('j') or mnemonic in ('call', 'callq', 'loop', 'loope', 'loopne')):
+                target = re.match(r'0x([0-9a-f]+)(?:\s|$)', operands)
+                if target:
+                    queue((int(target[1], 16) + adjustment) & ((1 << 64) - 1), origin, depth + 1)
+            relative = re.search(r'#\s*0x([0-9a-f]+)', operands) if '(%rip)' in operands else None
+            if relative:
+                queue((int(relative[1], 16) + adjustment) & ((1 << 64) - 1), origin, depth + 1)
+            for immediate in re.findall(r'\$0x([0-9a-f]+)', operands):
+                queue(int(immediate, 16), origin, depth + 1)
+    for item in pending_data:
+        if time.monotonic() >= deadline:
+            result['budget_exhausted'] = True
+            break
+        raw = read(item['address'], item['size'])
+        result['blocks'].append(dict(item, hex=raw.hex()))
+        if item['depth'] < result['maximum_data_pointer_depth']:
+            for offset in range(0, len(raw) - 7, 8):
+                queue(int.from_bytes(raw[offset:offset + 8], 'little'),
+                      f'data:{item["address"] + offset:#x}',
+                      result['maximum_code_reference_depth'] + 1, item['depth'] + 1)
+    result['bytes'] = sum(len(item['hex']) // 2 for item in result['blocks'])
+    result['code_pages_captured'] = sum(item['code'] for item in result['blocks'])
+    result['data_blocks_captured'] = len(result['blocks']) - result['code_pages_captured']
+    return result
+
+
+def capture_owned_live_memory(pid, out, second, symbols):
+    record = {'pid': pid, 'threads': [], 'method': 'owned-child-proc-memory-read-only',
+              'coherent_snapshot': False, 'signals_sent': False,
+              'registers_are_prior_profiler_samples': True,
+              'stack_code_candidates_are_not_unwound_frames': True,
+              'maximum_threads': 128, 'maximum_sample_age_ms': 2000,
+              'maximum_data_blocks': 512, 'maximum_code_blocks': 128,
+              'maximum_pointer_depth': 2, 'pointer_context': []}
+    began = time.monotonic()
+    deadline = began + 1.0
+    mem = None
+    try:
+        process = Path('/proc') / str(pid)
+        stat = (process / 'stat').read_text().rsplit(') ', 1)[1].split()
+        if int(stat[1]) != os.getpid():
+            raise RuntimeError('NOT_OWNED_DIRECT_CHILD')
+        if Path(os.readlink(process / 'exe')).resolve() != Path(symbols['binary']).resolve():
+            raise RuntimeError('OWNED_EXECUTABLE_CHANGED')
+        maps = []
+        for line in (process / 'maps').read_text().splitlines():
+            fields = line.split(maxsplit=5)
+            start, end = (int(value, 16) for value in fields[0].split('-'))
+            maps.append({'start': start, 'end': end, 'permissions': fields[1],
+                         'offset': int(fields[2], 16),
+                         'path': fields[5] if len(fields) > 5 else ''})
+        record['maps'] = maps
+        map_starts = [r['start'] for r in maps]
+        initial = next(r for r in maps if r['path'] == symbols['binary'] and r['offset'] == 0)
+        bias = initial['start'] - symbols.get('initial_vaddr', 0)
+        record['load_bias'] = bias
+        mem = os.open(process / 'mem', os.O_RDONLY | os.O_CLOEXEC)
+
+        def mapping(address):
+            index = bisect.bisect_right(map_starts, address) - 1
+            if index >= 0 and address < maps[index]['end']:
+                return maps[index]
+            return None
+
+        def read(address, size):
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                return b''
+            region = mapping(address)
+            if region is None or not region['permissions'].startswith('r'):
+                return b''
+            try:
+                return os.pread(mem, min(size, region['end'] - address), address)
+            except (OSError, OverflowError):
+                return b''
+
+        def location(address):
+            region = mapping(address)
+            if region is None or 'x' not in region['permissions']:
+                return None
+            entry = {'address': address, 'module': region['path'],
+                     'file_offset': address - region['start'] + region['offset']}
+            if region['path'] == symbols['binary']:
+                relative = address - bias
+                index = bisect.bisect_right(symbols.get('function_addresses', []), relative) - 1
+                if index >= 0:
+                    start, length, name = symbols['functions'][index]
+                    if start <= relative < start + length:
+                        entry.update(symbol=name, symbol_offset=relative - start)
+            return entry
+
+        pending = []
+        contexts = {}
+
+        def queue_pointer(address, origin, depth=0):
+            region = mapping(address)
+            if region is None or not region['permissions'].startswith('r'):
+                return
+            is_code = 'x' in region['permissions']
+            start = max(region['start'], (address // 128) * 128 - 128) if is_code else (
+                max(region['start'], (address // 1024) * 1024))
+            key = (is_code, start)
+            if key in contexts:
+                item = contexts[key]
+                if len(item['origins']) < 4 and origin not in item['origins']:
+                    item['origins'].append(origin)
+                return
+            if len(pending) >= 2048:
+                record['pointer_queue_truncated'] = True
+                return
+            item = {'address': start, 'pointer': address, 'code': is_code,
+                    'depth': depth, 'origins': [origin]}
+            contexts[key] = item
+            pending.append(item)
+
+        def memory(regs, origin):
+            stack = read(regs['rsp'], 2048)
+            entry = {'code': {'address': max(0, regs['rip'] - 16),
+                              'hex': read(max(0, regs['rip'] - 16), 96).hex()},
+                     'instruction_location': location(regs['rip']),
+                     'stack': {'address': regs['rsp'], 'hex': stack.hex()},
+                     'register_memory': {key: {'address': value, 'hex': data.hex()}
+                        for key, value in regs.items() if key not in ('rip', 'rsp')
+                        and (data := read(value, 64))},
+                     'stack_code_candidates': []}
+            for key, value in regs.items():
+                queue_pointer(value, origin + ':' + key)
+            for offset in range(0, len(stack) - 7, 8):
+                address = int.from_bytes(stack[offset:offset + 8], 'little')
+                candidate = location(address)
+                if candidate:
+                    entry['stack_code_candidates'].append(dict(candidate, stack_offset=offset))
+                if offset < 512:
+                    queue_pointer(address, origin + ':stack+' + str(offset))
+            return entry
+
+        if 'counters' in symbols:
+            raw = read(bias + symbols['counters'], 13 * 48)
+            if len(raw) == 13 * 48:
+                names = ('draw dispatch ordered-ds bind-buffers bind-textures shader-compile '
+                         'pipeline-lookup image-readback buffer-readback page-protect submit '
+                         'gpu-wait buffer-clamp').split()
+                fields = 'calls inclusive_ns self_ns max_ns bytes last_ns'.split()
+                record['live_performance_regions'] = [dict(name=name,
+                    **dict(zip(fields, struct.unpack_from('<6Q', raw, index * 48))))
+                    for index, name in enumerate(names)]
+            else:
+                record['live_performance_error'] = 'COUNTER_MEMORY_UNAVAILABLE'
+
+        latest = {}
+        anonymous_sample_tids = set()
+        sampler = symbols.get('sampler', {})
+        if symbols.get('error') or symbols.get('sampler_error'):
+            record['sampler_error'] = symbols.get('error') or symbols['sampler_error']
+        elif set(sampler) == {'samples', 'sample_count', 'started'}:
+            try:
+                count = struct.unpack('<I', read(bias + sampler['sample_count'], 4))[0]
+                seconds, nanoseconds = struct.unpack('<qq', read(bias + sampler['started'], 16))
+                now_ms = (time.monotonic_ns() - seconds * 10**9 - nanoseconds) // 10**6
+                record.update(samples_attempted=count, sampler_now_ms=now_ms,
+                              sampler_capacity_exceeded=count > 32768)
+                names = 'rip rsp rbp rax rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15'.split()
+                sample_bytes = min(count, 32768) * 152
+                buffer = bytearray()
+                while len(buffer) < sample_bytes:
+                    chunk = read(bias + sampler['samples'] + len(buffer), sample_bytes - len(buffer))
+                    if not chunk:
+                        break
+                    buffer.extend(chunk)
+                record['samples_read'] = len(buffer) // 152
+                for index in range(len(buffer) // 152 - 1, -1, -1):
+                    raw = buffer[index * 152:(index + 1) * 152]
+                    if len(raw) != 152 or raw[0] != 1:
+                        continue
+                    ready, tid, timestamp, *values = struct.unpack('<B3xIQ17Q', raw)
+                    age = now_ms - timestamp
+                    if not 0 <= age <= 2000:
+                        continue
+                    entries = latest.setdefault(tid, [])
+                    is_anonymous = anonymous_executable(mapping(values[0]))
+                    if (len(entries) < 3 or (is_anonymous and tid not in anonymous_sample_tids)) and not any(
+                            x['registers']['rip'] == values[0] for x in entries):
+                        entries.append({'sample_index': index, 'sample_ms': timestamp,
+                                        'age_ms': age, 'registers': dict(zip(names, values))})
+                        if is_anonymous:
+                            anonymous_sample_tids.add(tid)
+                    if time.monotonic() >= deadline:
+                        break
+            except struct.error:
+                record['sampler_error'] = 'SAMPLER_MEMORY_UNAVAILABLE'
+        tasks = []
+        for task in (process / 'task').iterdir():
+            try:
+                runtime = int((task / 'schedstat').read_text().split()[0])
+                tasks.append((runtime, int(task.name), (task / 'comm').read_text().strip()))
+            except (OSError, ValueError):
+                continue
+        record['thread_count'] = len(tasks)
+        record['threads_truncated'] = len(tasks) > record['maximum_threads']
+        for runtime, tid, name in sorted(tasks, reverse=True)[:record['maximum_threads']]:
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                break
+            item = {'tid': tid, 'name': name, 'runtime_ns': runtime, 'samples': []}
+            record['threads'].append(item)
+            for sample in latest.get(tid, []):
+                item['samples'].append(dict(sample,
+                    memory=memory(sample['registers'], f'{tid}:sample-{sample["sample_index"]}')))
+            try:
+                syscall = (process / 'task' / str(tid) / 'syscall').read_text().split()
+                item['syscall'] = syscall
+                if len(syscall) >= 3 and syscall[0] != 'running':
+                    regs = dict(zip(('rsp', 'rip'), (int(v, 0) for v in syscall[-2:])))
+                    for index, value in enumerate(syscall[1:-2]):
+                        queue_pointer(int(value, 0), f'{tid}:syscall-arg-{index}')
+                    item['blocked_syscall_memory'] = dict(registers=regs,
+                        memory=memory(regs, f'{tid}:syscall'))
+            except (OSError, ValueError) as error:
+                item['syscall_error'] = str(error)
+        record['threads_captured'] = len(record['threads'])
+        data_count = code_count = 0
+        for item in pending:
+            if time.monotonic() >= deadline:
+                record['budget_exhausted'] = True
+                break
+            if item['code']:
+                if code_count >= record['maximum_code_blocks']:
+                    record['code_context_truncated'] = True
+                    continue
+                code_count += 1
+            else:
+                if data_count >= record['maximum_data_blocks']:
+                    record['data_context_truncated'] = True
+                    continue
+                data_count += 1
+            raw = read(item['address'], 512 if item['code'] else 2048)
+            record['pointer_context'].append(dict(item, hex=raw.hex()))
+            if not item['code'] and item['depth'] < record['maximum_pointer_depth']:
+                for offset in range(0, len(raw) - 7, 8):
+                    queue_pointer(int.from_bytes(raw[offset:offset + 8], 'little'),
+                                  f'{item["address"]:#x}+{offset}', item['depth'] + 1)
+        record['pointer_context_bytes'] = sum(len(item['hex']) // 2
+                                               for item in record['pointer_context'])
+        record['reverse_context'] = capture_reverse_context(read, mapping, record['threads'], deadline)
+        record['instruction_context'] = capture_instruction_context(read, mapping, pending, deadline)
+    except (OSError, RuntimeError, ValueError, StopIteration) as error:
+        record['error'] = str(error)
+    finally:
+        if mem is not None:
+            os.close(mem)
+        record['elapsed_seconds'] = time.monotonic() - began
+        save(out / f'owned-live-memory-{second:03d}s.json', record)
 
 
 def summarize(console,out):
@@ -432,6 +904,7 @@ def main():
             'audio_audible_acceptance':'NOT_OBSERVED',
             'gameplay_acceptance':'NOT_OBSERVED','screenshots':[],
             'owned_child_terminated':False,'exit_code':None}
+    live_symbols = prepare_live_symbols(binary) if launch['performance_diagnostics_requested'] else None
     console=report/'full-console.log'
     child=None
     began=time.monotonic()
@@ -481,6 +954,8 @@ def main():
                         taken.add(second)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
+                        if second in (80, 110) and live_symbols is not None:
+                            capture_owned_live_memory(child.pid, report, second, live_symbols)
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
