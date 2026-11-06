@@ -800,15 +800,42 @@ def capture_native_mappings(pid, out):
 
 def capture_performance_usage(pid, out, elapsed, proc=Path('/proc'),
                               drm=Path('/sys/class/drm')):
-    record={'elapsed_seconds':round(elapsed,3),'gpus':[]}
+    record={'elapsed_seconds':round(elapsed,3),
+            'monotonic_seconds':round(time.monotonic(),6),'gpus':[]}
     try:
         record['process_stat']=(proc/str(pid)/'stat').read_text()[:4096]
     except OSError as error:
         record['process_stat_error']=str(error)
+    record['drm_clients']=[]
+    seen=set()
+    try:
+        descriptors=sorted((proc/str(pid)/'fdinfo').iterdir(),key=lambda p:int(p.name))
+    except OSError as error:
+        descriptors=[]
+        record['drm_client_error']=str(error)
+    record['drm_descriptors_truncated']=len(descriptors)>512
+    for descriptor in descriptors[:512]:
+        try:
+            fields={}
+            with descriptor.open() as stream:
+                for line in stream.read(16384).splitlines():
+                    key,separator,value=line.partition(':')
+                    if separator and key.startswith('drm-'):
+                        fields[key]=value.strip()
+            if 'drm-driver' not in fields:
+                continue
+            identity=(fields.get('drm-pdev'),fields['drm-driver'],fields.get('drm-client-id'))
+            if identity[2] is not None and identity in seen:
+                continue
+            seen.add(identity)
+            record['drm_clients'].append({'fd':descriptor.name,'fields':fields})
+        except OSError:
+            continue
     cards=sorted(p for p in drm.glob('card*') if re.fullmatch(r'card\d+',p.name))
     for card in cards[:8]:
-        gpu={'card':card.name}
-        for metric in ('gpu_busy_percent','mem_busy_percent','mem_info_vram_used'):
+        gpu={'card':card.name,'device':(card/'device').resolve().name}
+        for metric in ('gpu_busy_percent','mem_busy_percent','mem_info_vram_used',
+                       'mem_info_vram_total','mem_info_gtt_used'):
             try:
                 value=(card/'device'/metric).read_text()[:128].strip()
                 if value.isdecimal():
@@ -818,6 +845,22 @@ def capture_performance_usage(pid, out, elapsed, proc=Path('/proc'),
         record['gpus'].append(gpu)
     with (out/'performance-usage.jsonl').open('a') as stream:
         stream.write(json.dumps(record)+'\n')
+    return record
+
+
+def gpu_memory_headroom_failure(usage):
+    devices={client['fields'].get('drm-pdev') for client in usage['drm_clients']}
+    cards=[gpu for gpu in usage['gpus'] if gpu.get('mem_info_vram_total',0)>0 and
+           'mem_info_vram_used' in gpu]
+    selected=[gpu for gpu in cards if gpu['device'] in devices]
+    if not selected and cards:
+        selected=[max(cards,key=lambda gpu:gpu['mem_info_vram_total'])]
+    for gpu in selected:
+        free=gpu['mem_info_vram_total']-gpu['mem_info_vram_used']
+        if free<8*GIB:
+            return {'card':gpu['card'],'device':gpu['device'],'free_bytes':free,
+                    'minimum_free_bytes':8*GIB,'elapsed_seconds':usage['elapsed_seconds']}
+    return None
 
 
 def classify_native_fault(console, out, binary):
@@ -921,11 +964,18 @@ def main():
             due=(8,25,80,110)
             taken=set()
             gpu_failure=None
+            memory_failure=None
             validation_error=None
             console_offset=0
             pending_line=''
             while child.poll() is None and time.monotonic()-began<118:
                 elapsed=time.monotonic()-began
+                usage=capture_performance_usage(child.pid,report,elapsed)
+                memory_failure=gpu_memory_headroom_failure(usage)
+                if memory_failure:
+                    result['gpu_memory_headroom_failure']=memory_failure
+                    result['exit_reason']='GPU_MEMORY_HEADROOM_EXHAUSTED'
+                    break
                 with console.open('rb') as monitor:
                     monitor.seek(console_offset)
                     recent = monitor.read(4 * 1024**2).decode('utf-8', 'replace')
@@ -946,8 +996,6 @@ def main():
                         break
                 if elapsed-previous_map_capture>=1.0:
                     capture_native_mappings(child.pid,report)
-                    if launch['performance_diagnostics_requested']:
-                        capture_performance_usage(child.pid,report,elapsed)
                     previous_map_capture=elapsed
                 for second in due:
                     if elapsed>=second and second not in taken:
@@ -961,6 +1009,8 @@ def main():
                 time.sleep(min(0.4,max(0.0,118-elapsed)))
             if gpu_failure:
                 result['exit_reason']='GPU_CONTEXT_LOST'
+            elif memory_failure:
+                result['exit_reason']='GPU_MEMORY_HEADROOM_EXHAUSTED'
             elif validation_error:
                 result['exit_reason']='VULKAN_VALIDATION_FAILED'
             elif child.poll() is None:
@@ -1016,7 +1066,7 @@ def main():
     print('TEST_RUNTIME_SECONDS='+str(result['elapsed_seconds']),flush=True)
     print('GAME_PROCESS_LEFT_RUNNING='+('NO' if result['owned_child_terminated'] else 'UNKNOWN'),flush=True)
     print('NO_AUTOMATIC_INPUT=YES; FULLSCREEN_AND_FPS=YES; NO_CPU_ID_OVERRIDES=YES',flush=True)
-    return 0 if not failure and not result.get('gpu_failure') and not result.get('graphics_diagnostics_failure') and not (
+    return 0 if not failure and not result.get('gpu_failure') and not result.get('gpu_memory_headroom_failure') and not result.get('graphics_diagnostics_failure') and not (
         launch['vulkan_diagnostics_requested'] and (
             result.get('first_validation_failure') or not result.get('validation_layer_active'))
         ) and result['owned_child_terminated'] and (

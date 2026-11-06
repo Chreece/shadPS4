@@ -14,13 +14,14 @@ import signal
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import urllib.request
 
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = 'bef5f87a1aa38ad17afc97604694aac2cc6cf9b22cb081e3a70949d606adc8de'
+OBSERVER_SHA256 = '33eb84253f4c4bf8b9939a13cf65484f4f09e9904f826a4f0192945c26e74df9'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -446,8 +447,46 @@ def unload_models(out, record):
             record['ollama_unloaded'].append(lease['model'])
             save(out / 'ollama-restore.json', record['ollama_restore_leases'])
         record['ollama_attempts'].append({'transport': endpoint, 'result': 'SUCCESS'})
+        record['ollama_endpoint'] = endpoint
         return
     raise RuntimeError('NO_LOCAL_OLLAMA_API_WITH_RESTORABLE_MODEL_METADATA')
+
+
+class ModelUsageMonitor:
+    def __init__(self, out, endpoints):
+        self.out = out
+        self.endpoints = list(dict.fromkeys(endpoints))[:8]
+        self.stopped = threading.Event()
+        self.thread = threading.Thread(target=self.run, daemon=True)
+
+    def run(self):
+        began = time.monotonic()
+        with (self.out / 'ollama-during.jsonl').open('a') as stream:
+            while not self.stopped.is_set():
+                for endpoint in self.endpoints:
+                    if self.stopped.is_set():
+                        break
+                    sample = {'elapsed_seconds': round(time.monotonic() - began, 3),
+                              'monotonic_seconds': round(time.monotonic(), 6),
+                              'endpoint': endpoint}
+                    try:
+                        models = ollama('ps', base_url=endpoint, timeout=.5).get('models', [])
+                        sample['models'] = [{key: model.get(key) for key in
+                            ('name', 'model', 'digest', 'size_vram', 'context_length', 'expires_at')}
+                            for model in models[:32]]
+                        sample['truncated'] = len(models) > 32
+                    except (OSError, ValueError, AttributeError, TypeError) as error:
+                        sample['error'] = str(error)
+                    stream.write(json.dumps(sample) + '\n')
+                    stream.flush()
+                self.stopped.wait(.5)
+
+    def start(self):
+        self.thread.start()
+
+    def stop(self):
+        self.stopped.set()
+        self.thread.join(timeout=1)
 
 
 def restore_models(out, record, observer):
@@ -672,6 +711,7 @@ def main():
     record['context_games'] = [game.parent.name]
     expected_elf = ELF
     module = None
+    model_monitor = None
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -753,6 +793,11 @@ def main():
         record['vram_free_at_launch'] = free_vram()
         if record['vram_free_at_launch'] < MIN_FREE:
             raise RuntimeError('LESS_THAN_8_GIB_VRAM_FREE')
+        record.setdefault('ollama_attempts', [])
+        endpoints = ([record['ollama_endpoint']] if record.get('ollama_endpoint') else
+                     list(ollama_endpoints(record)))
+        model_monitor = ModelUsageMonitor(out, endpoints)
+        model_monitor.start()
         os.environ['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
         record['graphics_diagnostics_requested'] = True
         sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
@@ -773,6 +818,8 @@ def main():
         record['error'] = str(exc) or type(exc).__name__
         print('STOP=' + record['error'], flush=True)
     finally:
+        if model_monitor is not None:
+            model_monitor.stop()
         record['game_launched'] = (out / 'capture/launch.json').is_file()
         record['tested_games'] = [game.parent.name] if record['game_launched'] else []
         if record['game_launched'] and record['result'] == 'PREFLIGHT_FAILED':
@@ -790,6 +837,7 @@ def main():
         record['stop_remaining_tests'] = bool(record.get('stop_remaining_tests') or
             record['game_launched'] and (
             record.get('native', {}).get('gpu_failure') or
+            record.get('native', {}).get('gpu_memory_headroom_failure') or
             not record.get('native', {}).get('graphics_diagnostics_active') or
             diagnostics and not record.get('native', {}).get('validation_layer_active') or
             not record.get('native', {}).get('owned_child_terminated', False)))
