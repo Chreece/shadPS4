@@ -495,9 +495,18 @@ void Runtime::CopyMip(VideoCore::Image* src, VideoCore::Image* dst, u32 mip, u32
     const auto mip_block_p = std::max<u32>(dst->info.mips_layout[mip].pitch >> dst_dim, 1u);
 
     const auto src_dim = src->info.props.is_block ? 2 : 0;
-    ASSERT(mip_block_w == (src->info.size.width >> src_dim));
-    ASSERT(mip_block_h == (src->info.size.height >> src_dim));
-    ASSERT(mip_block_p == (src->info.pitch >> src_dim));
+    ASSERT_MSG(mip_block_w == std::max(src->info.size.width >> src_dim, 1u),
+               "Mip copy width mismatch: source={} destination={} mip={} source-block={} "
+               "destination-block={}",
+               src->info.size.width, dst->info.size.width, mip, src_dim, dst_dim);
+    ASSERT_MSG(mip_block_h == std::max(src->info.size.height >> src_dim, 1u),
+               "Mip copy height mismatch: source={} destination={} mip={} source-block={} "
+               "destination-block={}",
+               src->info.size.height, dst->info.size.height, mip, src_dim, dst_dim);
+    ASSERT_MSG(mip_block_p == std::max(src->info.pitch >> src_dim, 1u),
+               "Mip copy pitch mismatch: source={} destination={} mip={} source-block={} "
+               "destination-block={}",
+               src->info.pitch, dst->info.mips_layout[mip].pitch, mip, src_dim, dst_dim);
 
     const auto [src_layers, dst_layers] =
         SanitizeCopyLayers(src->info, dst->info, src->info.size.depth);
