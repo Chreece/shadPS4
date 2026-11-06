@@ -1,0 +1,175 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T21:19:59.209715+00:00",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/186",
+  "archive": "universal-two-games-20261106T204317Z-1532871.tar.gz",
+  "archive_sha256": "d9a473235b18f1cc7ebbb447cde9a056f79a14b698ea06df11f74901714c1775",
+  "library_file_id": "libfile_18bd7b0e8d84819185a1f8ebae0a233d",
+  "tested_source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+  "tested_runner_commit": "110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b",
+  "candidate_source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+  "next_runner_commit": "bf8b7de00607ec19a805cd8720462cb0ccc64c78",
+  "runner_tree": "49eb3ccb8704656122ffc81541e474ee928a8845",
+  "upstream_commit": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_preparation_check": "Current upstream checked during preparation, unchanged. Existing verified native build is reused; no moving-ref checks at build or launch.",
+  "native_build": {
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "completed_utc": "2026-11-06T21:00:57Z",
+    "duration_approx_seconds": 1060,
+    "binary": "/home/chreece/projects/shadps4/tests/universal-upstream-4caaea20e0bc/build/shadps4",
+    "binary_sha256": "2e71fab6d42f8e35573dbe54d25f2540697b8e48785da4cd3bc2f84d9b0469be"
+  },
+  "native_acceptance": "FAILED_GOW_GPU_COMPLETION_STALL_GOT_NOT_LAUNCHED",
+  "games": {
+    "gow": {
+      "elapsed_seconds": 120,
+      "owned_child_terminated": false,
+      "exit_code": null,
+      "exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+      "stop_remaining_tests": true,
+      "visual_80s": "Kratos in snowy forest; missing/black regions, overlay 11 FPS / 94.4 ms.",
+      "visual_110s": "Black except overlay 10 FPS / 104.4 ms; not gameplay recovery.",
+      "threads_110s": "GPU renderer and WSI presentation threads wait in drm_syncobj_array_wait_timeout.constprop.0; audio threads show ordinary futex/timer sleeps.",
+      "stop_state": "Main leader zombie; SDLAudioP35 remains in D state at dma_fence_wait_any_timeout. Thread name alone does not establish an audio-mixing root cause.",
+      "vram_free_at_launch": 20571910144,
+      "ollama_restoration": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS",
+      "explicit_device_lost_reported": false,
+      "vulkan_validation_enabled": false,
+      "kernel_log_visibility": "Both unprivileged captures deny system-journal visibility; no kernel-clean claim is possible.",
+      "driver": "RADV 25.0.7, AMD Radeon RX 7900 XTX NAVI31, physical subgroup size 64"
+    },
+    "got": {
+      "launched": false,
+      "reason": "Batch stopped after GoW owned-process termination remained unconfirmed. No new GoT launch failure or native PR185 layout outcome is established."
+    }
+  },
+  "performance": {
+    "caution": "Inclusive regions overlap and must not be summed. Whole-run counters and different scenes do not establish an FPS regression or improvement.",
+    "gpu_wait": {
+      "calls": 29700,
+      "inclusive_seconds": 38.06,
+      "self_seconds": 37.879,
+      "max_seconds": 10.182
+    },
+    "ordered_ds": {
+      "calls": 2075,
+      "inclusive_seconds": 29.054,
+      "self_seconds": 3.542,
+      "max_seconds": 10.184
+    },
+    "page_protect": {
+      "calls": 4322046,
+      "seconds": 12.674
+    },
+    "shader_compile": {
+      "calls": 1710,
+      "seconds": 5.312,
+      "max_seconds": 2.912
+    },
+    "wait_progress": "First sustained interval near 90 seconds waits for tick 32210 with completed 32207. Later interval near 106 seconds waits for 32248 with completed 32245. Some progress occurs between long waits; these are not proof of a permanently stalled single shader.",
+    "readback_bytes_caution": "Image-readback counter records requested scan bytes; it is not measured physical GPU transfer traffic."
+  },
+  "deep_research": [
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5601",
+      "head": "13b8acd0017e5a6ce80e22c0f0587a6fbfabb120",
+      "state": "open, unmerged at review",
+      "finding": "Adds guest stencil-plane uploads and dirty/alias propagation; current retained branch still excludes stencil from RefreshImage and links stencil proxies without that upload. Credible missing-fill lead.",
+      "decision": "Not integrated blindly. Need ownership, clean/reused R8 proxy, alias bounds and tiled S8 validation. No proof this is the GoT defect."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5492",
+      "head": "9f55474ad45778f8ac08e923574f214d492997f2",
+      "state": "open, unmerged at review",
+      "finding": "Moves normal Audio3d output to a per-port feeder; associated-port flush still drains on caller.",
+      "decision": "Captured renderer is waiting for GPU completion. This is not evidence that the feeder fixes this stall."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5511",
+      "head": "644c5bd686553442432d1fda211169ad69f28924",
+      "state": "open, unmerged at review",
+      "finding": "Lowers ordered count to buffer atomic add (with first-lane/add-lane variants). Source review does not find full guest wave ordering/control preservation.",
+      "decision": "Not a semantics-preserving universal replacement for the retained ordered continuation protocol; no benchmark claim."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5596",
+      "head": "d780d5343aca3715657fd10e17811079ac27ca60",
+      "finding": "Audio deadline/pacing and duplicate wait changes have other-title evidence; not linked to this GPU completion failure.",
+      "decision": "Not selected as a hang fix."
+    },
+    {
+      "urls": [
+        "https://github.com/shadps4-emu/shadPS4/pull/5310",
+        "https://github.com/shadps4-emu/shadPS4/pull/5623",
+        "https://github.com/shadps4-emu/shadPS4/pull/5621",
+        "https://github.com/shadps4-emu/shadPS4/pull/5648"
+      ],
+      "finding": "Reviewed wave32-half synchronization/ballot leads against native subgroup64 and compute wave64 request. They do not directly establish the native failing path.",
+      "decision": "No indiscriminate wave32 fixes applied; graphics/individual shaders would still require evidence."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5575",
+      "finding": "Reuse of unchanged small buffers is a plausible CPU cost optimization. Current retained path still streams small reads.",
+      "decision": "Needs coherence/invalidations audit and same-scene measurements; not established as the GPU stall cause."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5612",
+      "finding": "Bounded timeline spin polling targets short host-wait latency, not evidence for the observed ten-second GPU stalls.",
+      "decision": "Not selected."
+    },
+    {
+      "url": "https://github.com/shadps4-emu/shadPS4/pull/5652",
+      "finding": "Pending image-transition merging overlaps already-retained serialization of pending transitions.",
+      "decision": "No unreviewed overlapping synchronization patch applied."
+    },
+    {
+      "urls": [
+        "https://docs.mesa3d.org/relnotes/25.2.0.html",
+        "https://docs.mesa3d.org/relnotes/26.0.0.html"
+      ],
+      "finding": "Later official Mesa releases contain GFX11/driver hang and shader correctness fixes. Native RADV is 25.0.7.",
+      "decision": "Driver is a credible separate lead, not a matched root cause. Read kernel reset/fault messages first; no host package or driver change made."
+    },
+    {
+      "finding": "Retained ordered-count continuation path performs packet completion, checkpoint completion and GDS snapshot completion in nonterminal phases.",
+      "decision": "Batching those dependent readbacks may reduce host/GPU synchronization cost after equivalence validation. Not implemented; the measured inclusive cost contains GPU waits."
+    },
+    {
+      "finding": "Other-emulator GoW PS5 progress and stencil alias fixes were examined as analogues.",
+      "decision": "Different emulator, guest build and ISA. No direct PS4 compatibility or patch portability claim."
+    }
+  ],
+  "capture_defects": [
+    "PerformanceDiagnostics::Enabled disables both Record and Dump in the GPU history recorder. The latest gpu-work.log is empty for that reason.",
+    "Unprivileged journal commands cannot see kernel messages on this host; empty output does not establish healthy GPU state."
+  ],
+  "changes": [
+    "Explicit trace mode enables existing GPU command history with shader dumps, disables Vulkan validation/host markers and uses asynchronous logging.",
+    "Trace overrides inherited performance mode; direct conflicting trace+performance or trace+validation use is rejected.",
+    "Explicit opt-in bounded sudo -n journalctl captures before any game and after launched runs; password authentication occurs once in the user paste, not inside the runner.",
+    "GoT first in the immutable existing-build handoff. No C++ or guest-emulation changes and no native rebuild."
+  ],
+  "validation": {
+    "syntax": "Bash syntax, Python compilation and git diff --check pass.",
+    "host_trace_cases": 26,
+    "host_health_regression": "Existing post-run/preflight/error/bounds fixtures pass.",
+    "production_gpu_history": "Production C++ header compiled with GCC14; trace emits only the matching semaphore and incomplete requested tick, suppresses duplicate output, and performance=1 reproduces absent history.",
+    "handoff": "Pinned existing-build handoff, bad checksum, download failure and failed sudo authentication checked using substituted commands; no games or privileged operations run on the analysis host.",
+    "emulator_build": "Unchanged source passed user native full build and CPU/startup checks. GPU acceptance failed, not promoted.",
+    "native_trace": "Pending user run."
+  },
+  "limitations": [
+    "No measured FPS improvement, cutscene recovery, GoT fill recovery, audio fix or VUID clearance.",
+    "Command ring is bounded and may overwrite earlier work; ordered-GDS continuation dispatches do not themselves have a shader-labelled RecordWork entry, though surrounding commands/resources remain available.",
+    "Shader dumping and command history add overhead; this trace is not an FPS benchmark.",
+    "An existing uninterruptible GPU thread may prevent launch. Preflight then captures evidence and stops without restart, broad kill, or Sunshine/SSH action.",
+    "Unreadable root journal or expired sudo credentials are recorded, not converted to a clean kernel result."
+  ],
+  "protections": "120 seconds per game; owned-process shutdown; no automated input; screenshots/FPS; at least 8 GiB free VRAM; unload and conditionally restore exact model lease; no installed binary replacement.",
+  "next_command": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1\nRUNNER=bf8b7de00607ec19a805cd8720462cb0ccc64c78\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/cutscene-trace.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' 05fbe40bcd0afbf3ae3ff4ba788ec593bcbcd635e68219ef4930180f5605efd0 \"$run_dir/run.sh\" | sha256sum --check -\nsudo -v\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_GPU_TRACE=1 \\\nSHADPS4_TEST_PERFORMANCE=0 \\\nSHADPS4_KERNEL_JOURNAL_SUDO=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  bash \"$run_dir/run.sh\" \"$SOURCE\" existing \"$RUNNER\"\nSHADPS4_TEST\n",
+  "journal": {
+    "historical_rows": 773,
+    "historical_prefix_sha256": "9c41b0936cd46a1e970e223d224bb9e32e32fe1553f6287566df9e00dda1cb03",
+    "appended_rows": 2
+  }
+}
