@@ -851,10 +851,19 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
     // These synchronized copies are from real GPU-written device buffers.
     // They do not derive guest ranks from Vulkan physical invocation order.
     const auto captured = DownloadOrderedGdsPackets(owner.capture_packets, 0, owner.plan.waves);
-    const auto state = OrderedGdsPacketTransfer::DownloadCheckpoint(
-        runtime, scheduler, owner.capture_registers, 0, owner.plan.register_layout);
+    std::vector<std::byte> state;
+    if (std::ranges::any_of(captured, [&](const auto& packet) {
+            return !IsCanonicalGcnTerminalBypass(packet, expected_epoch);
+        })) {
+        state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+            runtime, scheduler, owner.capture_registers, 0, owner.plan.register_layout);
+    }
     const auto save_evidence = [&] {
         const auto& layout = owner.plan.register_layout;
+        if (state.empty()) {
+            state = OrderedGdsPacketTransfer::DownloadCheckpoint(
+                runtime, scheduler, owner.capture_registers, 0, layout);
+        }
         const u32 saved_waves = std::min(owner.plan.waves, 32u);
         const std::array<u32, 12> header{0x32445347u,
                                          2u,
