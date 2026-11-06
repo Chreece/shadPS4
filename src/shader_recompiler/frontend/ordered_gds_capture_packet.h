@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -14,6 +15,7 @@
 #include <vector>
 
 #include "shader_recompiler/frontend/ordered_gds_continuation.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/frontend/ordered_gds_legacy_packer.h"
 #include "shader_recompiler/frontend/ordered_gds_sparse_epoch.h"
 
@@ -158,6 +160,26 @@ public:
         return FromScheduler(rank_by_slot);
     }
 
+    static std::optional<VerifiedGuestCreationOrder> FromCikComputeDispatch(
+        u32 waves, u32 waves_per_group, bool ordered_append, bool ordered_append_per_group) {
+        if (!ordered_append || waves == 0 || waves > (1u << 13) || waves_per_group == 0 ||
+            waves_per_group > 16 || waves % waves_per_group != 0 ||
+            (ordered_append_per_group && waves_per_group != 1)) {
+            return std::nullopt;
+        }
+        // Match the guest sequence assigned by Translator::EmitPrologue, not Vulkan arrival.
+        // Keep its full ordinal when the TG_SIZE identity wraps after 2048 waves.
+        std::vector<u64> ranks(waves);
+        std::iota(ranks.begin(), ranks.end(), u64{0});
+        auto order = FromScheduler(ranks);
+        order->wave_id_mask_ = CikComputeOrderedWaveIdMask;
+        return order;
+    }
+
+    [[nodiscard]] bool MatchesCikComputeM0(u32 logical_slot, u32 runtime_m0) const {
+        return (runtime_m0 & 0xffffu) == (RankForSlot(logical_slot) & wave_id_mask_);
+    }
+
     [[nodiscard]] u64 RankForSlot(u32 logical_slot) const {
         if (logical_slot >= ranks_.size()) {
             throw std::invalid_argument("ordered GDS capture slot outside guest creation map");
@@ -179,6 +201,7 @@ private:
         : ranks_{std::move(ranks)}, slots_{std::move(slots)} {}
     std::vector<u64> ranks_;
     std::vector<u64> slots_;
+    u32 wave_id_mask_{0x1fffu};
 };
 
 inline CapturedWave DecodeGpuCapture(const GpuCapturePacket& packet, u32 expected_epoch,

@@ -6,6 +6,7 @@
 #include "core/emulator_settings.h"
 #include "shader_recompiler/frontend/decode.h"
 #include "shader_recompiler/frontend/fetch_shader.h"
+#include "shader_recompiler/frontend/ordered_gds_dispatch.h"
 #include "shader_recompiler/frontend/translate/translate.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/attribute.h"
@@ -306,8 +307,9 @@ void Translator::EmitPrologue(IR::Block* first_block) {
             }
             const IR::U32 first_wave{
                 ir.Select(ir.IEqual(local_wave, ir.Imm32(0u)), ir.Imm32(1u << 31), ir.Imm32(0u))};
-            const IR::U32 ordered_term =
-                ir.ShiftLeftLogical(ir.BitwiseAnd(wave_id, ir.Imm32(0x7ffu)), ir.Imm32(6u));
+            const IR::U32 ordered_term = ir.ShiftLeftLogical(
+                ir.BitwiseAnd(wave_id, ir.Imm32(OrderedGds::CikComputeOrderedWaveIdMask)),
+                ir.Imm32(6u));
             ir.SetScalarReg(dst_sreg++,
                             ir.BitwiseOr(first_wave, ir.BitwiseOr(ordered_term, ir.Imm32(waves))));
         }
