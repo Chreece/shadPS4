@@ -46,7 +46,7 @@ bool GcnInst::WritesScalarMask() const {
         break;
     }
     return IsCmpx() ||
-           std::ranges::any_of(std::span{dst}.first(dst_count), [](const InstOperand& operand) {
+           std::ranges::any_of(dst, [](const InstOperand& operand) {
                return operand.field == OperandField::ScalarGPR ||
                       operand.field == OperandField::VccLo ||
                       operand.field == OperandField::VccHi || operand.field == OperandField::ExecLo;
