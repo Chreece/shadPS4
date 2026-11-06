@@ -1,0 +1,114 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T19:45:22.134483+00:00",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/183",
+  "source_commit": "c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94",
+  "source_tree": "32c9b7aca6c2d65f9d040d2d14881211839140e5",
+  "parent_commit": "5811aeb28de02268f8d6b0a9c4dd107590caaa01",
+  "upstream_commit": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_preparation_check": "Current upstream remains the recorded base; all 61 existing commits retained.",
+  "runner_commit": "d43d3ec6ad736d55b88ff9551eee16fce20b4cd3",
+  "main_changed": false,
+  "changes": [
+    "Reuse cleared buffer-barrier slots and their range-vector capacity between barriers; search only the active prefix.",
+    "Return immediately when a plain Interval addition is already fully covered; metadata-bearing interval overwrite behavior is unchanged.",
+    "Trim inactive slots during existing submit housekeeping without dropping pending active accesses."
+  ],
+  "source_diff": {
+    "files": 3,
+    "additions": 18,
+    "deletions": 5
+  },
+  "semantics": "No intended guest-emulation change. GPU commands, stage/access masks, hazard decisions, flush rules and memory coherence remain unchanged. No title/hash/vendor/address exceptions or bypasses.",
+  "storage_tradeoff": "Scratch capacities remain cached between barriers. Inactive slots are trimmed at Rasterizer::OnSubmit via Runtime::TickFrame; this is not necessarily once per displayed frame. Active storage remains until cleared/trimmed or Runtime destruction.",
+  "native_evidence": {
+    "new_capture_available": false,
+    "latest_archive": "universal-two-games-20261106T180742Z-478828.tar.gz",
+    "latest_archive_sha256": "368691d63463b80e00503e7d63954af2d6e09c3a2e11e6778b7719a0422dca78",
+    "tested_source_commit": "0d09d50af1687aa235ad0fd10a85fdc1b31c6934",
+    "context": "GoW point-in-time 80-second samples land in IsBufferAccessed+106 and AccessBuffer+282; GPU command-thread CPU time is about 55.87 seconds. These samples do not attribute total runtime to either function.",
+    "acceptance": "PR182 and PR183 native acceptance remains pending. No FPS gain or GoT fill/corner fix is claimed."
+  },
+  "validation": {
+    "runtime_production_bodies": "PASS baseline/candidate parity against independent per-byte hazard oracle; Vulkan command sink substituted",
+    "random_operations": 150000,
+    "matching_hazard_queries": 59848,
+    "matching_barriers": 11934,
+    "query_digest": "10476590006497786760",
+    "barrier_checks": [
+      "source stages",
+      "source access masks",
+      "image-barrier counts",
+      "EndRendering and flush order"
+    ],
+    "submit_housekeeping": "PASS pending-access preservation and inactive-storage release",
+    "metadata_interval_updates": 10000,
+    "metadata_interval_point_checks": 2560000,
+    "sanitizers": "PASS candidate ASan/UBSan with assertions enabled; leak detection disabled",
+    "synthetic_repeated_barriers": {
+      "barriers": 20000,
+      "buffers_per_barrier": 8,
+      "contained_reads_per_buffer": 16,
+      "baseline_allocation_calls": 480004,
+      "candidate_allocation_calls": 20,
+      "baseline_time_us": 141931,
+      "candidate_time_us": 65389,
+      "scope": "One synthetic host sample during other work, not a native game or FPS measurement."
+    },
+    "universal_cpu_suite": "PASS 31 CTests, seven renderer contracts, production SRT 10418 checks, sparse 288 ranges / seven scenarios in both modes, descriptors/VMA/HLE ABI",
+    "handoff": "PASS pinned build dispatch, checksum rejection, download failure and cleanup; download/native boundaries substituted",
+    "build": {
+      "build": "PASS GCC14 Release",
+      "binary_sha256": "cbf9bd66c3c9902c0d5b0d91c10e9bdca95f78e931f639e15d0071a12569b762",
+      "startup": [
+        {
+          "args": [
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "args": [
+            "--show-fps",
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "args": [
+            "--fullscreen",
+            "true",
+            "--help"
+          ],
+          "exit": 0
+        }
+      ],
+      "all_source_bytes_match": true,
+      "source_files_compared": 1065,
+      "test_files_compared": 96,
+      "ctests": 31,
+      "scope": "Host build without a Vulkan ICD or games; native GPU acceptance pending."
+    },
+    "fixture_setup_correction": "The initial probe failed to compile because its fake scheduler method and class shared the CommandBuffer name; a deduced return type corrected the fixture. No emulator-source correction was needed."
+  },
+  "audio_pr_5492": {
+    "url": "https://github.com/shadps4-emu/shadPS4/pull/5492",
+    "reviewed_head": "9f55474ad45778f8ac08e923574f214d492997f2",
+    "state_at_review": "open, unmerged",
+    "included": false,
+    "finding": "Mixed queue output moves to a feeder thread; DrainAssociatedPorts still runs on the caller. Current GoW GPU-fence wait evidence does not establish this audio change as a fix for its slowdown."
+  },
+  "remaining": [
+    "Native same-scene FPS measurement",
+    "GoT missing fill and small upper-left artifact",
+    "GoW long GPU completion wait",
+    "Unsupported scaled min/max blending"
+  ],
+  "handoff_policy": "Immutable source and runner, no moving-ref checks during build/run, GoT then GoW, manual input, screenshots/FPS, TERM at 118 seconds and owned-process-group stop by 120 seconds, at least 8 GiB free VRAM, conditional exact model restoration, SSH and Sunshine preserved.",
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94\nRUNNER=d43d3ec6ad736d55b88ff9551eee16fce20b4cd3\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/buffer-barriers.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  efecff6f0b356f2c27484a0b54ffc4ce471ca31603bc90b290febfdf1268e0bb \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 \\\nSHADPS4_TEST_CAPTURE_FIRST_SHADERS=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nSHADPS4_TEST\n",
+  "journal_prefix": {
+    "bytes": 1665160,
+    "rows": 768,
+    "sha256": "a10f9fb138e14830ebc5ff918ec3747ca46bbb36edacf795c19f1e7b730b6df4"
+  }
+}
