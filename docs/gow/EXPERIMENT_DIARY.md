@@ -440,3 +440,9 @@ GoW was not run in the latest GoT-only archive. Low gameplay FPS remains unresol
 Candidate `3fbee42c3dec115c7f6062f78c2165767e74e246` handles selector 3 without an IRQ and preserves writes and selector 1/2 IRQs. AMD CI packet source supports this behavior. Release build, 83 host production-header checks, ASan/UBSan and three startup checks pass. OpenOrbis eight-case source is shared separately; SDK/hardware execution is pending. All 43 retained commits were rebased onto upstream `7201424ece9b39795759239d9405ff88be85055b` with exact tree checks. PR173/174 and main remain unchanged.
 
 Native retest: runner `de894b11dd5ceb674902ef26c4a9dfb670026d4f`, build mode, GoT then GoW, no automatic input, 120 seconds each. Keep draft until native evidence. See `../emulator/reviews/20261106-release-mem-noirq-and-native-wait.json`. Journal row 753 appended; earlier rows preserved.
+
+## 2026-11-06 — Resume successful build without upstream freshness gates
+
+PR175 source `3fbee42c3dec115c7f6062f78c2165767e74e246` completed the native CPU suite, Release build and three startup checks. The runner then blocked before any game because upstream advanced. Removed build/launch freshness gates and the legacy preview post-build ref comparison. Upstream is resolved by the assistant while preparing each candidate; native execution uses that immutable source. Source/binary/observer and process/VRAM/model checks remain.
+
+Resume this successful binary in existing mode, GoT then GoW. Newer upstream `8b804805599df20e702d5a16410335b2ceaa0fcc` was reviewed but is not claimed to be in this already-built source. Eight launch cases, two builder cases and 78 inherited runner checks pass; external build/game boundaries are substituted in local harnesses. No game outcome is available. See `../emulator/reviews/20261106-pinned-build-upstream-race.json`; journal row 754.
