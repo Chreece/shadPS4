@@ -1,0 +1,177 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-05T11:35:43.992999+00:00",
+  "scope": "DS_ORDERED_COUNT",
+  "pr": 162,
+  "source": {
+    "source": "85cce75bca3ebdf92dbb7a5c99c4959fd6c2946a",
+    "tree": "8ec8a25197c1150fd00107d09d2cce1a15b0ea9c",
+    "upstream": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+    "binary_sha256": "3694274c1a547f648270832c9b91ef8a0752fad167618b2783d61a3f61be891c",
+    "binary_embedded_source_verified": true,
+    "native_input_archive": "universal-two-games-20261105T101619Z-4113958.tar.gz",
+    "native_input_sha256": "a166f3dba18d61cf2781ed730288f0f5a497210d2df63de61760be9766a08823",
+    "native_shader_sha256": "5c7cd61c3b8c0d4bb6e1beb94e5fe0b4ebe36df27955577e33632b035f88b4b2",
+    "inverse_ballots_lowered_for_ab_replay": 83,
+    "validation": {
+      "ir_checks": 1077376,
+      "baseline_ir_failures": 8256,
+      "candidate_ir_failures": 0,
+      "actual_inverse_emitter_checks": 196608,
+      "actual_writelane_emitter_checks": 16384,
+      "gds_model_checks_asan_ubsan": 5234832,
+      "cpu_suite": "PASS",
+      "cli_scenarios": 3,
+      "native_handoff_stub_cases": 3,
+      "captured_spirv_structural_validation": "PASS_VULKAN_1_3",
+      "offline_radv_version": "25.0.7-2+deb13u1",
+      "offline_amd_families_pass": [
+        "vega10",
+        "navi10",
+        "navi21",
+        "navi31"
+      ],
+      "offline_driver_gpu_execution": false,
+      "authored_modules_driver_compile": "PASS",
+      "original_homebrew_kernels": 19,
+      "openorbis_sdk_link": "NOT_RUN",
+      "ps4_execution": "NOT_RUN"
+    },
+    "limitations": [
+      "Real post-DS GPU continuation is not implemented or enabled.",
+      "Snapshot seed helper and address aliases are reference/host model corrections, not a connected GPU counter lifecycle.",
+      "Counter mappings have primary LLVM/Mesa support but the new PS4 hardware probe has not run.",
+      "Exact captured native shader replay uses a generic SPIR-V transformation; actual source emitter is separately checked with original small modules.",
+      "New source has not run either game on the native host.",
+      "Other games/devices, graphics/audio/FPS and GoT recovery remain unproven."
+    ],
+    "failed_attempts": [
+      "Initial fixture relink missing isolated libuuid/libudev library path; corrected without source changes.",
+      "Bare emitter module initially omitted Int8/16/64 capabilities; fixture corrected.",
+      "Initial baseline IR run skipped 3072 retained wave checks; final baseline/candidate both use 1077376 checks.",
+      "Synthetic-zero user-data replay of guest GCN failed unflattened-read BDA assertion with actual UD count6; a previous differently configured output was stale and is not candidate validation.",
+      "Captured SPIR-V1.6 correctly rejected as Vulkan1.2; correct Vulkan1.3 environment passes.",
+      "Generic dead-branch/dead-code/CFG cleanup did not fix the ACO lane-mask exception.",
+      "First null-device family gfx900 name unrecognized; vega10 retried successfully.",
+      "First original lane-probe assembly used two SGPR inputs violating CIK constant-bus restriction; selector moved to M0 and all 19 kernels assemble.",
+      "Earlier LLVM disassembly probe did not support the CIK instructions; not used as semantic evidence."
+    ],
+    "sources": [
+      "https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html#OpGroupNonUniformInverseBallot",
+      "https://reviews.llvm.org/D63716",
+      "https://fuchsia.googlesource.com/third_party/mesa/+/refs/tags/gitlab/mesa-20.0.0/src/gallium/drivers/radeonsi/si_compute_prim_discard.c",
+      "https://fuchsia.googlesource.com/third_party/mesa/+/refs/tags/gitlab/mesa-20.0.0/src/gallium/drivers/radeonsi/si_gfx_cs.c",
+      "https://docs.amd.com/api/khub/documents/YO8RUh~LIQ5Cx3M_Kq9qkg/content"
+    ]
+  },
+  "artifact": {
+    "path": "/workspace/scratch/e77588f59ff3/ds-ordered-fixes-validation-20261105.zip",
+    "sha256": "efafe43675f20557b4d58245dfe7ed34668b35e3800890caecf99d31ebf7cfe5",
+    "bytes": 76913,
+    "files": 73,
+    "library_file_id": "libfile_e01df1e430f08191a08ca62db779d8a4",
+    "url": "https://chatgpt.com/library?file_id=libfile_e01df1e430f08191a08ca62db779d8a4&account_id=personal"
+  },
+  "native_input": {
+    "source": "81113bfa9a0fd9b542b3c796b6e2f2cc559dc9de",
+    "binary_sha256": "2eae5ec86ead9630d75cfbd047b8cdc0b6c309172f17a80ccc4b8d296388f8aa",
+    "build_review": [
+      {
+        "name": "universal-two-games-20261105T101619Z-4113958/universal-upstream-20261105T101620Z-4113978-files/universal-upstream-20261105T101620Z-4113978/build.log",
+        "lines": 3281,
+        "sha256": "14112a64fa3176dbe5e36d9adb89deed6c491bf76af7dd1c69bf8b2a29f5fc6f",
+        "errors": [],
+        "warning_count": 115
+      },
+      {
+        "name": "universal-two-games-20261105T101619Z-4113958/universal-upstream-20261105T101620Z-4113978-files/universal-upstream-20261105T101620Z-4113978/cpu-tests.log",
+        "lines": 143,
+        "sha256": "110f1f7dc083ecf80c7fea838c4dca60ad540c0212248f499e8642a2fa7f27e5",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "universal-two-games-20261105T101619Z-4113958/universal-upstream-20261105T101620Z-4113978-files/universal-upstream-20261105T101620Z-4113978/submodules.log",
+        "lines": 204,
+        "sha256": "f94277f61b56c2aa481899cb0560a81315360b840f913fe2b7fbe6108e06025f",
+        "errors": [],
+        "warning_count": 0
+      },
+      {
+        "name": "universal-two-games-20261105T101619Z-4113958/universal-upstream-20261105T101620Z-4113978-files/universal-upstream-20261105T101620Z-4113978/configure.log",
+        "lines": 1241,
+        "sha256": "f04bbac85608aef45cf4c455593eeedad3e198ff77b3dcb3e105430cf5392435",
+        "errors": [],
+        "warning_count": 0
+      }
+    ],
+    "gow": {
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "elapsed_seconds": 22.972,
+      "exit_code": -11,
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "first_validation_failure": null,
+      "error": "bitset::set: position286 >=128",
+      "new_ordered_checkpoint": false,
+      "native_spirv_bytes": 469416,
+      "native_spirv_sha256": "5c7cd61c3b8c0d4bb6e1beb94e5fe0b4ebe36df27955577e33632b035f88b4b2",
+      "inventory_correction": "Exact DS binary, IR and SPIR-V are present in the uploaded archive; an earlier working note that they were absent was incorrect.",
+      "visual_audio_fps": "No new visual/audio/FPS acceptance; no post-DS execution."
+    },
+    "got": {
+      "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "elapsed_seconds": 119.815,
+      "exit_code": -9,
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "first_validation_failure": null,
+      "visual_review": "Not performed in this DS-focused turn; no menu/gameplay recovery claim."
+    },
+    "models": "Both native restore records report RESTORED with original model digest and context length16384."
+  },
+  "semantics": {
+    "inverse_ballot": "The SPIR-V instruction requires uniform Value. Per-invocation mask values now use guarded dword selection and shift-and-test; no driver or game condition. Upper subgroup lanes>=64 return false, matching the padded upper64 mask bits.",
+    "write_lane": "Write selected lane only, preserve old values elsewhere; compute logical lane uses LocalInvocationIndex%64. Dynamic lane selections no longer enter immediate-only elimination.",
+    "counter_address": "CIK base align(M0>>16,4)+OFFSET0; counter index=OFFSET0>>2. Key comparison uses checked physical byte offset so alternative encodings alias. Out-of-range requests fail transactionally; wrapping is not guessed.",
+    "seed_lifetime": "Synchronized 64KiB GDS snapshot supplies only requested addresses, deduplicated; no presumed-zero seed. Refresh between dispatches because ordinary GDS/CP-DMA can change these values. New helper remains unwired to a real continuation.",
+    "live_exchange_return": "Captured original IR uses the old Exchange result in later address arithmetic; its previous value cannot be replaced with zero.",
+    "donor": "Retained donor/pr-ds-ordered-count uses GDS base plus index*4; its unsafe GPU spin ordering is not imported."
+  },
+  "runtime_completion": {
+    "complete": false,
+    "implemented_this_turn": [
+      "General lane-mask compiler crash correction",
+      "WriteLane destination preservation and dynamic-selector optimizer correction",
+      "Legacy counter address/alias and seed-reference correction"
+    ],
+    "remaining": [
+      "Restore compiler/guest state at post-DS PC without replaying pre-DS loads/stores or losing resource descriptor provenance.",
+      "Dispatch the real continuation with preserved LDS and token/epoch ownership.",
+      "Connect synchronized GDS seed/update lifetime to the actual dispatch and ordinary GDS users.",
+      "Establish native checkpoint completeness, post-DS progress, GPU lifetime and cross-title/device acceptance."
+    ],
+    "invalid_shortcuts_rejected": [
+      "No fabricated zero counter or ignored Exchange return",
+      "No GPU workgroup spin wait",
+      "No synthetic upload-only resume success",
+      "No per-game Precise setting or host-specific shader override"
+    ]
+  },
+  "native_handoff": {
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=85cce75bca3ebdf92dbb7a5c99c4959fd6c2946a\nRUNNER=85c6bf7068c86adc6044dc3f0175355882e355a9\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nSHADPS4_PR117_CAPTURE_ONCE=1 SHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "source_commit": "85cce75bca3ebdf92dbb7a5c99c4959fd6c2946a",
+    "runner_commit": "85c6bf7068c86adc6044dc3f0175355882e355a9",
+    "wrapper_sha256": "dc766e8000c2b25d1d44d05e966a78b8a8e4ca9be3f0cf87c3039271d26f46f6",
+    "cases": 3,
+    "limits": "118s TERM+2s KILL; >=8GiB free VRAM; exact conditional model lease restoration; stop/defer on GPU loss/live child; no automatic input; preserve installed binaries/config/saves/services.",
+    "expected_boundary": "If compilation and whole-wave capture succeed, GoW still stops at the existing intentional pre-continuation guard. Not a gameplay-completion claim."
+  },
+  "decision": "RETAIN_DRAFT_NATIVE_AND_CONTINUATION_PENDING",
+  "main_unchanged": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+  "record_id": "ds-ordered-20261105-review",
+  "documentation_validation": {
+    "initial_query": "FAIL_MISSING_REVIEW_RECORD_ID",
+    "correction": "Added required review record_id; focused query retried."
+  }
+}
