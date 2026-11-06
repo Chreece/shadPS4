@@ -20,7 +20,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '0819ddb3904a4f23fe554fd7820db04b7571782cda947db53d14cb029421fe7b'
+OBSERVER_SHA256 = '3351e1cd64301fa69a99ad23d9e5d12918db9476fa08c2b16978276f3111cba4'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
