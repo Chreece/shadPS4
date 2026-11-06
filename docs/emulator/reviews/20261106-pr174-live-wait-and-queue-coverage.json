@@ -1,0 +1,376 @@
+{
+  "schema_version": 2,
+  "record_id": "pr174-got-live-wait-20261106T104317Z-reviewed",
+  "timestamp_utc": "2026-11-06T10:58:12.430532+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "runner_commit": "03a989b817af231a47a331836c59e7b1dd785741",
+  "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "archive": "universal-graphics-20261106T104317Z-1637758.tar.gz",
+  "library_file_id": "libfile_e77dbdb9353c8191a34da3b4d447cef8",
+  "tested_games": [
+    "CUSA11456"
+  ],
+  "main_changed": false,
+  "emulator_source_changed": false,
+  "archive_sha256": "d657474f190936c3d5a68d6266731da7030cd2be9f9375dc566a5c22a827e6be",
+  "native": {
+    "exit_code": -9,
+    "exit_reason": "TEST_118S_DURATION_LIMIT",
+    "elapsed_seconds": 119.614,
+    "owned_child_terminated": true,
+    "gpu_failure": null,
+    "gpu_memory_fault_reports": 0,
+    "validation_layer_active": false,
+    "performance_records": 1
+  },
+  "snapshots": {
+    "80": {
+      "elapsed_seconds": 0.05415900598745793,
+      "samples_attempted": 5252,
+      "samples_read": 5252,
+      "captured_thread_count": 8,
+      "total_thread_count": 52,
+      "counter_samples": [
+        {
+          "age_ms": 1,
+          "instruction": "0xc035b5",
+          "counter_address": "0x3fb6594",
+          "counter_value": 1
+        },
+        {
+          "age_ms": 21,
+          "instruction": "0xc035d2",
+          "counter_address": "0x3fb6594",
+          "counter_value": 1
+        }
+      ],
+      "threads": [
+        {
+          "tid": 1638420,
+          "name": "shadPS4:GpuComm",
+          "runtime_ns": 1453960007,
+          "state": "S",
+          "syscall": "202 0x55c1bc1a8b78 0x189 0x2a48 0x0 0x0 0xffffffff 0x7fb7037fb218 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638453,
+          "name": "Game:Main",
+          "runtime_ns": 57124547742,
+          "state": "R",
+          "syscall": "running"
+        },
+        {
+          "tid": 1638456,
+          "name": "JobWorkerLow1",
+          "runtime_ns": 3713132278,
+          "state": "S",
+          "syscall": "202 0x80095a550 0x0 0x0 0x0 0x0 0x0 0x7efb83dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638457,
+          "name": "JobWorkerLow2",
+          "runtime_ns": 3817635695,
+          "state": "S",
+          "syscall": "202 0x80095b0e8 0x0 0x0 0x0 0x0 0x0 0x7efb53dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638458,
+          "name": "JobWorkerLow3",
+          "runtime_ns": 3756743075,
+          "state": "S",
+          "syscall": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x0 0x7efb23dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638459,
+          "name": "JobWorkerLow4",
+          "runtime_ns": 3784284196,
+          "state": "S",
+          "syscall": "202 0x80095c818 0x0 0x0 0x0 0x0 0x0 0x7efaf3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638460,
+          "name": "JobWorkerLow5",
+          "runtime_ns": 4296403992,
+          "state": "S",
+          "syscall": "202 0x80095d3b0 0x0 0x0 0x0 0x0 0x0 0x7efac3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638461,
+          "name": "JobWorker1",
+          "runtime_ns": 3723355960,
+          "state": "S",
+          "syscall": "202 0x80095df48 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa93dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638462,
+          "name": "JobWorker2",
+          "runtime_ns": 3766829611,
+          "state": "S",
+          "syscall": "202 0x80095eae0 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa63dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638463,
+          "name": "JobWorker3",
+          "runtime_ns": 3791583775,
+          "state": "S",
+          "syscall": "202 0x80095f678 0x0 0x0 0x0 0x7fb690000030 0xdeadbeef00000066 0x7efa33dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638464,
+          "name": "JobWorker4",
+          "runtime_ns": 3789680882,
+          "state": "S",
+          "syscall": "202 0x800960210 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa03dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638465,
+          "name": "JobWorker5",
+          "runtime_ns": 3408994525,
+          "state": "S",
+          "syscall": "202 0x800960da8 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7ef9d3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638466,
+          "name": "GpuInterrupt",
+          "runtime_ns": 60792710,
+          "state": "S",
+          "syscall": "202 0x7fb6bc2a9c78 0x189 0x105e 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638477,
+          "name": "MovieDecoder",
+          "runtime_ns": 3615713504,
+          "state": "S",
+          "syscall": "202 0x800968d30 0x0 0x0 0x0 0x0 0x7ef793d80 0x7ef793cd8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638480,
+          "name": "Game:Main",
+          "runtime_ns": 39803,
+          "state": "S",
+          "syscall": "7 0x7fb65cff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fb65cff5208 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638481,
+          "name": "shadPS4:GpuComm",
+          "runtime_ns": 156709046,
+          "state": "S",
+          "syscall": "202 0x55c1bc117b3c 0x189 0x11db 0x0 0x0 0xffffffff 0x7fb643ffb308 0x7fb929fb672e"
+        }
+      ],
+      "screenshot_sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073"
+    },
+    "110": {
+      "elapsed_seconds": 0.05486010498134419,
+      "samples_attempted": 6756,
+      "samples_read": 6756,
+      "captured_thread_count": 8,
+      "total_thread_count": 52,
+      "counter_samples": [
+        {
+          "age_ms": 5,
+          "instruction": "0xc035d2",
+          "counter_address": "0x3fb6594",
+          "counter_value": 1
+        },
+        {
+          "age_ms": 20,
+          "instruction": "0xc035b5",
+          "counter_address": "0x3fb6594",
+          "counter_value": 1
+        }
+      ],
+      "threads": [
+        {
+          "tid": 1638420,
+          "name": "shadPS4:GpuComm",
+          "runtime_ns": 1453990828,
+          "state": "S",
+          "syscall": "202 0x55c1bc1a8b7c 0x189 0x2a4b 0x0 0x0 0xffffffff 0x7fb7037fb218 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638453,
+          "name": "Game:Main",
+          "runtime_ns": 86886713769,
+          "state": "R",
+          "syscall": "running"
+        },
+        {
+          "tid": 1638456,
+          "name": "JobWorkerLow1",
+          "runtime_ns": 3713132278,
+          "state": "S",
+          "syscall": "202 0x80095a550 0x0 0x0 0x0 0x0 0x0 0x7efb83dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638457,
+          "name": "JobWorkerLow2",
+          "runtime_ns": 3817635695,
+          "state": "S",
+          "syscall": "202 0x80095b0e8 0x0 0x0 0x0 0x0 0x0 0x7efb53dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638458,
+          "name": "JobWorkerLow3",
+          "runtime_ns": 3756743075,
+          "state": "S",
+          "syscall": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x0 0x7efb23dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638459,
+          "name": "JobWorkerLow4",
+          "runtime_ns": 3784284196,
+          "state": "S",
+          "syscall": "202 0x80095c818 0x0 0x0 0x0 0x0 0x0 0x7efaf3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638460,
+          "name": "JobWorkerLow5",
+          "runtime_ns": 4296403992,
+          "state": "S",
+          "syscall": "202 0x80095d3b0 0x0 0x0 0x0 0x0 0x0 0x7efac3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638461,
+          "name": "JobWorker1",
+          "runtime_ns": 3723355960,
+          "state": "S",
+          "syscall": "202 0x80095df48 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa93dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638462,
+          "name": "JobWorker2",
+          "runtime_ns": 3766829611,
+          "state": "S",
+          "syscall": "202 0x80095eae0 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa63dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638463,
+          "name": "JobWorker3",
+          "runtime_ns": 3791583775,
+          "state": "S",
+          "syscall": "202 0x80095f678 0x0 0x0 0x0 0x7fb690000030 0xdeadbeef00000066 0x7efa33dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638464,
+          "name": "JobWorker4",
+          "runtime_ns": 3789680882,
+          "state": "S",
+          "syscall": "202 0x800960210 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa03dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638465,
+          "name": "JobWorker5",
+          "runtime_ns": 3408994525,
+          "state": "S",
+          "syscall": "202 0x800960da8 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7ef9d3dc8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638466,
+          "name": "GpuInterrupt",
+          "runtime_ns": 60792710,
+          "state": "S",
+          "syscall": "202 0x7fb6bc2a9c78 0x189 0x105e 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638477,
+          "name": "MovieDecoder",
+          "runtime_ns": 3615713504,
+          "state": "S",
+          "syscall": "202 0x800968d30 0x0 0x0 0x0 0x0 0x7ef793d80 0x7ef793cd8 0x7fb92a02a4f9"
+        },
+        {
+          "tid": 1638480,
+          "name": "Game:Main",
+          "runtime_ns": 39803,
+          "state": "S",
+          "syscall": "7 0x7fb65cff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fb65cff5208 0x7fb929fb672e"
+        },
+        {
+          "tid": 1638481,
+          "name": "shadPS4:GpuComm",
+          "runtime_ns": 156709046,
+          "state": "S",
+          "syscall": "202 0x55c1bc117b3c 0x189 0x11db 0x0 0x0 0xffffffff 0x7fb643ffb308 0x7fb929fb672e"
+        }
+      ],
+      "screenshot_sha256": "5f880ac955efff9fbfc75ed33054e532c5b727cdabdef3af46413735979f1073"
+    }
+  },
+  "worker_wait_evidence": {
+    "captured_workers": 7,
+    "total_job_workers": 10,
+    "stack_candidate_symbols": [
+      "std::__atomic_wait_address_bare<std::__atomic_semaphore::_M_acquire()>",
+      "Libraries::Kernel::Pthread::Sleep",
+      "Libraries::Kernel::PthreadCond::Wait",
+      "Core::HostCallWrapperImpl<posix_pthread_cond_wait>"
+    ],
+    "candidate_queue_groups": 2,
+    "limit": "These are stack code candidates. Stale PthreadMutex::Lock candidates do not prove the active wait is a mutex reacquisition. The futex addresses match per-thread wake semaphores inferred from the captured thread pointers and the checked source layout. Queue contents and pending wake credits were not captured."
+  },
+  "gpu_busy_after_60s_median": 0.0,
+  "findings": [
+    "The PR174 collector succeeds natively in approximately 54ms per snapshot; it captures 5252 and 6756 profiler samples without exceeding capacity.",
+    "GoT remains black; the 80s and 110s PNGs are byte-identical. The host 29 FPS overlay is not game progress.",
+    "At both snapshots the main thread executes the same guest timestamp-delay loop and checks a 32-bit value at r13+4 which remains 1. This is consistent with waiting for outstanding work, but the object semantics and missing producer are unproven.",
+    "All ten job workers are sleeping with unchanged CPU runtime across the late snapshots. Seven captured worker stacks group into two shared condition-variable contexts. GpuComm is asleep too; no GPU fault is reported.",
+    "The hottest-eight policy excludes the movie decoder, GPU interrupt thread and some workers. The missing queue contents prevent distinguishing a lost notification from an empty queue or a blocked producer.",
+    "The protected stop requires SIGKILL after SIGTERM. The owned child is confirmed terminated, but its exit is -9, not a clean application exit. Shutdown profiler counters were consequently absent.",
+    "Vulkan validation is disabled for this performance capture; the preceding validation run had no errors. No emulation defect is established by these observations alone."
+  ],
+  "followup": {
+    "threads": "Capture up to 128 threads under the existing one-second snapshot budget.",
+    "pointer_context": "Deduplicated pointers from profiler registers, sleeping syscall arguments and the first 512 bytes of each stack; bounded two-level traversal. At most 512 data blocks of 2048 bytes and 128 code blocks of 512 bytes, with explicit truncation indicators.",
+    "lookup": "Binary search over captured mappings avoids repeated linear scans.",
+    "live_counters": "Read the existing 13 performance counters before shutdown, validating symbol size.",
+    "source_policy": "Exact same native source/binary; read-only parent access, no extra signals, no thread suspension, no target-memory writes, no title/shader conditions. Existing stop/VRAM/model/profile gates retained.",
+    "limitations": "Snapshot fields are sampled at different times. Pointer values and stack code addresses are candidates, not verified object types or unwound frames. Native execution of expanded coverage is pending."
+  },
+  "validation": {
+    "live_memory": {
+      "checks": [
+        "production_ELF_symbol_layout",
+        "synthetic_ELF_symbol_layout",
+        "reject_non_child",
+        "faulting_and_waiting_live_1",
+        "faulting_and_waiting_live_2",
+        "faulting_and_waiting_live_3",
+        "faulting_and_waiting_live_4",
+        "faulting_and_waiting_live_5",
+        "faulting_and_waiting_live_6",
+        "missing_symbols_keeps_sleeping_stack",
+        "reject_executable_change",
+        "memory_unavailable_nonfatal",
+        "guest_progress_after_reads",
+        "exited_child_nonfatal"
+      ],
+      "result": "PASS",
+      "native_title_run": "NOT_RUN",
+      "ptrace_prototype": "DISCARDED_KERNEL_EPERM; read-only proc memory used instead"
+    },
+    "queue_context": {
+      "checks": [
+        "all_15_threads_including_low_cpu_sleepers",
+        "live_counters_before_shutdown",
+        "two_level_pointer_chain_leaf_captured",
+        "context_byte_limit",
+        "code_block_limit",
+        "faulting_child_stays_alive"
+      ],
+      "elapsed_seconds": 0.025969824000640074,
+      "context_bytes": 346112,
+      "threads": 15,
+      "native_emulator": "NOT_RUN"
+    },
+    "inherited_runner_checks": 78,
+    "handoff_cases": 4,
+    "python_compile": "PASS",
+    "bash_syntax": "PASS",
+    "release_build": "PASS_CACHED_NO_WORK",
+    "native_expanded_collector": "NOT_RUN"
+  },
+  "decision": "CONTINUE_READ_ONLY_QUEUE_CAPTURE_GOT_STALL_UNRESOLVED_MAIN_UNCHANGED"
+}
