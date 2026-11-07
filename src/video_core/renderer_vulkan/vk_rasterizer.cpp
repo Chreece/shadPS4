@@ -256,6 +256,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 
     FlushPeriodically();
     scheduler.PopPendingOperations();
+    buffer_cache.ResolveFaults();
 
     if (!FilterDraw()) {
         return;
@@ -346,6 +347,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     FlushPeriodically();
     scheduler.PopPendingOperations();
+    buffer_cache.ResolveFaults();
 
     if (!FilterDraw()) {
         return;
@@ -472,6 +474,7 @@ void Rasterizer::DispatchDirect() {
 
     FlushPeriodically();
     scheduler.PopPendingOperations();
+    buffer_cache.ResolveFaults();
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -522,6 +525,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     FlushPeriodically();
     scheduler.PopPendingOperations();
+    buffer_cache.ResolveFaults();
 
     const auto& cs_program = liverpool->GetCsRegs();
     const ComputePipeline* pipeline = pipeline_cache.GetComputePipeline();
@@ -767,6 +771,7 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
         throw std::invalid_argument("unowned or overlapping original-GCN capture dispatch");
     }
     scheduler.PopPendingOperations();
+    buffer_cache.ResolveFaults();
     const auto& cs_program = liverpool->GetCsRegs();
     DispatchExtent groups = owner.groups;
     const DispatchExtent local{cs_program.num_thread_x.full, cs_program.num_thread_y.full,
@@ -2685,11 +2690,12 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
         regs.depth_buffer, regs.depth_view, regs.depth_control,
         regs.depth_htile_data_base.GetAddress(), liverpool->last_db_extent, true);
 
-    auto& read_image = texture_cache.GetImage(texture_cache.FindImage(read_desc));
+    const auto read_id = texture_cache.FindImage(read_desc);
+    auto& read_image = texture_cache.GetImage(read_id);
     const auto write_id = texture_cache.FindImage(write_desc);
     auto& write_image = texture_cache.GetImage(write_id);
-    // The copy destination is never bound as a target, so its stencil plane is linked here.
-    texture_cache.AssociateStencil(write_id, write_desc.info);
+    texture_cache.UpdateImage(read_id);
+    texture_cache.UpdateImage(write_id);
 
     VideoCore::SubresourceRange sub_range;
     sub_range.base.layer = liverpool->regs.depth_view.slice_start;
@@ -2700,7 +2706,30 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
         regs.depth_buffer.StencilAddress(), regs.depth_buffer.DepthWriteAddress(),
         regs.depth_buffer.StencilWriteAddress()));
 
-    runtime.CopyDepthStencil(&read_image, &write_image, sub_range);
+    vk::ImageAspectFlags aspects{};
+    if (is_depth) {
+        aspects |= vk::ImageAspectFlagBits::eDepth;
+    }
+    if (is_stencil) {
+        aspects |= vk::ImageAspectFlagBits::eStencil;
+    }
+    VideoCore::GraphicsDiagnostics::Emit(
+        VideoCore::GraphicsDiagnostics::Event::DepthStencilCopy,
+        "depth=%u stencil=%u shared-image=%u samples=%u read-depth=%llx write-depth=%llx "
+        "read-stencil=%llx write-stencil=%llx",
+        u32(is_depth), u32(is_stencil), u32(read_id == write_id), read_image.info.num_samples,
+        static_cast<unsigned long long>(read_desc.info.guest_address),
+        static_cast<unsigned long long>(write_desc.info.guest_address),
+        static_cast<unsigned long long>(read_desc.info.stencil_addr),
+        static_cast<unsigned long long>(write_desc.info.stencil_addr));
+    if (read_id == write_id) {
+        ASSERT(!is_depth && is_stencil && read_image.info.num_samples == 1);
+        texture_cache.CopyStencil(read_id, read_desc.info, write_desc.info, sub_range);
+    } else {
+        texture_cache.AssociateStencil(read_id, read_desc.info);
+        texture_cache.AssociateStencil(write_id, write_desc.info);
+        runtime.CopyDepthStencil(&read_image, &write_image, sub_range, aspects);
+    }
     texture_cache.TrackGpuImage(write_id);
 
     ScopeMarkerEnd();

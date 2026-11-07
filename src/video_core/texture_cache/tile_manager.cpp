@@ -281,8 +281,9 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
 }
 
 void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
-                            const VideoCore::Buffer* out_buffer, u64 out_offset) {
-    const auto& info = in_image.info;
+                            const VideoCore::Buffer* out_buffer, u64 out_offset,
+                            const ImageInfo* plane) {
+    const auto& info = plane ? *plane : in_image.info;
     if (!info.props.is_tiled) {
         for (auto& copy : buffer_copies) {
             copy.bufferOffset += out_offset;

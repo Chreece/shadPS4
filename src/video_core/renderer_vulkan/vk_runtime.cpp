@@ -254,7 +254,12 @@ void Runtime::UploadImage(VideoCore::Image* dst, const VideoCore::Buffer* src,
                      vk::AccessFlagBits2::eTransferRead);
     }
 
-    dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+    if (dst->aspect_mask == vk::ImageAspectFlagBits::eStencil ||
+        std::ranges::any_of(upload_copies, [](const auto& copy) {
+            return copy.imageSubresource.aspectMask != vk::ImageAspectFlagBits::eStencil;
+        })) {
+        dst->flags &= ~VideoCore::ImageFlagBits::Dirty;
+    }
     ++image_upload_count;
 }
 
@@ -606,7 +611,8 @@ void Runtime::CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst) {
 }
 
 void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
-                               const VideoCore::SubresourceRange& sub_range) {
+                               const VideoCore::SubresourceRange& sub_range,
+                               vk::ImageAspectFlags aspects) {
     scheduler.EndRendering();
 
     bool needs_flush =
@@ -618,7 +624,8 @@ void Runtime::CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
         FlushBarriers();
     }
 
-    const auto aspect_mask = src->aspect_mask & dst->aspect_mask;
+    const auto aspect_mask = src->aspect_mask & dst->aspect_mask & aspects;
+    ASSERT(aspect_mask);
 
     const vk::ImageCopy region = {
         .srcSubresource{
