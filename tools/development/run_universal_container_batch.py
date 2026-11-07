@@ -297,10 +297,12 @@ def recover(path):
         return 0 if result else 1
 
 
-def run_game(out, game, pin, runner_pin, lease, interrupted):
+def run_game(out, game, pin, runner_pin, lease, interrupted, first_game=False):
     env = os.environ.copy()
     env.update(SHADPS4_OLLAMA_CONTAINER_LEASE=str(lease.path),
-               SHADPS4_CAPTURE_SHADER_DIAGNOSTICS='1' if env.get('SHADPS4_TEST_GPU_TRACE') == '1' else '0',
+               SHADPS4_CAPTURE_SHADER_DIAGNOSTICS='1' if (
+                   env.get('SHADPS4_TEST_GPU_TRACE') == '1' or
+                   first_game and env.get('SHADPS4_TEST_CAPTURE_FIRST_SHADERS') == '1') else '0',
                SHADPS4_TEST_SOURCE_COMMIT=pin, SHADPS4_TEST_RUNNER_COMMIT=runner_pin,
                SHADPS4_TEST_GAME='/mnt/roms-all/ps4-games/' + game + '/eboot.bin')
     child = subprocess.Popen([sys.executable, str(out / 'graphics.py')], env=env,
@@ -377,7 +379,8 @@ def main():
             lease.check()
             print('TESTING=' + game + ' MAX_SECONDS=120 AUTOMATIC_INPUT=NO', flush=True)
             uncertain = True
-            result, problem = run_game(out, game, pin, runner_pin, lease, interrupted)
+            result, problem = run_game(out, game, pin, runner_pin, lease, interrupted,
+                                       first_game=game == games[0])
             log = (out / (game + '-runner.log')).read_text()
             archives = [Path(line.removeprefix('EVIDENCE=')) for line in log.splitlines()
                         if line.startswith('EVIDENCE=')]

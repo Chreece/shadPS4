@@ -111,5 +111,5 @@ fi
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_container_batch.py" \
     -o "$OUT/container-batch.py"
-printf '%s  %s\n' 03deb6873e8d9eb669ca73c370a5c5e3a45de4627233e8725f142c63ffd962cb "$OUT/container-batch.py" | sha256sum --check -
+printf '%s  %s\n' 863bb22fa9e3e829bfc3af6cd20f8b0355aff1a74546afaaf209a50a0e8725a9 "$OUT/container-batch.py" | sha256sum --check -
 python3 "$OUT/container-batch.py" "$OUT" "$PIN" "$RUNNER_PIN" "${GAMES[@]}"
