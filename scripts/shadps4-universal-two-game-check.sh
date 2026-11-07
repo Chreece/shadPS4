@@ -52,7 +52,7 @@ trap finish EXIT
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 80f3dcd7ec56fbaaf36603259b9a3c6a3fcecd29f41fb662f7a9dea77785a0c8 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 461c0a7553cf9f3acdb8b62498c242031253dc2f4a2b74c505e262fc2279ab5a "$OUT/graphics.py" | sha256sum --check -
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
@@ -108,41 +108,8 @@ fi
 if [[ "${SHADPS4_KERNEL_JOURNAL_SUDO:-0}" == 1 ]]; then
     sudo -v
 fi
-RESULT=0
-for GAME in "${GAMES[@]}"; do
-    CAPTURE_SHADERS=0
-    if [[ "${SHADPS4_TEST_GPU_TRACE:-0}" == 1 ||
-          "$GAME" == "${GAMES[0]}" && "${SHADPS4_TEST_CAPTURE_FIRST_SHADERS:-0}" == 1 ]]; then
-        CAPTURE_SHADERS=1
-    fi
-    printf '\nTESTING=%s MAX_SECONDS=120 AUTOMATIC_INPUT=NO\n' "$GAME"
-    set +e
-    SHADPS4_CAPTURE_SHADER_DIAGNOSTICS="$CAPTURE_SHADERS" \
-    SHADPS4_TEST_SOURCE_COMMIT="$PIN" \
-    SHADPS4_TEST_RUNNER_COMMIT="$RUNNER_PIN" \
-    SHADPS4_TEST_GAME="/mnt/roms-all/ps4-games/$GAME/eboot.bin" \
-        python3 "$OUT/graphics.py" \
-        2>&1 | tee "$OUT/$GAME-runner.log"
-    rc=${PIPESTATUS[0]}
-    set -e
-    if (( rc != 0 )); then RESULT=$rc; fi
-    if python3 - "$OUT/$GAME-runner.log" <<'PY'
-import json,pathlib,sys
-for line in pathlib.Path(sys.argv[1]).read_text(errors='replace').splitlines():
-    if line.startswith('EVIDENCE='):
-        p=pathlib.Path(line.removeprefix('EVIDENCE=').removesuffix('.tar.gz'))/'result.json'
-        if p.is_file():
-            result=json.loads(p.read_text())
-            native=result.get('native',{})
-            unsafe=result.get('stop_remaining_tests') or native.get('gpu_failure') or (
-                result.get('game_launched') and not native.get('owned_child_terminated',False))
-            sys.exit(0 if unsafe else 1)
-sys.exit(0)
-PY
-    then
-        echo SHARED_PREFLIGHT_GPU_FAILURE_OR_UNCONFIRMED_STOP_ENDING_REMAINING_TESTS
-        RESULT=1
-        break
-    fi
-done
-exit "$RESULT"
+curl --ipv4 --fail --location --retry 3 \
+    "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_container_batch.py" \
+    -o "$OUT/container-batch.py"
+printf '%s  %s\n' 03deb6873e8d9eb669ca73c370a5c5e3a45de4627233e8725f142c63ffd962cb "$OUT/container-batch.py" | sha256sum --check -
+python3 "$OUT/container-batch.py" "$OUT" "$PIN" "$RUNNER_PIN" "${GAMES[@]}"

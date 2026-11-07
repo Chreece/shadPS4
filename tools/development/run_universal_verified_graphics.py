@@ -44,6 +44,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     first_gpu_progress = None
     gpu_progress_hashes = []
     sampling_offset_hashes = []
+    descriptor_provenance_counts = {}
+    observed_work_hashes = set()
     bound_stage_hashes = {}
     in_first_wait = False
     first_wait_hashes_truncated = False
@@ -91,6 +93,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 work = re.match(r'GRAPHICS_WORK seq=\d+ .*\bshader=([0-9a-fA-F]+)\b', line)
                 if work:
                     shader_hash = format(int(work.group(1), 16), '016x')
+                    if len(observed_work_hashes) < 2048:
+                        observed_work_hashes.add(shader_hash)
                     if in_first_wait and shader_hash not in first_wait_work_hashes:
                         if len(first_wait_work_hashes) < 64:
                             first_wait_work_hashes.append(shader_hash)
@@ -125,6 +129,11 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                     shader_hash = format(int(sample_offset.group(1), 16), '016x')
                     if shader_hash not in sampling_offset_hashes and len(sampling_offset_hashes) < 16:
                         sampling_offset_hashes.append(shader_hash)
+                provenance = re.search(r'SHARP_RESOURCE_PROVENANCE shader=0x([0-9a-fA-F]+)', line)
+                if provenance:
+                    shader_hash = format(int(provenance.group(1), 16), '016x')
+                    if shader_hash in descriptor_provenance_counts or len(descriptor_provenance_counts) < 512:
+                        descriptor_provenance_counts[shader_hash] = descriptor_provenance_counts.get(shader_hash, 0) + 1
                 automatic_coherence |= 'GPU memory coherence: automatic' in line
                 mode = re.search(r'GPU readbacksMode: (\d+)\b', line)
                 if mode:
@@ -171,6 +180,9 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     priority = gpu_progress_hashes.copy()
     priority.extend(h for h in validation_hashes if h not in priority)
     priority.extend(h for h in validation_compilation_hashes if h not in priority)
+    descriptor_provenance_hashes = sorted(descriptor_provenance_counts,
+        key=lambda h: (h not in observed_work_hashes, -descriptor_provenance_counts[h], h))[:64]
+    priority.extend(h for h in descriptor_provenance_hashes if h not in priority)
     priority.extend(h for h in sampling_offset_hashes if h not in priority)
     for capture in captures:
         match = re.fullmatch(r'ordered-gds-([0-9a-f]{16})-\d+\.bin', capture['file'])
@@ -249,6 +261,10 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             'recorded_gpu_work_hashes': list(reversed(recorded_work_hashes)),
             'waiting_gpu_work_hashes': list(reversed(waiting_work_hashes)),
             'sampling_offset_hashes': sampling_offset_hashes,
+            'descriptor_provenance_hashes': descriptor_provenance_hashes,
+            'descriptor_provenance_counts': descriptor_provenance_counts,
+            'descriptor_provenance_observed_work_hashes': [h for h in descriptor_provenance_hashes
+                if h in observed_work_hashes],
             'first_gpu_progress': first_gpu_progress,
             'gpu_progress_hashes': gpu_progress_hashes,
             'first_wait_window': first_wait_window,
@@ -913,8 +929,19 @@ def main():
         record['profile_policy'] = 'isolated saves; global config; no custom title configs, patches, cheats or old shader cache'
         record['vram_free_before'] = free_vram()
         record['ollama_unloaded'] = []
-        if record['vram_free_before'] < MIN_FREE:
+        container_lease_path = os.environ.get('SHADPS4_OLLAMA_CONTAINER_LEASE')
+        if container_lease_path:
+            container_lease = json.loads(Path(container_lease_path).read_text())
+            if (container_lease.get('guard_pid') != os.getppid() or
+                    container_lease.get('result') != 'HELD_STOPPED' or
+                    not container_lease.get('containers')):
+                raise RuntimeError('INVALID_PARENT_OLLAMA_CONTAINER_LEASE')
+            record['ollama_isolation'] = 'CONTAINERS_STOPPED_FOR_ENTIRE_BATCH'
+            record['ollama_container_lease'] = container_lease_path
+            record['ollama_container_ids'] = [item['id'] for item in container_lease['containers']]
+        elif record['vram_free_before'] < MIN_FREE:
             unload_models(out, record)
+        if record['vram_free_before'] < MIN_FREE:
             until = time.monotonic() + 20
             while free_vram() < MIN_FREE and time.monotonic() < until:
                 time.sleep(.5)
@@ -922,10 +949,11 @@ def main():
         if record['vram_free_at_launch'] < MIN_FREE:
             raise RuntimeError('LESS_THAN_8_GIB_VRAM_FREE')
         record.setdefault('ollama_attempts', [])
-        endpoints = ([record['ollama_endpoint']] if record.get('ollama_endpoint') else
-                     list(ollama_endpoints(record)))
-        model_monitor = ModelUsageMonitor(out, endpoints)
-        model_monitor.start()
+        if not container_lease_path:
+            endpoints = ([record['ollama_endpoint']] if record.get('ollama_endpoint') else
+                         list(ollama_endpoints(record)))
+            model_monitor = ModelUsageMonitor(out, endpoints)
+            model_monitor.start()
         os.environ['SHADPS4_GRAPHICS_DIAGNOSTICS'] = '1'
         record['graphics_diagnostics_requested'] = True
         sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
