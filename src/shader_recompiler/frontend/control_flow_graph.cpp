@@ -19,7 +19,7 @@ struct Compare {
     }
 
     bool operator()(const Block& lhs, const Block& rhs) const noexcept {
-        return lhs.begin < rhs.begin;
+        return lhs < rhs;
     }
 };
 
@@ -61,6 +61,7 @@ static bool IgnoresExecMask(const GcnInst& inst) {
     case Opcode::V_READLANE_B32:
     case Opcode::V_WRITELANE_B32:
     case Opcode::V_READFIRSTLANE_B32:
+    case Opcode::DS_ORDERED_COUNT:
         return true;
     default:
         break;
@@ -146,6 +147,9 @@ void CFG::EmitLabels() {
                 AddLabel(true_label);
                 AddLabel(false_label);
             }
+        } else if (inst.opcode == Opcode::DS_ORDERED_COUNT) {
+            AddLabel(pc);
+            AddLabel(pc + inst.length);
         } else if (inst.opcode == Opcode::S_ENDPGM) {
             const u32 next_label = pc + inst.length;
             AddLabel(next_label);
@@ -160,6 +164,12 @@ void CFG::EmitLabels() {
 }
 
 void CFG::SplitDivergenceScopes() {
+    const bool has_ordered_count = std::ranges::any_of(
+        inst_list, [](const GcnInst& inst) { return inst.opcode == Opcode::DS_ORDERED_COUNT; });
+    if (has_ordered_count) {
+        SplitWaveScopes();
+        return;
+    }
     const auto is_open_scope = [](const GcnInst& inst) {
         // An open scope instruction is an instruction that modifies EXEC
         // but also saves the previous value to restore later. This indicates
@@ -277,6 +287,91 @@ void CFG::SplitDivergenceScopes() {
                 curr_begin = index;
             }
         }
+    }
+}
+
+void CFG::SplitWaveScopes() {
+    const auto masked = [](const GcnInst& inst) {
+        return !IgnoresExecMask(inst) && !inst.WritesScalarMask();
+    };
+    for (auto it = blocks.begin(); it != blocks.end();) {
+        Block* current = &*it++;
+        const auto next = it;
+        const u32 last = current->end_index;
+        const u32 end = current->end;
+        const auto end_inst = current->end_inst;
+        const auto end_class = current->end_class;
+        auto cond = current->cond;
+        switch (cond) {
+        case IR::Condition::Execz:
+            cond = IR::Condition::WaveExecz;
+            break;
+        case IR::Condition::Execnz:
+            cond = IR::Condition::WaveExecnz;
+            break;
+        case IR::Condition::Vccz:
+            cond = IR::Condition::WaveVccz;
+            break;
+        case IR::Condition::Vccnz:
+            cond = IR::Condition::WaveVccnz;
+            break;
+        default:
+            break;
+        }
+        auto* const branch_true = current->branch_true;
+        auto* const branch_false = current->branch_false;
+        for (u32 index = current->begin_index; index <= last;) {
+            if (!masked(inst_list[index])) {
+                ++index;
+                continue;
+            }
+            const u32 first = index;
+            while (index <= last && masked(inst_list[index])) {
+                ++index;
+            }
+            current->is_exec_guard = true;
+            auto* body = block_pool.Create();
+            body->begin = index_to_pc[first];
+            body->end = index_to_pc[index];
+            body->begin_index = first;
+            body->end_index = index - 1;
+            body->end_inst = inst_list[index - 1];
+            body->num_predecessors = 1;
+            body->cond = IR::Condition::True;
+            blocks.insert_before(next, *body);
+
+            Block* after = branch_true;
+            if (index <= last) {
+                after = block_pool.Create();
+                after->begin = index_to_pc[index];
+                after->begin_index = index;
+                after->num_predecessors = 2;
+                blocks.insert_before(next, *after);
+            } else {
+                ASSERT(end_class == EndClass::Branch && cond == IR::Condition::True && after);
+                ++after->num_predecessors;
+            }
+
+            current->end = index_to_pc[first];
+            current->end_index = first - 1;
+            current->end_inst = first > current->begin_index ? inst_list[first - 1] : GcnInst{};
+            current->cond = IR::Condition::Execnz;
+            current->end_class = EndClass::Branch;
+            current->branch_true = body;
+            current->branch_false = after;
+            body->branch_true = after;
+            current = index <= last ? after : nullptr;
+        }
+        if (!current) {
+            continue;
+        }
+        current->end = end;
+        current->end_index = last;
+        current->end_inst = end_inst;
+        current->end_class = end_class;
+        current->cond = cond;
+        current->branch_true = branch_true;
+        current->branch_false = branch_false;
     }
 }
 

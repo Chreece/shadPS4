@@ -1,0 +1,3731 @@
+{
+  "schema_version": 2,
+  "record_id": "pr173-native-20261106T092232Z-reviewed",
+  "timestamp_utc": "2026-11-06T09:50:02.433903+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "source_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "runner_commit": "c7365c9fbb7ff8bb004229b71f948619a864c4bd",
+  "upstream_commit": "0d5f2739d2544d2a35c73e354cba7a32b7a81bea",
+  "archive": "universal-two-games-20261106T092232Z-999909.tar.gz",
+  "archive_sha256": "ab3f37aae5f099da251a361ab890d54d076feca27dd482ada306a011a286776c",
+  "library_file_id": "libfile_4654a3e8ce00819194488aeaab8ddabb",
+  "batch_exit_code": 0,
+  "native_build": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+  "tested_games": [
+    "CUSA34384",
+    "CUSA11456"
+  ],
+  "runs": {
+    "CUSA11456": {
+      "record_id": "universal-graphics-20261106T093832Z-1141914",
+      "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+      "native_exit_code": 0,
+      "native_elapsed_seconds": 118.164,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "installed_binary_changed": false,
+      "vram_free_at_launch": 25633148928,
+      "peak_total_vram_bytes": 1716682752,
+      "median_gpu_busy_after_60s_percent": 0,
+      "ollama_restoration_statuses": [
+        "RESTORED"
+      ],
+      "regions": [
+        {
+          "name": "draw",
+          "calls": 19567,
+          "inclusive_ns": 471031048,
+          "self_ns": 232162760,
+          "max_ns": 8060743,
+          "bytes": 0,
+          "last_ns": 34274895833
+        },
+        {
+          "name": "dispatch",
+          "calls": 35961,
+          "inclusive_ns": 1958213967,
+          "self_ns": 123152767,
+          "max_ns": 34230517,
+          "bytes": 0,
+          "last_ns": 34256191129
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 75095,
+          "inclusive_ns": 92170976,
+          "self_ns": 61371604,
+          "max_ns": 3872427,
+          "bytes": 0,
+          "last_ns": 34274885645
+        },
+        {
+          "name": "bind-textures",
+          "calls": 75095,
+          "inclusive_ns": 340264892,
+          "self_ns": 329166949,
+          "max_ns": 27055925,
+          "bytes": 0,
+          "last_ns": 34274885970
+        },
+        {
+          "name": "shader-compile",
+          "calls": 118,
+          "inclusive_ns": 143745718,
+          "self_ns": 132671456,
+          "max_ns": 20540793,
+          "bytes": 0,
+          "last_ns": 34253522645
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 55528,
+          "inclusive_ns": 1619368806,
+          "self_ns": 128823095,
+          "max_ns": 20698183,
+          "bytes": 0,
+          "last_ns": 34274881826
+        },
+        {
+          "name": "image-readback",
+          "calls": 106117,
+          "inclusive_ns": 10488678,
+          "self_ns": 10137320,
+          "max_ns": 846735,
+          "bytes": 19690565204,
+          "last_ns": 106093188582
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 1390,
+          "inclusive_ns": 1676443065,
+          "self_ns": 16854006,
+          "max_ns": 11073799,
+          "bytes": 40989248,
+          "last_ns": 34256169090
+        },
+        {
+          "name": "page-protect",
+          "calls": 26301,
+          "inclusive_ns": 139029105,
+          "self_ns": 139029105,
+          "max_ns": 1074319,
+          "bytes": 3762171904,
+          "last_ns": 34275309964
+        },
+        {
+          "name": "submit",
+          "calls": 4465,
+          "inclusive_ns": 49862785,
+          "self_ns": 49862785,
+          "max_ns": 235399,
+          "bytes": 0,
+          "last_ns": 34308136272
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 1391,
+          "inclusive_ns": 1652508485,
+          "self_ns": 1640577369,
+          "max_ns": 11026765,
+          "bytes": 0,
+          "last_ns": 34256156913
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      ],
+      "threads": {
+        "008s": [
+          {
+            "tid": 1143040,
+            "name": "Game:Main",
+            "runtime_ns": 2300734204,
+            "runqueue_wait_ns": 18760823,
+            "timeslices": 1246,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce1bfd998 0x80 0x2 0x0 0x0 0x0 0x7efded488 0x7fdf4df7ebbb\n"
+          },
+          {
+            "tid": 1143048,
+            "name": "JobWorkerLow1",
+            "runtime_ns": 521507211,
+            "runqueue_wait_ns": 223381315,
+            "timeslices": 597,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143052,
+            "name": "JobWorkerLow5",
+            "runtime_ns": 499420983,
+            "runqueue_wait_ns": 200823988,
+            "timeslices": 672,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143049,
+            "name": "JobWorkerLow2",
+            "runtime_ns": 494777119,
+            "runqueue_wait_ns": 242473688,
+            "timeslices": 614,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143053,
+            "name": "JobWorker1",
+            "runtime_ns": 468331798,
+            "runqueue_wait_ns": 343529249,
+            "timeslices": 890,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143051,
+            "name": "JobWorkerLow4",
+            "runtime_ns": 461301940,
+            "runqueue_wait_ns": 315719602,
+            "timeslices": 675,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095c818 0x0 0x0 0x0 0x0 0x0 0x7efaf3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143054,
+            "name": "JobWorker2",
+            "runtime_ns": 457478731,
+            "runqueue_wait_ns": 247331543,
+            "timeslices": 862,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143056,
+            "name": "JobWorker4",
+            "runtime_ns": 443857393,
+            "runqueue_wait_ns": 221190331,
+            "timeslices": 823,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143055,
+            "name": "JobWorker3",
+            "runtime_ns": 440392478,
+            "runqueue_wait_ns": 232907576,
+            "timeslices": 845,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143057,
+            "name": "JobWorker5",
+            "runtime_ns": 412163750,
+            "runqueue_wait_ns": 275956781,
+            "timeslices": 815,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800960da8 0x0 0x0 0x0 0x0 0x0 0x7ef9d3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143050,
+            "name": "JobWorkerLow3",
+            "runtime_ns": 404412915,
+            "runqueue_wait_ns": 285168865,
+            "timeslices": 642,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x0 0x7efb23dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142488,
+            "name": "shadPS4:Main",
+            "runtime_ns": 306641724,
+            "runqueue_wait_ns": 2251549,
+            "timeslices": 7800,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffd8c796808 0x1 0x7ffd8c7967b0 0x0 0x8 0x0 0x7ffd8c796758 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143041,
+            "name": "FaWorkerIo1",
+            "runtime_ns": 82960839,
+            "runqueue_wait_ns": 87073887,
+            "timeslices": 1720,
+            "wait_channel": "folio_wait_bit_common",
+            "syscall": "0 0x23 0x7fdcdc08e910 0x100000 0x0 0x0 0x0 0x7efcd3c78 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142514,
+            "name": "shadPS4:Present",
+            "runtime_ns": 79668175,
+            "runqueue_wait_ns": 185454,
+            "timeslices": 601,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7fdcf07fb330 0x7fdcf07fb340 0x0 0x0 0x7fdcf07fb2d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142504,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 72465764,
+            "runqueue_wait_ns": 30459134,
+            "timeslices": 640,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd61ea2d4 0x189 0x53 0x0 0x0 0xffffffff 0x7fdd277fb068 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142498,
+            "name": "PulseMainloop",
+            "runtime_ns": 12075550,
+            "runqueue_wait_ns": 1887,
+            "timeslices": 927,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdd280071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf4a5fb178 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142516,
+            "name": "SDLTimer",
+            "runtime_ns": 10452051,
+            "runqueue_wait_ns": 87174,
+            "timeslices": 1746,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd6f5d890 0x189 0x0 0x7fdcef7f9390 0x0 0xffffffff 0x7fdcef7f92d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143079,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 7331742,
+            "runqueue_wait_ns": 16208,
+            "timeslices": 289,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5986798 0x189 0x136 0x0 0x0 0xffffffff 0x7fdc64fb9308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143081,
+            "name": "SDLAudioP27",
+            "runtime_ns": 7253597,
+            "runqueue_wait_ns": 117664064,
+            "timeslices": 457,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1142511,
+            "name": "WSI swapchain q",
+            "runtime_ns": 7186135,
+            "runqueue_wait_ns": 813,
+            "timeslices": 589,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29554 0x89 0x125 0x7fdd175f93e0 0x0 0xffffffff 0x7fdd175f9248 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143082,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 6312700,
+            "runqueue_wait_ns": 44437007,
+            "timeslices": 432,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef6eff10 0x7ef6eff20 0x0 0x0 0x7ef6efeb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143074,
+            "name": "AK::EventManage",
+            "runtime_ns": 6298512,
+            "runqueue_wait_ns": 21145734,
+            "timeslices": 442,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7d3f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef7d3d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142490,
+            "name": "shadPS4:Main",
+            "runtime_ns": 5003109,
+            "runqueue_wait_ns": 6238,
+            "timeslices": 996,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd542a978 0x189 0x3f6 0x0 0x0 0xffffffff 0x7fdf4bada168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143084,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 4576162,
+            "runqueue_wait_ns": 99946324,
+            "timeslices": 339,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef58ff10 0x7ef58ff20 0x0 0x0 0x7ef58feb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142512,
+            "name": "WSI swapchain e",
+            "runtime_ns": 4474538,
+            "runqueue_wait_ns": 5891,
+            "timeslices": 392,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdd16df81e8 0x1 0xffffffffffffffff 0x0 0x0 0x0 0x7fdd16df8178 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143071,
+            "name": "AK::BankManager",
+            "runtime_ns": 4146079,
+            "runqueue_wait_ns": 3477,
+            "timeslices": 4,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef853f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef853d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143083,
+            "name": "AK::LibAudioOut",
+            "runtime_ns": 3134908,
+            "runqueue_wait_ns": 53651112,
+            "timeslices": 578,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdc70028a78 0x189 0xfe 0x0 0x0 0xffffffff 0x7ef5cfd48 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142499,
+            "name": "PulseHotplug",
+            "runtime_ns": 2568917,
+            "runqueue_wait_ns": 0,
+            "timeslices": 459,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8670 0x189 0x38f 0x0 0x0 0xffffffff 0x7fdf49dfa2e8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143058,
+            "name": "GpuInterrupt",
+            "runtime_ns": 1263766,
+            "runqueue_wait_ns": 52778507,
+            "timeslices": 92,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce02a9c7c 0x189 0x57 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143077,
+            "name": "Psn",
+            "runtime_ns": 1260966,
+            "runqueue_wait_ns": 12680197,
+            "timeslices": 140,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096a460 0x0 0x0 0x0 0x0 0x55fdd54002c0 0x7ef73ab88 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143061,
+            "name": "Toolkit::NP::No",
+            "runtime_ns": 772946,
+            "runqueue_wait_ns": 10589157,
+            "timeslices": 95,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8fbf50 0x7ef8fbf60 0x0 0x0 0x7ef8fbef8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143062,
+            "name": "Toolkit::NP::Ab",
+            "runtime_ns": 536471,
+            "runqueue_wait_ns": 10397558,
+            "timeslices": 95,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8cbef0 0x7ef8cbf00 0x0 0x0 0x7ef8cbe98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142505,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 201575,
+            "runqueue_wait_ns": 4512,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58e39f0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd185fb238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142507,
+            "name": "shadPS4:Main",
+            "runtime_ns": 187143,
+            "runqueue_wait_ns": 0,
+            "timeslices": 3,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59796e8 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd1aa1a308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143072,
+            "name": "AK Suspended",
+            "runtime_ns": 154269,
+            "runqueue_wait_ns": 3403748,
+            "timeslices": 18,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef813f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef813d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143063,
+            "name": "CloseTextures",
+            "runtime_ns": 152380,
+            "runqueue_wait_ns": 34760,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800965338 0x0 0x0 0x0 0x0 0x1d195d0 0x7ef89bce8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142502,
+            "name": "libusb_event",
+            "runtime_ns": 107390,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdf495f9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf495f93b8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142506,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 76727,
+            "runqueue_wait_ns": 3000,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5ab1dc0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd17dfa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143076,
+            "name": "Http",
+            "runtime_ns": 70307,
+            "runqueue_wait_ns": 1849,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x8009698c8 0x0 0x0 0x0 0x0 0x0 0x7ef763d38 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143060,
+            "name": "Toolkit::NP::Ma",
+            "runtime_ns": 68968,
+            "runqueue_wait_ns": 3375,
+            "timeslices": 3,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800963070 0x0 0x0 0x0 0x7fdc9c000090 0x0 0x7ef95bde8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143059,
+            "name": "Trophy",
+            "runtime_ns": 67308,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b5b4c 0x189 0x0 0x0 0x0 0xffffffff 0x7ef97fda8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142503,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 65554,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a1f740 0x189 0x0 0x0 0x0 0xffffffff 0x7fdf48df8238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143039,
+            "name": "shadPS4:Main",
+            "runtime_ns": 61629,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdceeff8390 0x89 0x0 0x7fdceeff8290 0x0 0xffffffff 0x7fdceeff8148 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142510,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 60556,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8878 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19217258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143075,
+            "name": "MovieDecoder",
+            "runtime_ns": 57676,
+            "runqueue_wait_ns": 1998,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800968d30 0x0 0x0 0x0 0x0 0x0 0x7ef793cd8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143073,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 50463,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce116e610 0x189 0x0 0x0 0x0 0xffffffff 0x7fdc837fa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143047,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 47185,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a20028 0x0 0x0 0x0 0x0 0x0 0x7efca3e58 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143064,
+            "name": "ProxySetSync",
+            "runtime_ns": 46659,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b60c8 0x189 0x0 0x0 0x0 0xffffffff 0x7ef877da8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142509,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 43601,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8198 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19a18258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143078,
+            "name": "Game:Main",
+            "runtime_ns": 41285,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdc80ff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdc80ff5208 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142513,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 11538,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0552080 0x189 0x0 0x0 0x0 0xffffffff 0x7fdcffffb168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142508,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 9059,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c7ab8 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd1a219258 0x7fdf4df8972e\n"
+          }
+        ],
+        "025s": [
+          {
+            "tid": 1143040,
+            "name": "Game:Main",
+            "runtime_ns": 10885472433,
+            "runqueue_wait_ns": 676559162,
+            "timeslices": 9466,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce1bfd998 0x80 0x2 0x0 0x0 0x0 0x7efded3c8 0x7fdf4df7ebbb\n"
+          },
+          {
+            "tid": 1143048,
+            "name": "JobWorkerLow1",
+            "runtime_ns": 2726830616,
+            "runqueue_wait_ns": 1336819642,
+            "timeslices": 4676,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143052,
+            "name": "JobWorkerLow5",
+            "runtime_ns": 2670672729,
+            "runqueue_wait_ns": 1460126551,
+            "timeslices": 4379,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143051,
+            "name": "JobWorkerLow4",
+            "runtime_ns": 2561821089,
+            "runqueue_wait_ns": 1553128524,
+            "timeslices": 4642,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143049,
+            "name": "JobWorkerLow2",
+            "runtime_ns": 2519989728,
+            "runqueue_wait_ns": 1766399764,
+            "timeslices": 4702,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143050,
+            "name": "JobWorkerLow3",
+            "runtime_ns": 2511056061,
+            "runqueue_wait_ns": 1701606059,
+            "timeslices": 4613,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143057,
+            "name": "JobWorker5",
+            "runtime_ns": 2502557020,
+            "runqueue_wait_ns": 1364450420,
+            "timeslices": 5679,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143053,
+            "name": "JobWorker1",
+            "runtime_ns": 2491752757,
+            "runqueue_wait_ns": 1715128551,
+            "timeslices": 6158,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143054,
+            "name": "JobWorker2",
+            "runtime_ns": 2473267519,
+            "runqueue_wait_ns": 1511129233,
+            "timeslices": 6097,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143056,
+            "name": "JobWorker4",
+            "runtime_ns": 2459060003,
+            "runqueue_wait_ns": 1403804806,
+            "timeslices": 5984,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143055,
+            "name": "JobWorker3",
+            "runtime_ns": 2446899587,
+            "runqueue_wait_ns": 1440439067,
+            "timeslices": 6023,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143075,
+            "name": "MovieDecoder",
+            "runtime_ns": 1850737905,
+            "runqueue_wait_ns": 323195865,
+            "timeslices": 1197,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdc7400fcec 0x0 0x0 0x0 0x0 0x18 0x7fdc7400fca8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142504,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 854941424,
+            "runqueue_wait_ns": 254027916,
+            "timeslices": 6813,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd61ea2d0 0x189 0x250 0x0 0x0 0xffffffff 0x7fdd277fb068 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142488,
+            "name": "shadPS4:Main",
+            "runtime_ns": 487030875,
+            "runqueue_wait_ns": 2850749,
+            "timeslices": 24994,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffd8c796808 0x1 0x7ffd8c7967b0 0x0 0x8 0x0 0x7ffd8c796758 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142514,
+            "name": "shadPS4:Present",
+            "runtime_ns": 254464431,
+            "runqueue_wait_ns": 284047,
+            "timeslices": 2707,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7fdcf07fb330 0x7fdcf07fb340 0x0 0x0 0x7fdcf07fb2d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143041,
+            "name": "FaWorkerIo1",
+            "runtime_ns": 248249698,
+            "runqueue_wait_ns": 330965154,
+            "timeslices": 4484,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800958e20 0x0 0x0 0x0 0x0 0x1000b34c30 0x7efcd3db8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142498,
+            "name": "PulseMainloop",
+            "runtime_ns": 116616542,
+            "runqueue_wait_ns": 261602,
+            "timeslices": 7401,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdd280071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf4a5fb178 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143079,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 87434604,
+            "runqueue_wait_ns": 65069,
+            "timeslices": 2694,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5986798 0x189 0xada 0x0 0x0 0xffffffff 0x7fdc64fb9308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143081,
+            "name": "SDLAudioP27",
+            "runtime_ns": 74947695,
+            "runqueue_wait_ns": 775252601,
+            "timeslices": 3682,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8674 0x189 0x1cb8 0x0 0x0 0xffffffff 0x7fdc5f7fa2f8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143082,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 47317735,
+            "runqueue_wait_ns": 508986026,
+            "timeslices": 2637,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef6eff10 0x7ef6eff20 0x0 0x0 0x7ef6efeb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143071,
+            "name": "AK::BankManager",
+            "runtime_ns": 44076468,
+            "runqueue_wait_ns": 3477,
+            "timeslices": 17,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef853f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef853d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143074,
+            "name": "AK::EventManage",
+            "runtime_ns": 43665511,
+            "runqueue_wait_ns": 182328198,
+            "timeslices": 2734,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7d3f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef7d3d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143084,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 42339164,
+            "runqueue_wait_ns": 594568426,
+            "timeslices": 2232,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef58ff10 0x7ef58ff20 0x0 0x0 0x7ef58feb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142516,
+            "name": "SDLTimer",
+            "runtime_ns": 38722210,
+            "runqueue_wait_ns": 368326,
+            "timeslices": 6523,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd6f5d890 0x189 0x0 0x7fdcef7f9390 0x0 0xffffffff 0x7fdcef7f92d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143058,
+            "name": "GpuInterrupt",
+            "runtime_ns": 34020424,
+            "runqueue_wait_ns": 526873425,
+            "timeslices": 2295,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce02a9c7c 0x189 0x8db 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142499,
+            "name": "PulseHotplug",
+            "runtime_ns": 29234444,
+            "runqueue_wait_ns": 54874,
+            "timeslices": 3710,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8674 0x189 0x1cb8 0x0 0x0 0xffffffff 0x7fdf49dfa2e8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143083,
+            "name": "AK::LibAudioOut",
+            "runtime_ns": 27870951,
+            "runqueue_wait_ns": 231043768,
+            "timeslices": 4147,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdc70028a78 0x189 0x756 0x0 0x0 0xffffffff 0x7ef5cfd48 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142511,
+            "name": "WSI swapchain q",
+            "runtime_ns": 25068751,
+            "runqueue_wait_ns": 20358,
+            "timeslices": 1616,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29554 0x89 0x32d 0x7fdd175f93e0 0x0 0xffffffff 0x7fdd175f9248 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142512,
+            "name": "WSI swapchain e",
+            "runtime_ns": 16081060,
+            "runqueue_wait_ns": 33323,
+            "timeslices": 1443,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c2962c 0x189 0x25f 0x0 0x0 0xffffffff 0x7fdd16df8228 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143077,
+            "name": "Psn",
+            "runtime_ns": 9472638,
+            "runqueue_wait_ns": 222601479,
+            "timeslices": 1135,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096a460 0x0 0x0 0x0 0x0 0x55fdd54002c0 0x7ef73ab88 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142490,
+            "name": "shadPS4:Main",
+            "runtime_ns": 7125339,
+            "runqueue_wait_ns": 9845,
+            "timeslices": 1275,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd542a978 0x189 0x50c 0x0 0x0 0xffffffff 0x7fdf4bada168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143061,
+            "name": "Toolkit::NP::No",
+            "runtime_ns": 5820404,
+            "runqueue_wait_ns": 76161750,
+            "timeslices": 619,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8fbf50 0x7ef8fbf60 0x0 0x0 0x7ef8fbef8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143062,
+            "name": "Toolkit::NP::Ab",
+            "runtime_ns": 3745121,
+            "runqueue_wait_ns": 73500662,
+            "timeslices": 619,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8cbef0 0x7ef8cbf00 0x0 0x0 0x7ef8cbe98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142507,
+            "name": "shadPS4:Main",
+            "runtime_ns": 479615,
+            "runqueue_wait_ns": 0,
+            "timeslices": 8,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59796ec 0x189 0x5 0x0 0x0 0xffffffff 0x7fdd1aa1a308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142505,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 201575,
+            "runqueue_wait_ns": 4512,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58e39f0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd185fb238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143072,
+            "name": "AK Suspended",
+            "runtime_ns": 154269,
+            "runqueue_wait_ns": 3403748,
+            "timeslices": 18,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef813f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef813d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143063,
+            "name": "CloseTextures",
+            "runtime_ns": 152380,
+            "runqueue_wait_ns": 34760,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800965338 0x0 0x0 0x0 0x0 0x1d195d0 0x7ef89bce8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142502,
+            "name": "libusb_event",
+            "runtime_ns": 107390,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdf495f9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf495f93b8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142506,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 76727,
+            "runqueue_wait_ns": 3000,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5ab1dc0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd17dfa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143076,
+            "name": "Http",
+            "runtime_ns": 70307,
+            "runqueue_wait_ns": 1849,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x8009698c8 0x0 0x0 0x0 0x0 0x0 0x7ef763d38 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143060,
+            "name": "Toolkit::NP::Ma",
+            "runtime_ns": 68968,
+            "runqueue_wait_ns": 3375,
+            "timeslices": 3,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800963070 0x0 0x0 0x0 0x7fdc9c000090 0x0 0x7ef95bde8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143059,
+            "name": "Trophy",
+            "runtime_ns": 67308,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b5b4c 0x189 0x0 0x0 0x0 0xffffffff 0x7ef97fda8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142503,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 65554,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a1f740 0x189 0x0 0x0 0x0 0xffffffff 0x7fdf48df8238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143039,
+            "name": "shadPS4:Main",
+            "runtime_ns": 61629,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdceeff8390 0x89 0x0 0x7fdceeff8290 0x0 0xffffffff 0x7fdceeff8148 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142510,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 60556,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8878 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19217258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143073,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 50463,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce116e610 0x189 0x0 0x0 0x0 0xffffffff 0x7fdc837fa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143047,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 47185,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a20028 0x0 0x0 0x0 0x0 0x0 0x7efca3e58 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143064,
+            "name": "ProxySetSync",
+            "runtime_ns": 46659,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b60c8 0x189 0x0 0x0 0x0 0xffffffff 0x7ef877da8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142509,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 43601,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8198 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19a18258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143078,
+            "name": "Game:Main",
+            "runtime_ns": 41285,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdc80ff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdc80ff5208 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142513,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 11538,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0552080 0x189 0x0 0x0 0x0 0xffffffff 0x7fdcffffb168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142508,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 9059,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c7ab8 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd1a219258 0x7fdf4df8972e\n"
+          }
+        ],
+        "080s": [
+          {
+            "tid": 1143040,
+            "name": "Game:Main",
+            "runtime_ns": 58470123855,
+            "runqueue_wait_ns": 1209241153,
+            "timeslices": 18001,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143048,
+            "name": "JobWorkerLow1",
+            "runtime_ns": 4048465833,
+            "runqueue_wait_ns": 2254557950,
+            "timeslices": 7118,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095a550 0x0 0x0 0x0 0x0 0x0 0x7efb83dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143052,
+            "name": "JobWorkerLow5",
+            "runtime_ns": 4038590887,
+            "runqueue_wait_ns": 2262820574,
+            "timeslices": 6966,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095d3b0 0x0 0x0 0x0 0x0 0x0 0x7efac3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143051,
+            "name": "JobWorkerLow4",
+            "runtime_ns": 3925636464,
+            "runqueue_wait_ns": 2306215221,
+            "timeslices": 6945,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095c818 0x0 0x0 0x0 0x0 0x0 0x7efaf3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143049,
+            "name": "JobWorkerLow2",
+            "runtime_ns": 3917956058,
+            "runqueue_wait_ns": 2470695947,
+            "timeslices": 7149,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095b0e8 0x0 0x0 0x0 0x0 0x0 0x7efb53dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143050,
+            "name": "JobWorkerLow3",
+            "runtime_ns": 3750138899,
+            "runqueue_wait_ns": 2618024633,
+            "timeslices": 7154,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x0 0x7efb23dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143053,
+            "name": "JobWorker1",
+            "runtime_ns": 3732770206,
+            "runqueue_wait_ns": 2406834225,
+            "timeslices": 9214,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095df48 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa93dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143054,
+            "name": "JobWorker2",
+            "runtime_ns": 3678013440,
+            "runqueue_wait_ns": 2280615499,
+            "timeslices": 9138,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095eae0 0x0 0x0 0x0 0x7fdcb0000030 0x10017cc3a8 0x7efa63dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143057,
+            "name": "JobWorker5",
+            "runtime_ns": 3669678657,
+            "runqueue_wait_ns": 2134231297,
+            "timeslices": 8647,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800960da8 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7ef9d3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143055,
+            "name": "JobWorker3",
+            "runtime_ns": 3611036036,
+            "runqueue_wait_ns": 2198893577,
+            "timeslices": 9095,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095f678 0x0 0x0 0x0 0x7fdcb4000030 0xdeadbeef00000066 0x7efa33dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143075,
+            "name": "MovieDecoder",
+            "runtime_ns": 3574392798,
+            "runqueue_wait_ns": 612985674,
+            "timeslices": 2435,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800968d30 0x0 0x0 0x0 0x0 0x7ef793d80 0x7ef793cd8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143056,
+            "name": "JobWorker4",
+            "runtime_ns": 3440217849,
+            "runqueue_wait_ns": 2251116875,
+            "timeslices": 9116,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800960210 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa03dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142504,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 1422210406,
+            "runqueue_wait_ns": 288318614,
+            "timeslices": 13047,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5a4d268 0x189 0x23d6 0x0 0x0 0xffffffff 0x7fdd277fb218 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142488,
+            "name": "shadPS4:Main",
+            "runtime_ns": 1024861905,
+            "runqueue_wait_ns": 11097090,
+            "timeslices": 77524,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffd8c796808 0x1 0x7ffd8c7967b0 0x0 0x8 0x0 0x7ffd8c796758 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142498,
+            "name": "PulseMainloop",
+            "runtime_ns": 401511220,
+            "runqueue_wait_ns": 3096771,
+            "timeslices": 28000,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdd280071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf4a5fb178 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142514,
+            "name": "shadPS4:Present",
+            "runtime_ns": 349157558,
+            "runqueue_wait_ns": 340690,
+            "timeslices": 6547,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7fdcf07fb330 0x7fdcf07fb340 0x0 0x0 0x7fdcf07fb2d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143041,
+            "name": "FaWorkerIo1",
+            "runtime_ns": 263309883,
+            "runqueue_wait_ns": 331075666,
+            "timeslices": 4871,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800958e20 0x0 0x0 0x0 0x0 0x6ac590ae 0x7efcd3db8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143074,
+            "name": "AK::EventManage",
+            "runtime_ns": 192526708,
+            "runqueue_wait_ns": 285347427,
+            "timeslices": 8198,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7d3f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef7d3d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143084,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 159034550,
+            "runqueue_wait_ns": 820566540,
+            "timeslices": 7747,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef58ff10 0x7ef58ff20 0x0 0x0 0x7ef58feb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143082,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 147817429,
+            "runqueue_wait_ns": 807510889,
+            "timeslices": 7954,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef6eff10 0x7ef6eff20 0x0 0x0 0x7ef6efeb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143079,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 147382556,
+            "runqueue_wait_ns": 339223,
+            "timeslices": 4320,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5986798 0x189 0x115c 0x0 0x0 0xffffffff 0x7fdc64fb9308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142516,
+            "name": "SDLTimer",
+            "runtime_ns": 116877356,
+            "runqueue_wait_ns": 1354106,
+            "timeslices": 21660,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd6f5d890 0x189 0x0 0x7fdcef7f9390 0x0 0xffffffff 0x7fdcef7f92d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142499,
+            "name": "PulseHotplug",
+            "runtime_ns": 99021370,
+            "runqueue_wait_ns": 122026,
+            "timeslices": 14042,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8674 0x189 0x6d2d 0x0 0x0 0xffffffff 0x7fdf49dfa2e8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143083,
+            "name": "AK::LibAudioOut",
+            "runtime_ns": 94892354,
+            "runqueue_wait_ns": 409910703,
+            "timeslices": 14705,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdc70028a7c 0x189 0x1b77 0x0 0x0 0xffffffff 0x7ef5cfd48 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1150397,
+            "name": "SDLAudioP27",
+            "runtime_ns": 64983860,
+            "runqueue_wait_ns": 17572,
+            "timeslices": 4226,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8670 0x189 0x6d2f 0x0 0x0 0xffffffff 0x7fdc65f8b2f8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143058,
+            "name": "GpuInterrupt",
+            "runtime_ns": 64462889,
+            "runqueue_wait_ns": 821774953,
+            "timeslices": 4332,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce02a9c78 0x189 0x10be 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143071,
+            "name": "AK::BankManager",
+            "runtime_ns": 44076468,
+            "runqueue_wait_ns": 3477,
+            "timeslices": 17,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef853f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef853d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143073,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 38296002,
+            "runqueue_wait_ns": 7027,
+            "timeslices": 2156,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce116e614 0x189 0x867 0x0 0x0 0xffffffff 0x7fdc837fa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142511,
+            "name": "WSI swapchain q",
+            "runtime_ns": 35819255,
+            "runqueue_wait_ns": 64968,
+            "timeslices": 2134,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29550 0x89 0x438 0x7fdd175f93e0 0x0 0xffffffff 0x7fdd175f9248 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142512,
+            "name": "WSI swapchain e",
+            "runtime_ns": 23331430,
+            "runqueue_wait_ns": 82719,
+            "timeslices": 1979,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29628 0x189 0x36a 0x0 0x0 0xffffffff 0x7fdd16df8228 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143061,
+            "name": "Toolkit::NP::No",
+            "runtime_ns": 18337226,
+            "runqueue_wait_ns": 121159072,
+            "timeslices": 2285,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8fbf50 0x7ef8fbf60 0x0 0x0 0x7ef8fbef8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143077,
+            "name": "Psn",
+            "runtime_ns": 14244007,
+            "runqueue_wait_ns": 344034682,
+            "timeslices": 1639,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096a460 0x0 0x0 0x0 0x0 0x55fdd54002c0 0x7ef73ab88 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143062,
+            "name": "Toolkit::NP::Ab",
+            "runtime_ns": 11641177,
+            "runqueue_wait_ns": 99855088,
+            "timeslices": 2283,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8cbef0 0x7ef8cbf00 0x0 0x0 0x7ef8cbe98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142490,
+            "name": "shadPS4:Main",
+            "runtime_ns": 8417719,
+            "runqueue_wait_ns": 35950,
+            "timeslices": 1373,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd542a978 0x189 0x56e 0x0 0x0 0xffffffff 0x7fdf4bada168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143064,
+            "name": "ProxySetSync",
+            "runtime_ns": 6627653,
+            "runqueue_wait_ns": 0,
+            "timeslices": 4,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b60cc 0x189 0x1 0x0 0x0 0xffffffff 0x7ef877da8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142507,
+            "name": "shadPS4:Main",
+            "runtime_ns": 644383,
+            "runqueue_wait_ns": 0,
+            "timeslices": 14,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59796ec 0x189 0xb 0x0 0x0 0xffffffff 0x7fdd1aa1a308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142505,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 201575,
+            "runqueue_wait_ns": 4512,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58e39f0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd185fb238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143039,
+            "name": "shadPS4:Main",
+            "runtime_ns": 167018,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdceeff8390 0x89 0x0 0x7fdceeff8290 0x0 0xffffffff 0x7fdceeff8148 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143072,
+            "name": "AK Suspended",
+            "runtime_ns": 154269,
+            "runqueue_wait_ns": 3403748,
+            "timeslices": 18,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef813f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef813d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143063,
+            "name": "CloseTextures",
+            "runtime_ns": 152380,
+            "runqueue_wait_ns": 34760,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800965338 0x0 0x0 0x0 0x0 0x1d195d0 0x7ef89bce8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142502,
+            "name": "libusb_event",
+            "runtime_ns": 107390,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdf495f9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf495f93b8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142506,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 76727,
+            "runqueue_wait_ns": 3000,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5ab1dc0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd17dfa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143076,
+            "name": "Http",
+            "runtime_ns": 70307,
+            "runqueue_wait_ns": 1849,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x8009698c8 0x0 0x0 0x0 0x0 0x0 0x7ef763d38 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143060,
+            "name": "Toolkit::NP::Ma",
+            "runtime_ns": 68968,
+            "runqueue_wait_ns": 3375,
+            "timeslices": 3,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800963070 0x0 0x0 0x0 0x7fdc9c000090 0x0 0x7ef95bde8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143059,
+            "name": "Trophy",
+            "runtime_ns": 67308,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b5b4c 0x189 0x0 0x0 0x0 0xffffffff 0x7ef97fda8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142503,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 65554,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a1f740 0x189 0x0 0x0 0x0 0xffffffff 0x7fdf48df8238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142510,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 60556,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8878 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19217258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143047,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 47185,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a20028 0x0 0x0 0x0 0x0 0x0 0x7efca3e58 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142509,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 43601,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8198 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19a18258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143078,
+            "name": "Game:Main",
+            "runtime_ns": 41285,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdc80ff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdc80ff5208 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142513,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 11538,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0552080 0x189 0x0 0x0 0x0 0xffffffff 0x7fdcffffb168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142508,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 9059,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c7ab8 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd1a219258 0x7fdf4df8972e\n"
+          }
+        ],
+        "110s": [
+          {
+            "tid": 1143040,
+            "name": "Game:Main",
+            "runtime_ns": 88180186177,
+            "runqueue_wait_ns": 1210868915,
+            "timeslices": 18231,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1143048,
+            "name": "JobWorkerLow1",
+            "runtime_ns": 4048465833,
+            "runqueue_wait_ns": 2254557950,
+            "timeslices": 7118,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095a550 0x0 0x0 0x0 0x0 0x0 0x7efb83dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143052,
+            "name": "JobWorkerLow5",
+            "runtime_ns": 4038590887,
+            "runqueue_wait_ns": 2262820574,
+            "timeslices": 6966,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095d3b0 0x0 0x0 0x0 0x0 0x0 0x7efac3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143051,
+            "name": "JobWorkerLow4",
+            "runtime_ns": 3925636464,
+            "runqueue_wait_ns": 2306215221,
+            "timeslices": 6945,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095c818 0x0 0x0 0x0 0x0 0x0 0x7efaf3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143049,
+            "name": "JobWorkerLow2",
+            "runtime_ns": 3917956058,
+            "runqueue_wait_ns": 2470695947,
+            "timeslices": 7149,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095b0e8 0x0 0x0 0x0 0x0 0x0 0x7efb53dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143050,
+            "name": "JobWorkerLow3",
+            "runtime_ns": 3750138899,
+            "runqueue_wait_ns": 2618024633,
+            "timeslices": 7154,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x0 0x7efb23dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143053,
+            "name": "JobWorker1",
+            "runtime_ns": 3732770206,
+            "runqueue_wait_ns": 2406834225,
+            "timeslices": 9214,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095df48 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa93dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143054,
+            "name": "JobWorker2",
+            "runtime_ns": 3678013440,
+            "runqueue_wait_ns": 2280615499,
+            "timeslices": 9138,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095eae0 0x0 0x0 0x0 0x7fdcb0000030 0x10017cc3a8 0x7efa63dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143057,
+            "name": "JobWorker5",
+            "runtime_ns": 3669678657,
+            "runqueue_wait_ns": 2134231297,
+            "timeslices": 8647,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800960da8 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7ef9d3dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143055,
+            "name": "JobWorker3",
+            "runtime_ns": 3611036036,
+            "runqueue_wait_ns": 2198893577,
+            "timeslices": 9095,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80095f678 0x0 0x0 0x0 0x7fdcb4000030 0xdeadbeef00000066 0x7efa33dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143075,
+            "name": "MovieDecoder",
+            "runtime_ns": 3574392798,
+            "runqueue_wait_ns": 612985674,
+            "timeslices": 2435,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800968d30 0x0 0x0 0x0 0x0 0x7ef793d80 0x7ef793cd8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143056,
+            "name": "JobWorker4",
+            "runtime_ns": 3440217849,
+            "runqueue_wait_ns": 2251116875,
+            "timeslices": 9116,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800960210 0x0 0x0 0x0 0x0 0xdeadbeef00000066 0x7efa03dc8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142504,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 1422260409,
+            "runqueue_wait_ns": 288318614,
+            "timeslices": 13052,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5a4d26c 0x189 0x23db 0x0 0x0 0xffffffff 0x7fdd277fb218 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142488,
+            "name": "shadPS4:Main",
+            "runtime_ns": 1300887765,
+            "runqueue_wait_ns": 12559338,
+            "timeslices": 105699,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffd8c796808 0x1 0x7ffd8c7967b0 0x0 0x8 0x0 0x7ffd8c796758 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142498,
+            "name": "PulseMainloop",
+            "runtime_ns": 541215623,
+            "runqueue_wait_ns": 3120981,
+            "timeslices": 39148,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdd280071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf4a5fb178 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142514,
+            "name": "shadPS4:Present",
+            "runtime_ns": 357874555,
+            "runqueue_wait_ns": 624688,
+            "timeslices": 8330,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7fdcf07fb330 0x7fdcf07fb340 0x0 0x0 0x7fdcf07fb2d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143074,
+            "name": "AK::EventManage",
+            "runtime_ns": 279991071,
+            "runqueue_wait_ns": 286471166,
+            "timeslices": 10983,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7d3f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef7d3d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143041,
+            "name": "FaWorkerIo1",
+            "runtime_ns": 264103190,
+            "runqueue_wait_ns": 331075666,
+            "timeslices": 4910,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800958e20 0x0 0x0 0x0 0x0 0x1000b35170 0x7efcd3db8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143084,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 217336149,
+            "runqueue_wait_ns": 824381552,
+            "timeslices": 10584,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef58ff10 0x7ef58ff20 0x0 0x0 0x7ef58feb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143082,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 199486229,
+            "runqueue_wait_ns": 810841200,
+            "timeslices": 10754,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef6eff10 0x7ef6eff20 0x0 0x0 0x7ef6efeb8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142516,
+            "name": "SDLTimer",
+            "runtime_ns": 156081960,
+            "runqueue_wait_ns": 1751930,
+            "timeslices": 29835,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd6f5d890 0x189 0x0 0x7fdcef7f9390 0x0 0xffffffff 0x7fdcef7f92d8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1150397,
+            "name": "SDLAudioP27",
+            "runtime_ns": 151987854,
+            "runqueue_wait_ns": 164286,
+            "timeslices": 9802,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8674 0x189 0x98b5 0x0 0x0 0xffffffff 0x7fdc65f8b2f8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143079,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 147382556,
+            "runqueue_wait_ns": 339223,
+            "timeslices": 4320,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5986798 0x189 0x115c 0x0 0x0 0xffffffff 0x7fdc64fb9308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142499,
+            "name": "PulseHotplug",
+            "runtime_ns": 133963178,
+            "runqueue_wait_ns": 212627,
+            "timeslices": 19621,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58b8674 0x189 0x98b5 0x0 0x0 0xffffffff 0x7fdf49dfa2e8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143083,
+            "name": "AK::LibAudioOut",
+            "runtime_ns": 128618273,
+            "runqueue_wait_ns": 414363915,
+            "timeslices": 20307,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdc70028a78 0x189 0x2658 0x0 0x0 0xffffffff 0x7ef5cfd48 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143073,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 126289302,
+            "runqueue_wait_ns": 36406,
+            "timeslices": 4758,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce116e610 0x189 0x1290 0x0 0x0 0xffffffff 0x7fdc837fa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143058,
+            "name": "GpuInterrupt",
+            "runtime_ns": 64462889,
+            "runqueue_wait_ns": 821774953,
+            "timeslices": 4332,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce02a9c78 0x189 0x10be 0x0 0x0 0xffffffff 0x7ef9a3d98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143071,
+            "name": "AK::BankManager",
+            "runtime_ns": 44076468,
+            "runqueue_wait_ns": 3477,
+            "timeslices": 17,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef853f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef853d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142511,
+            "name": "WSI swapchain q",
+            "runtime_ns": 35819255,
+            "runqueue_wait_ns": 64968,
+            "timeslices": 2134,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29550 0x89 0x438 0x7fdd175f93e0 0x0 0xffffffff 0x7fdd175f9248 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143061,
+            "name": "Toolkit::NP::No",
+            "runtime_ns": 24567808,
+            "runqueue_wait_ns": 121172101,
+            "timeslices": 3186,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8fbf50 0x7ef8fbf60 0x0 0x0 0x7ef8fbef8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142512,
+            "name": "WSI swapchain e",
+            "runtime_ns": 23331430,
+            "runqueue_wait_ns": 82719,
+            "timeslices": 1979,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5c29628 0x189 0x36a 0x0 0x0 0xffffffff 0x7fdd16df8228 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143062,
+            "name": "Toolkit::NP::Ab",
+            "runtime_ns": 15502239,
+            "runqueue_wait_ns": 99888460,
+            "timeslices": 3183,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef8cbef0 0x7ef8cbf00 0x0 0x0 0x7ef8cbe98 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143077,
+            "name": "Psn",
+            "runtime_ns": 14244007,
+            "runqueue_wait_ns": 344034682,
+            "timeslices": 1639,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096a460 0x0 0x0 0x0 0x0 0x55fdd54002c0 0x7ef73ab88 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142490,
+            "name": "shadPS4:Main",
+            "runtime_ns": 8456923,
+            "runqueue_wait_ns": 35950,
+            "timeslices": 1375,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd542a978 0x189 0x570 0x0 0x0 0xffffffff 0x7fdf4bada168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143064,
+            "name": "ProxySetSync",
+            "runtime_ns": 6627653,
+            "runqueue_wait_ns": 0,
+            "timeslices": 4,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b60cc 0x189 0x1 0x0 0x0 0xffffffff 0x7ef877da8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142507,
+            "name": "shadPS4:Main",
+            "runtime_ns": 644383,
+            "runqueue_wait_ns": 0,
+            "timeslices": 14,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59796ec 0x189 0xb 0x0 0x0 0xffffffff 0x7fdd1aa1a308 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142505,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 201575,
+            "runqueue_wait_ns": 4512,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd58e39f0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd185fb238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143039,
+            "name": "shadPS4:Main",
+            "runtime_ns": 167018,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdceeff8390 0x89 0x0 0x7fdceeff8290 0x0 0xffffffff 0x7fdceeff8148 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143072,
+            "name": "AK Suspended",
+            "runtime_ns": 154269,
+            "runqueue_wait_ns": 3403748,
+            "timeslices": 18,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef813f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef813d68 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143063,
+            "name": "CloseTextures",
+            "runtime_ns": 152380,
+            "runqueue_wait_ns": 34760,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800965338 0x0 0x0 0x0 0x0 0x1d195d0 0x7ef89bce8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142502,
+            "name": "libusb_event",
+            "runtime_ns": 107390,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdf495f9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdf495f93b8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142506,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 76727,
+            "runqueue_wait_ns": 3000,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd5ab1dc0 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd17dfa238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143076,
+            "name": "Http",
+            "runtime_ns": 70307,
+            "runqueue_wait_ns": 1849,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x8009698c8 0x0 0x0 0x0 0x0 0x0 0x7ef763d38 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143060,
+            "name": "Toolkit::NP::Ma",
+            "runtime_ns": 68968,
+            "runqueue_wait_ns": 3375,
+            "timeslices": 3,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x800963070 0x0 0x0 0x0 0x7fdc9c000090 0x0 0x7ef95bde8 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1143059,
+            "name": "Trophy",
+            "runtime_ns": 67308,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7fdce11b5b4c 0x189 0x0 0x0 0x0 0xffffffff 0x7ef97fda8 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142503,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 65554,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a1f740 0x189 0x0 0x0 0x0 0xffffffff 0x7fdf48df8238 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142510,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 60556,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8878 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19217258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143047,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 47185,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0a20028 0x0 0x0 0x0 0x0 0x0 0x7efca3e58 0x7fdf4dffd4f9\n"
+          },
+          {
+            "tid": 1142509,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 43601,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c8198 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd19a18258 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1143078,
+            "name": "Game:Main",
+            "runtime_ns": 41285,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7fdc80ff5280 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7fdc80ff5208 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142513,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 11538,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fda0552080 0x189 0x0 0x0 0x0 0xffffffff 0x7fdcffffb168 0x7fdf4df8972e\n"
+          },
+          {
+            "tid": 1142508,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 9059,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x55fdd59c7ab8 0x189 0x0 0x0 0x0 0xffffffff 0x7fdd1a219258 0x7fdf4df8972e\n"
+          }
+        ]
+      },
+      "screenshot_sha256": {
+        "frame-080s.png": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956",
+        "frame-008s.png": "ffd769333126a2742d2d0f12ab847757d61ec1fdb33ccc7cd527af79cd237acf",
+        "frame-110s.png": "2edbe77729403f21baea5df39edbdbc598977aee792976354a9883c19cbbd956",
+        "frame-025s.png": "ffd769333126a2742d2d0f12ab847757d61ec1fdb33ccc7cd527af79cd237acf"
+      },
+      "performance_records": 271,
+      "performance_truncated": false,
+      "validation_layer_active": false,
+      "gpu_work_entries": 0,
+      "visual_review": {
+        "25s": "Emulator loading overlay, waiting for game video; overlay remains at 0:07 elapsed.",
+        "110s": "Black game output with host FPS overlay; no menu or gameplay confirmed.",
+        "audio": "Not observed."
+      }
+    },
+    "CUSA34384": {
+      "record_id": "universal-graphics-20261106T093615Z-1123649",
+      "binary_sha256": "0184a2a74e797652a77ac25d136b6e40347d6c80589287a1e5229eb1ffb71e35",
+      "native_exit_code": 0,
+      "native_elapsed_seconds": 118.414,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "installed_binary_changed": false,
+      "vram_free_at_launch": 25633112064,
+      "peak_total_vram_bytes": 5495246848,
+      "median_gpu_busy_after_60s_percent": 24,
+      "ollama_restoration_statuses": [
+        "RESTORED"
+      ],
+      "regions": [
+        {
+          "name": "draw",
+          "calls": 1921007,
+          "inclusive_ns": 32702672596,
+          "self_ns": 12924832379,
+          "max_ns": 323485702,
+          "bytes": 0,
+          "last_ns": 117996713792
+        },
+        {
+          "name": "dispatch",
+          "calls": 446449,
+          "inclusive_ns": 35269477299,
+          "self_ns": 9140748656,
+          "max_ns": 2804764572,
+          "bytes": 0,
+          "last_ns": 117999952774
+        },
+        {
+          "name": "ordered-ds",
+          "calls": 2041,
+          "inclusive_ns": 8486617591,
+          "self_ns": 4307679942,
+          "max_ns": 29134174,
+          "bytes": 0,
+          "last_ns": 117924604714
+        },
+        {
+          "name": "bind-buffers",
+          "calls": 4070442,
+          "inclusive_ns": 17768946129,
+          "self_ns": 8433058253,
+          "max_ns": 387102668,
+          "bytes": 0,
+          "last_ns": 117999959699
+        },
+        {
+          "name": "bind-textures",
+          "calls": 4070442,
+          "inclusive_ns": 4118992415,
+          "self_ns": 4048251698,
+          "max_ns": 80171673,
+          "bytes": 0,
+          "last_ns": 117999963577
+        },
+        {
+          "name": "shader-compile",
+          "calls": 1492,
+          "inclusive_ns": 4832506125,
+          "self_ns": 4831955940,
+          "max_ns": 2787291974,
+          "bytes": 0,
+          "last_ns": 109411252464
+        },
+        {
+          "name": "pipeline-lookup",
+          "calls": 2367833,
+          "inclusive_ns": 14186399058,
+          "self_ns": 5388451521,
+          "max_ns": 2791080632,
+          "bytes": 0,
+          "last_ns": 117999955902
+        },
+        {
+          "name": "image-readback",
+          "calls": 29672133,
+          "inclusive_ns": 9158814309,
+          "self_ns": 3406999867,
+          "max_ns": 9980590,
+          "bytes": 105061567910312,
+          "last_ns": 117999959174
+        },
+        {
+          "name": "buffer-readback",
+          "calls": 17059,
+          "inclusive_ns": 10358310023,
+          "self_ns": 298595772,
+          "max_ns": 47550552,
+          "bytes": 4178843264,
+          "last_ns": 117994377912
+        },
+        {
+          "name": "page-protect",
+          "calls": 9122970,
+          "inclusive_ns": 22542134887,
+          "self_ns": 22542134887,
+          "max_ns": 5738740,
+          "bytes": 692740653056,
+          "last_ns": 117996799802
+        },
+        {
+          "name": "submit",
+          "calls": 37217,
+          "inclusive_ns": 287191891,
+          "self_ns": 287191891,
+          "max_ns": 863383,
+          "bytes": 0,
+          "last_ns": 117994148678
+        },
+        {
+          "name": "gpu-wait",
+          "calls": 31727,
+          "inclusive_ns": 19152725877,
+          "self_ns": 18943790212,
+          "max_ns": 47529325,
+          "bytes": 0,
+          "last_ns": 117994355294
+        },
+        {
+          "name": "buffer-clamp",
+          "calls": 109439,
+          "inclusive_ns": 2674302,
+          "self_ns": 2674302,
+          "max_ns": 8178,
+          "bytes": 0,
+          "last_ns": 117999331653
+        }
+      ],
+      "threads": {
+        "008s": [
+          {
+            "tid": 1124192,
+            "name": "shadPS4:Main",
+            "runtime_ns": 363416804,
+            "runqueue_wait_ns": 811100,
+            "timeslices": 6762,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffdae629618 0x1 0x7ffdae6295c0 0x0 0x8 0x0 0x7ffdae629568 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124777,
+            "name": "Game:Main",
+            "runtime_ns": 305154056,
+            "runqueue_wait_ns": 85650,
+            "timeslices": 488,
+            "wait_channel": "request_wait_answer",
+            "syscall": "262 0xffffff9c 0x7f4364173ad0 0x7efdf17c0 0x0 0xd0 0x7f4364000090 0x7efdf17b8 0x7f45e281bf2a\n"
+          },
+          {
+            "tid": 1124239,
+            "name": "shadPS4:Present",
+            "runtime_ns": 129856845,
+            "runqueue_wait_ns": 106305,
+            "timeslices": 372,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7f4384ffb330 0x7f4384ffb340 0x0 0x0 0x7f4384ffb2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124241,
+            "name": "SDLTimer",
+            "runtime_ns": 18698905,
+            "runqueue_wait_ns": 192381,
+            "timeslices": 1620,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3e296590 0x189 0x0 0x7f437f7fa390 0x0 0xffffffff 0x7f437f7fa2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124236,
+            "name": "WSI swapchain q",
+            "runtime_ns": 14700772,
+            "runqueue_wait_ns": 16871,
+            "timeslices": 707,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62ee0 0x89 0x160 0x7f43abff93e0 0x0 0xffffffff 0x7f43abff9248 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124237,
+            "name": "WSI swapchain e",
+            "runtime_ns": 11806757,
+            "runqueue_wait_ns": 21116,
+            "timeslices": 734,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f43ab7f81e8 0x1 0xffffffffffffffff 0x0 0x0 0x0 0x7f43ab7f8178 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124194,
+            "name": "shadPS4:Main",
+            "runtime_ns": 1964543,
+            "runqueue_wait_ns": 0,
+            "timeslices": 325,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45a978 0x189 0x146 0x0 0x0 0xffffffff 0x7f45e02da168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124223,
+            "name": "PulseMainloop",
+            "runtime_ns": 487364,
+            "runqueue_wait_ns": 0,
+            "timeslices": 14,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f43bc0071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45deffb178 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124229,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 461325,
+            "runqueue_wait_ns": 0,
+            "timeslices": 42,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd862ac 0x189 0x27 0x0 0x0 0xffffffff 0x7f43bbffb218 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124225,
+            "name": "libusb_event",
+            "runtime_ns": 129714,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f45ddff9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45ddff93b8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124230,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 90548,
+            "runqueue_wait_ns": 3265,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd990 0x189 0x0 0x0 0x0 0xffffffff 0x7f43acffb238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124231,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 72347,
+            "runqueue_wait_ns": 1673,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cdef7c0 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ac7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124228,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 67168,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fc740 0x189 0x0 0x0 0x0 0xffffffff 0x7f45dd7f8238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124224,
+            "name": "PulseHotplug",
+            "runtime_ns": 58469,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a0 0x189 0x4 0x0 0x0 0xffffffff 0x7f45de7fa2e8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124232,
+            "name": "shadPS4:Main",
+            "runtime_ns": 52568,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45c61c 0x189 0x0 0x0 0x0 0xffffffff 0x7f43af3fb308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124235,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 51297,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd06ad8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43adbf8258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124776,
+            "name": "shadPS4:Main",
+            "runtime_ns": 50487,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f437eff9390 0x89 0x0 0x7f437eff9290 0x0 0xffffffff 0x7f437eff9148 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124234,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 50135,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd063f8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ae3f9258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124233,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 44257,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd05d18 0x189 0x0 0x0 0x0 0xffffffff 0x7f43aebfa258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124238,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 42924,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d30c2f080 0x189 0x0 0x0 0x0 0xffffffff 0x7f43a8acb168 0x7f45e27b672e\n"
+          }
+        ],
+        "025s": [
+          {
+            "tid": 1124229,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 11365267714,
+            "runqueue_wait_ns": 59962597,
+            "timeslices": 31704,
+            "wait_channel": "0",
+            "syscall": "16 0x16 0xc03064ca 0x7f43bbff9fa0 0x0 0x176c40789f2b6 0x3 0x7f43bbff9f10 0x7f45e282865b\n"
+          },
+          {
+            "tid": 1124777,
+            "name": "Game:Main",
+            "runtime_ns": 9342453009,
+            "runqueue_wait_ns": 38438732,
+            "timeslices": 186638,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f436400fcec 0x0 0x0 0x0 0x0 0x18 0x7f436400fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125834,
+            "name": "GpuCullMonitor",
+            "runtime_ns": 1424814128,
+            "runqueue_wait_ns": 27165568,
+            "timeslices": 126022,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1125678,
+            "name": "Wad Loading Thr",
+            "runtime_ns": 1054680211,
+            "runqueue_wait_ns": 13803787,
+            "timeslices": 41366,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7f3b40 0x0 0x0 0x0 0x0 0x18 0x7ef7f3a98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125351,
+            "name": "TaskManager04",
+            "runtime_ns": 1019575942,
+            "runqueue_wait_ns": 209976780,
+            "timeslices": 132209,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e8040ec90 0x0 0x0 0x0 0x7f434c000030 0x18 0x9e8040ebe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125350,
+            "name": "TaskManager03",
+            "runtime_ns": 742601991,
+            "runqueue_wait_ns": 262913837,
+            "timeslices": 103724,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f4314012f68 0x89 0x0 0x9e803eab30 0x0 0xffffffff 0x9e803eaa08 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125347,
+            "name": "TaskManager00",
+            "runtime_ns": 731161592,
+            "runqueue_wait_ns": 150251876,
+            "timeslices": 103702,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e8037ec90 0x0 0x0 0x0 0x0 0x18 0x9e8037ebe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125352,
+            "name": "Async FileIO Wo",
+            "runtime_ns": 708157988,
+            "runqueue_wait_ns": 34983900,
+            "timeslices": 44106,
+            "wait_channel": "folio_wait_bit_common",
+            "syscall": "0 0x2e 0x7f42d778f010 0x1fd000 0x0 0x0 0x0 0x7efb77c78 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125349,
+            "name": "TaskManager02",
+            "runtime_ns": 692756384,
+            "runqueue_wait_ns": 218179485,
+            "timeslices": 99522,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803c6c90 0x0 0x0 0x0 0x7f4354000030 0x18 0x9e803c6be8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124192,
+            "name": "shadPS4:Main",
+            "runtime_ns": 570734148,
+            "runqueue_wait_ns": 2433675,
+            "timeslices": 24066,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffdae629618 0x1 0x7ffdae6295c0 0x0 0x8 0x0 0x7ffdae629568 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125348,
+            "name": "TaskManager01",
+            "runtime_ns": 543032120,
+            "runqueue_wait_ns": 167081819,
+            "timeslices": 77401,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f43640dea28 0x80 0x2 0x0 0x0 0x0 0x9e803a27b8 0x7f45e27abbbb\n"
+          },
+          {
+            "tid": 1125659,
+            "name": "AK::BankManager",
+            "runtime_ns": 459508726,
+            "runqueue_wait_ns": 253032273,
+            "timeslices": 87810,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f433000fcec 0x0 0x0 0x0 0x0 0x18 0x7f433000fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125378,
+            "name": "TexStream",
+            "runtime_ns": 391208673,
+            "runqueue_wait_ns": 186798592,
+            "timeslices": 23041,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f432c00fcec 0x0 0x0 0x0 0x0 0x18 0x7f432c00fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124239,
+            "name": "shadPS4:Present",
+            "runtime_ns": 283795871,
+            "runqueue_wait_ns": 324094,
+            "timeslices": 2123,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7f4384ffb330 0x7f4384ffb340 0x0 0x0 0x7f4384ffb2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125870,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 167784602,
+            "runqueue_wait_ns": 172848,
+            "timeslices": 4893,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3ccfe808 0x189 0x12ae 0x0 0x0 0xffffffff 0x7f42e1dce308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124194,
+            "name": "shadPS4:Main",
+            "runtime_ns": 78765394,
+            "runqueue_wait_ns": 2787109,
+            "timeslices": 18328,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45a97c 0x189 0x4861 0x0 0x0 0xffffffff 0x7f45e02da168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124223,
+            "name": "PulseMainloop",
+            "runtime_ns": 67401474,
+            "runqueue_wait_ns": 143671,
+            "timeslices": 4952,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f43bc0071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45deffb178 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125346,
+            "name": "Async MemMappin",
+            "runtime_ns": 53654645,
+            "runqueue_wait_ns": 15746116,
+            "timeslices": 2148,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efcd3f40 0x0 0x0 0x0 0x0 0x18 0x7efcd3e98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124241,
+            "name": "SDLTimer",
+            "runtime_ns": 53391116,
+            "runqueue_wait_ns": 589519,
+            "timeslices": 6410,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3e296590 0x189 0x0 0x7f437f7fa390 0x0 0xffffffff 0x7f437f7fa2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124236,
+            "name": "WSI swapchain q",
+            "runtime_ns": 32915914,
+            "runqueue_wait_ns": 33774,
+            "timeslices": 1679,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62ee4 0x89 0x347 0x7f43abff93e0 0x0 0xffffffff 0x7f43abff9248 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124237,
+            "name": "WSI swapchain e",
+            "runtime_ns": 23138203,
+            "runqueue_wait_ns": 44752,
+            "timeslices": 1567,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62fb8 0x189 0x28e 0x0 0x0 0xffffffff 0x7f43ab7f8228 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124224,
+            "name": "PulseHotplug",
+            "runtime_ns": 16654458,
+            "runqueue_wait_ns": 228044,
+            "timeslices": 2492,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a0 0x189 0x1349 0x0 0x0 0xffffffff 0x7f45de7fa2e8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125860,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 11694202,
+            "runqueue_wait_ns": 36085,
+            "timeslices": 629,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef64bf10 0x7ef64bf20 0x0 0x0 0x7ef64beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125861,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 7026979,
+            "runqueue_wait_ns": 17797023,
+            "timeslices": 630,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef52bf10 0x7ef52bf20 0x0 0x0 0x7ef52beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125862,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 6801920,
+            "runqueue_wait_ns": 9855834,
+            "timeslices": 631,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef40bf10 0x7ef40bf20 0x0 0x0 0x7ef40beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125857,
+            "name": "AK::AudioOutThr",
+            "runtime_ns": 5733014,
+            "runqueue_wait_ns": 529415,
+            "timeslices": 880,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef793c10 0x0 0x0 0x0 0x0 0x18 0x7ef793b68 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124232,
+            "name": "shadPS4:Main",
+            "runtime_ns": 5512529,
+            "runqueue_wait_ns": 3626,
+            "timeslices": 150,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45c618 0x189 0x92 0x0 0x0 0xffffffff 0x7f43af3fb308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1127048,
+            "name": "SDLAudioP63",
+            "runtime_ns": 5478911,
+            "runqueue_wait_ns": 48254,
+            "timeslices": 429,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a4 0x189 0x134b 0x0 0x0 0xffffffff 0x7f4313ffb2f8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125664,
+            "name": "wwise::AddRende",
+            "runtime_ns": 5478472,
+            "runqueue_wait_ns": 51117431,
+            "timeslices": 771,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef857f20 0x0 0x0 0x0 0x0 0x18 0x7ef857e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125377,
+            "name": "SaveDataLoader",
+            "runtime_ns": 1049922,
+            "runqueue_wait_ns": 23682,
+            "timeslices": 13,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef9377e0 0x0 0x0 0x0 0x0 0x18 0x7ef937738 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125863,
+            "name": "AK::IOThread",
+            "runtime_ns": 571913,
+            "runqueue_wait_ns": 82819,
+            "timeslices": 100,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096bb90 0x0 0x0 0x0 0x7f42f4000030 0x0 0x7ef2ebe38 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125373,
+            "name": "npEntitlements:",
+            "runtime_ns": 270410,
+            "runqueue_wait_ns": 82503,
+            "timeslices": 44,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efae76b0 0x0 0x0 0x0 0x0 0x18 0x7efae7608 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124225,
+            "name": "libusb_event",
+            "runtime_ns": 129714,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f45ddff9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45ddff93b8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125660,
+            "name": "AK Suspended",
+            "runtime_ns": 117326,
+            "runqueue_wait_ns": 13035,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef897f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef897d68 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125374,
+            "name": "npTrophies::Wor",
+            "runtime_ns": 93701,
+            "runqueue_wait_ns": 96485,
+            "timeslices": 9,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efab7f00 0x0 0x0 0x0 0x0 0x18 0x7efab7e58 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124230,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 90548,
+            "runqueue_wait_ns": 3265,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd990 0x189 0x0 0x0 0x0 0xffffffff 0x7f43acffb238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124231,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 72347,
+            "runqueue_wait_ns": 1673,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cdef7c0 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ac7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124228,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 67168,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fc740 0x189 0x0 0x0 0x0 0xffffffff 0x7f45dd7f8238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124235,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 51297,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd06ad8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43adbf8258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124776,
+            "name": "shadPS4:Main",
+            "runtime_ns": 50487,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f437eff9390 0x89 0x0 0x7f437eff9290 0x0 0xffffffff 0x7f437eff9148 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124234,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 50135,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd063f8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ae3f9258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124233,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 44257,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd05d18 0x189 0x0 0x0 0x0 0xffffffff 0x7f43aebfa258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124238,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 42924,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d30c2f080 0x189 0x0 0x0 0x0 0xffffffff 0x7f43a8acb168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125671,
+            "name": "LuaGCSchedulerT",
+            "runtime_ns": 33457,
+            "runqueue_wait_ns": 37795,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef827f20 0x0 0x0 0x0 0x0 0x18 0x7ef827e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125371,
+            "name": "AsyncHTTPQueue",
+            "runtime_ns": 31791,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efb45c10 0x0 0x0 0x0 0x0 0x18 0x7efb45b68 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125376,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 15071,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fd028 0x0 0x0 0x0 0x0 0x0 0x7efa57e58 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125662,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 10216,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f43646ce790 0x189 0x0 0x0 0x0 0xffffffff 0x7f432b7fa238 0x7f45e27b672e\n"
+          }
+        ],
+        "080s": [
+          {
+            "tid": 1124229,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 54686155610,
+            "runqueue_wait_ns": 345847111,
+            "timeslices": 125231,
+            "wait_channel": "drm_syncobj_array_wait_timeout.constprop.0",
+            "syscall": "16 0x16 0xc03064ca 0x7f43bbffa0c0 0x0 0x176d0c30ebdb3 0x3 0x7f43bbffa030 0x7f45e282865b\n"
+          },
+          {
+            "tid": 1124777,
+            "name": "Game:Main",
+            "runtime_ns": 32072146762,
+            "runqueue_wait_ns": 429748385,
+            "timeslices": 1155795,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f436400fcec 0x0 0x0 0x0 0x0 0x18 0x7f436400fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125834,
+            "name": "GpuCullMonitor",
+            "runtime_ns": 7398799740,
+            "runqueue_wait_ns": 226446710,
+            "timeslices": 638495,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f4314012e88 0x89 0x0 0x7ef7c2bd0 0x0 0xffffffff 0x7ef7c2aa8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125351,
+            "name": "TaskManager04",
+            "runtime_ns": 6744561505,
+            "runqueue_wait_ns": 933524668,
+            "timeslices": 896235,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f434c00fcec 0x0 0x0 0x0 0x0 0x18 0x7f434c00fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125350,
+            "name": "TaskManager03",
+            "runtime_ns": 6398547543,
+            "runqueue_wait_ns": 1094114455,
+            "timeslices": 872855,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803eac90 0x0 0x0 0x0 0x0 0x18 0x9e803eabe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125347,
+            "name": "TaskManager00",
+            "runtime_ns": 6374041318,
+            "runqueue_wait_ns": 980309703,
+            "timeslices": 867232,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f436800fcec 0x0 0x0 0x0 0x0 0x18 0x7f436800fca8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125349,
+            "name": "TaskManager02",
+            "runtime_ns": 6275399455,
+            "runqueue_wait_ns": 1277847521,
+            "timeslices": 855898,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803c6c90 0x0 0x0 0x0 0x0 0x18 0x9e803c6be8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125348,
+            "name": "TaskManager01",
+            "runtime_ns": 6113543149,
+            "runqueue_wait_ns": 1079698548,
+            "timeslices": 828734,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803a2c90 0x0 0x0 0x0 0x0 0x18 0x9e803a2be8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125352,
+            "name": "Async FileIO Wo",
+            "runtime_ns": 2379149197,
+            "runqueue_wait_ns": 116724796,
+            "timeslices": 186840,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efb77f00 0x9 0x0 0x7efb77ef0 0x0 0xffffffffffffffff 0x7efb77e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125678,
+            "name": "Wad Loading Thr",
+            "runtime_ns": 2135639559,
+            "runqueue_wait_ns": 58201219,
+            "timeslices": 110422,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7f3b40 0x0 0x0 0x0 0x0 0x18 0x7ef7f3a98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125378,
+            "name": "TexStream",
+            "runtime_ns": 1576511543,
+            "runqueue_wait_ns": 760776247,
+            "timeslices": 68588,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef9074f0 0x7ef907500 0x0 0x0 0x7ef907498 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125659,
+            "name": "AK::BankManager",
+            "runtime_ns": 1378512811,
+            "runqueue_wait_ns": 565161958,
+            "timeslices": 225414,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef8d7eb0 0x189 0x0 0x0 0x0 0xffffffff 0x7ef8d7d08 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124192,
+            "name": "shadPS4:Main",
+            "runtime_ns": 1076068760,
+            "runqueue_wait_ns": 8588377,
+            "timeslices": 77208,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffdae629618 0x1 0x7ffdae6295c0 0x0 0x8 0x0 0x7ffdae629568 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125662,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 661434396,
+            "runqueue_wait_ns": 62836257,
+            "timeslices": 44488,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f43646ce794 0x189 0x94f 0x0 0x0 0xffffffff 0x7f432b7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125870,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 560681738,
+            "runqueue_wait_ns": 2064501,
+            "timeslices": 25241,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3ccfe808 0x189 0x6100 0x0 0x0 0xffffffff 0x7f42e1dce308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124239,
+            "name": "shadPS4:Present",
+            "runtime_ns": 451693968,
+            "runqueue_wait_ns": 810493,
+            "timeslices": 7590,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7f4384ffb330 0x7f4384ffb340 0x0 0x0 0x7f4384ffb2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124223,
+            "name": "PulseMainloop",
+            "runtime_ns": 340268943,
+            "runqueue_wait_ns": 24581989,
+            "timeslices": 25524,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f43bc0071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45deffb178 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124194,
+            "name": "shadPS4:Main",
+            "runtime_ns": 263064454,
+            "runqueue_wait_ns": 3519530,
+            "timeslices": 54527,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45a97c 0x189 0xd7d9 0x0 0x0 0xffffffff 0x7f45e02da168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125346,
+            "name": "Async MemMappin",
+            "runtime_ns": 213300789,
+            "runqueue_wait_ns": 26992692,
+            "timeslices": 10179,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efcd3f40 0x0 0x0 0x0 0x0 0x18 0x7efcd3e98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1127048,
+            "name": "SDLAudioP63",
+            "runtime_ns": 190693029,
+            "runqueue_wait_ns": 10578622,
+            "timeslices": 10798,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a4 0x189 0x6367 0x0 0x0 0xffffffff 0x7f4313ffb2f8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124241,
+            "name": "SDLTimer",
+            "runtime_ns": 131500358,
+            "runqueue_wait_ns": 6186746,
+            "timeslices": 21492,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3e296590 0x189 0x0 0x7f437f7fa390 0x0 0xffffffff 0x7f437f7fa2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124224,
+            "name": "PulseHotplug",
+            "runtime_ns": 90892087,
+            "runqueue_wait_ns": 1306077,
+            "timeslices": 12790,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a0 0x189 0x6365 0x0 0x0 0xffffffff 0x7f45de7fa2e8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125862,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 65193258,
+            "runqueue_wait_ns": 54071782,
+            "timeslices": 3220,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef40bf10 0x7ef40bf20 0x0 0x0 0x7ef40beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125860,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 62908730,
+            "runqueue_wait_ns": 1042338,
+            "timeslices": 3194,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef64bf10 0x7ef64bf20 0x0 0x0 0x7ef64beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124236,
+            "name": "WSI swapchain q",
+            "runtime_ns": 52135409,
+            "runqueue_wait_ns": 71947,
+            "timeslices": 3377,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62ee0 0x89 0x698 0x7f43abff93e0 0x0 0xffffffff 0x7f43abff9248 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125664,
+            "name": "wwise::AddRende",
+            "runtime_ns": 50449785,
+            "runqueue_wait_ns": 577997978,
+            "timeslices": 6973,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef857f20 0x0 0x0 0x0 0x0 0x18 0x7ef857e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125857,
+            "name": "AK::AudioOutThr",
+            "runtime_ns": 45896016,
+            "runqueue_wait_ns": 7509810,
+            "timeslices": 6758,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef793c10 0x0 0x0 0x0 0x0 0x18 0x7ef793b68 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124237,
+            "name": "WSI swapchain e",
+            "runtime_ns": 38909871,
+            "runqueue_wait_ns": 74342,
+            "timeslices": 3312,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62fbc 0x189 0x5df 0x0 0x0 0xffffffff 0x7f43ab7f8228 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125861,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 37699151,
+            "runqueue_wait_ns": 68446151,
+            "timeslices": 3204,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef52bf10 0x7ef52bf20 0x0 0x0 0x7ef52beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124232,
+            "name": "shadPS4:Main",
+            "runtime_ns": 18867913,
+            "runqueue_wait_ns": 22883,
+            "timeslices": 541,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45c618 0x189 0x218 0x0 0x0 0xffffffff 0x7f43af3fb308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125863,
+            "name": "AK::IOThread",
+            "runtime_ns": 12096614,
+            "runqueue_wait_ns": 14211734,
+            "timeslices": 2585,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096bb90 0x0 0x0 0x0 0x0 0x7ef2ebef0 0x7ef2ebe38 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125377,
+            "name": "SaveDataLoader",
+            "runtime_ns": 1473340,
+            "runqueue_wait_ns": 23682,
+            "timeslices": 32,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef9377e0 0x0 0x0 0x0 0x0 0x18 0x7ef937738 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124230,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 871331,
+            "runqueue_wait_ns": 3265,
+            "timeslices": 29,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd994 0x189 0x13 0x0 0x0 0xffffffff 0x7f43acffb238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1133056,
+            "name": "shadps4:disk$1",
+            "runtime_ns": 831913,
+            "runqueue_wait_ns": 0,
+            "timeslices": 28,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd990 0x189 0x16 0x0 0x0 0xffffffff 0x7f4312f53238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125373,
+            "name": "npEntitlements:",
+            "runtime_ns": 270410,
+            "runqueue_wait_ns": 82503,
+            "timeslices": 44,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efae76b0 0x0 0x0 0x0 0x0 0x18 0x7efae7608 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124776,
+            "name": "shadPS4:Main",
+            "runtime_ns": 176438,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f437eff9390 0x89 0x0 0x7f437eff9290 0x0 0xffffffff 0x7f437eff9148 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1133057,
+            "name": "shadps4:disk$2",
+            "runtime_ns": 175072,
+            "runqueue_wait_ns": 0,
+            "timeslices": 6,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd990 0x189 0x16 0x0 0x0 0xffffffff 0x7f42f060e238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124225,
+            "name": "libusb_event",
+            "runtime_ns": 129714,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f45ddff9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45ddff93b8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1133058,
+            "name": "shadps4:disk$3",
+            "runtime_ns": 122669,
+            "runqueue_wait_ns": 0,
+            "timeslices": 4,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd994 0x189 0x13 0x0 0x0 0xffffffff 0x7f42efe0d238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125660,
+            "name": "AK Suspended",
+            "runtime_ns": 117326,
+            "runqueue_wait_ns": 13035,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef897f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef897d68 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125374,
+            "name": "npTrophies::Wor",
+            "runtime_ns": 93701,
+            "runqueue_wait_ns": 96485,
+            "timeslices": 9,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efab7f00 0x0 0x0 0x0 0x0 0x18 0x7efab7e58 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124231,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 72347,
+            "runqueue_wait_ns": 1673,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cdef7c0 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ac7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124228,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 67168,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fc740 0x189 0x0 0x0 0x0 0xffffffff 0x7f45dd7f8238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124235,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 51297,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd06ad8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43adbf8258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124234,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 50135,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd063f8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ae3f9258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124233,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 44257,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd05d18 0x189 0x0 0x0 0x0 0xffffffff 0x7f43aebfa258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124238,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 42924,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d30c2f080 0x189 0x0 0x0 0x0 0xffffffff 0x7f43a8acb168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125671,
+            "name": "LuaGCSchedulerT",
+            "runtime_ns": 33457,
+            "runqueue_wait_ns": 37795,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef827f20 0x0 0x0 0x0 0x0 0x18 0x7ef827e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125371,
+            "name": "AsyncHTTPQueue",
+            "runtime_ns": 31791,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efb45c10 0x0 0x0 0x0 0x0 0x18 0x7efb45b68 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125376,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 15071,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fd028 0x0 0x0 0x0 0x0 0x0 0x7efa57e58 0x7f45e282a4f9\n"
+          }
+        ],
+        "110s": [
+          {
+            "tid": 1124229,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 79782691752,
+            "runqueue_wait_ns": 496490081,
+            "timeslices": 147332,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1124777,
+            "name": "Game:Main",
+            "runtime_ns": 46307916557,
+            "runqueue_wait_ns": 615015778,
+            "timeslices": 1630955,
+            "wait_channel": "0",
+            "syscall": "running\n"
+          },
+          {
+            "tid": 1125834,
+            "name": "GpuCullMonitor",
+            "runtime_ns": 10729596689,
+            "runqueue_wait_ns": 348546825,
+            "timeslices": 922266,
+            "wait_channel": "0",
+            "syscall": "202 0x7f4314012e88 0x89 0x0 0x7ef7c2bd0 0x0 0xffffffff 0x7ef7c2aa8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125351,
+            "name": "TaskManager04",
+            "runtime_ns": 10600268860,
+            "runqueue_wait_ns": 1548212165,
+            "timeslices": 1364742,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e8040ec90 0x0 0x0 0x0 0x0 0x18 0x9e8040ebe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125350,
+            "name": "TaskManager03",
+            "runtime_ns": 10292743110,
+            "runqueue_wait_ns": 1480484896,
+            "timeslices": 1348336,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803eac90 0x0 0x0 0x0 0x7f4358000030 0x18 0x9e803eabe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125347,
+            "name": "TaskManager00",
+            "runtime_ns": 10150735610,
+            "runqueue_wait_ns": 1465417044,
+            "timeslices": 1335125,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e8037ec90 0x0 0x0 0x0 0x0 0x18 0x9e8037ebe8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125349,
+            "name": "TaskManager02",
+            "runtime_ns": 10048154527,
+            "runqueue_wait_ns": 1804075535,
+            "timeslices": 1324768,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f4314012f68 0x89 0x0 0x9e803c6b30 0x0 0xffffffff 0x9e803c6a08 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125348,
+            "name": "TaskManager01",
+            "runtime_ns": 9944619379,
+            "runqueue_wait_ns": 1666032405,
+            "timeslices": 1295725,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x9e803a2c90 0x0 0x0 0x0 0x0 0x18 0x9e803a2be8 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125352,
+            "name": "Async FileIO Wo",
+            "runtime_ns": 2390552914,
+            "runqueue_wait_ns": 117248474,
+            "timeslices": 187375,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efb77f00 0x9 0x0 0x7efb77ef0 0x0 0xffffffffffffffff 0x7efb77e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125678,
+            "name": "Wad Loading Thr",
+            "runtime_ns": 2135639559,
+            "runqueue_wait_ns": 58201219,
+            "timeslices": 110422,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef7f3b40 0x0 0x0 0x0 0x0 0x18 0x7ef7f3a98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125378,
+            "name": "TexStream",
+            "runtime_ns": 1610445809,
+            "runqueue_wait_ns": 946935272,
+            "timeslices": 76066,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef9074f0 0x7ef907500 0x0 0x0 0x7ef907498 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125659,
+            "name": "AK::BankManager",
+            "runtime_ns": 1378512811,
+            "runqueue_wait_ns": 565161958,
+            "timeslices": 225414,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef8d7eb0 0x189 0x0 0x0 0x0 0xffffffff 0x7ef8d7d08 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124192,
+            "name": "shadPS4:Main",
+            "runtime_ns": 1365829840,
+            "runqueue_wait_ns": 13433592,
+            "timeslices": 106196,
+            "wait_channel": "do_sys_poll",
+            "syscall": "271 0x7ffdae629618 0x1 0x7ffdae6295c0 0x0 0x8 0x0 0x7ffdae629568 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125662,
+            "name": "shadPS4:AjmWork",
+            "runtime_ns": 1244085617,
+            "runqueue_wait_ns": 162200451,
+            "timeslices": 81211,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f43646ce790 0x189 0xe3e 0x0 0x0 0xffffffff 0x7f432b7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125870,
+            "name": "shadPS4:GpuComm",
+            "runtime_ns": 744120155,
+            "runqueue_wait_ns": 2526157,
+            "timeslices": 33987,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3ccfe80c 0x189 0x8329 0x0 0x0 0xffffffff 0x7f42e1dce308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124239,
+            "name": "shadPS4:Present",
+            "runtime_ns": 513100777,
+            "runqueue_wait_ns": 1408083,
+            "timeslices": 10222,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7f4384ffb330 0x7f4384ffb340 0x0 0x0 0x7f4384ffb2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124223,
+            "name": "PulseMainloop",
+            "runtime_ns": 492745750,
+            "runqueue_wait_ns": 36040660,
+            "timeslices": 36846,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f43bc0071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45deffb178 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124194,
+            "name": "shadPS4:Main",
+            "runtime_ns": 292364030,
+            "runqueue_wait_ns": 3526344,
+            "timeslices": 56651,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45a97c 0x189 0xe027 0x0 0x0 0xffffffff 0x7f45e02da168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125346,
+            "name": "Async MemMappin",
+            "runtime_ns": 213300789,
+            "runqueue_wait_ns": 26992692,
+            "timeslices": 10179,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efcd3f40 0x0 0x0 0x0 0x0 0x18 0x7efcd3e98 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124241,
+            "name": "SDLTimer",
+            "runtime_ns": 174662097,
+            "runqueue_wait_ns": 6964183,
+            "timeslices": 29814,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3e296590 0x189 0x0 0x7f437f7fa390 0x0 0xffffffff 0x7f437f7fa2d8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124224,
+            "name": "PulseHotplug",
+            "runtime_ns": 130355939,
+            "runqueue_wait_ns": 1704221,
+            "timeslices": 18480,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a4 0x189 0x8f95 0x0 0x0 0xffffffff 0x7f45de7fa2e8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125862,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 97400870,
+            "runqueue_wait_ns": 82227376,
+            "timeslices": 4649,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef40bf10 0x7ef40bf20 0x0 0x0 0x7ef40beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125860,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 91240994,
+            "runqueue_wait_ns": 1737965,
+            "timeslices": 4611,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef64bf10 0x7ef64bf20 0x0 0x0 0x7ef64beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125664,
+            "name": "wwise::AddRende",
+            "runtime_ns": 83844866,
+            "runqueue_wait_ns": 721434488,
+            "timeslices": 11301,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef857ed0 0x189 0x0 0x0 0x0 0xffffffff 0x7ef857d28 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125857,
+            "name": "AK::AudioOutThr",
+            "runtime_ns": 65304071,
+            "runqueue_wait_ns": 11153523,
+            "timeslices": 9663,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f43300183a8 0x189 0x9e2 0x0 0x0 0xffffffff 0x7ef793a48 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124236,
+            "name": "WSI swapchain q",
+            "runtime_ns": 58340713,
+            "runqueue_wait_ns": 177894,
+            "timeslices": 3908,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62ee0 0x89 0x7a2 0x7f43abff93e0 0x0 0xffffffff 0x7f43abff9248 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125861,
+            "name": "shadPS4:AudioOu",
+            "runtime_ns": 55083079,
+            "runqueue_wait_ns": 100699888,
+            "timeslices": 4621,
+            "wait_channel": "hrtimer_nanosleep",
+            "syscall": "230 0x0 0x0 0x7ef52bf10 0x7ef52bf20 0x0 0x0 0x7ef52beb8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124237,
+            "name": "WSI swapchain e",
+            "runtime_ns": 43867907,
+            "runqueue_wait_ns": 90895,
+            "timeslices": 3860,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cf62fbc 0x189 0x6e9 0x0 0x0 0xffffffff 0x7f43ab7f8228 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124232,
+            "name": "shadPS4:Main",
+            "runtime_ns": 19681174,
+            "runqueue_wait_ns": 22883,
+            "timeslices": 559,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3c45c618 0x189 0x22a 0x0 0x0 0xffffffff 0x7f43af3fb308 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125863,
+            "name": "AK::IOThread",
+            "runtime_ns": 15451032,
+            "runqueue_wait_ns": 15922597,
+            "timeslices": 3327,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x80096bb90 0x0 0x0 0x0 0x0 0x7ef2ebef0 0x7ef2ebe38 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1138129,
+            "name": "SDLAudioP27",
+            "runtime_ns": 9101142,
+            "runqueue_wait_ns": 10197,
+            "timeslices": 538,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbf26a4 0x189 0x8f95 0x0 0x0 0xffffffff 0x7f4313ffb2f8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124230,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 2002659,
+            "runqueue_wait_ns": 3265,
+            "timeslices": 41,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd990 0x189 0x30 0x0 0x0 0xffffffff 0x7f43acffb238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125377,
+            "name": "SaveDataLoader",
+            "runtime_ns": 1473340,
+            "runqueue_wait_ns": 23682,
+            "timeslices": 32,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef9377e0 0x0 0x0 0x0 0x0 0x18 0x7ef937738 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1133056,
+            "name": "shadps4:disk$1",
+            "runtime_ns": 1264292,
+            "runqueue_wait_ns": 0,
+            "timeslices": 39,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd994 0x189 0x33 0x0 0x0 0xffffffff 0x7f4312f53238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1133057,
+            "name": "shadps4:disk$2",
+            "runtime_ns": 1082103,
+            "runqueue_wait_ns": 0,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd994 0x189 0x33 0x0 0x0 0xffffffff 0x7f42f060e238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1133058,
+            "name": "shadps4:disk$3",
+            "runtime_ns": 631323,
+            "runqueue_wait_ns": 0,
+            "timeslices": 17,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cbfd994 0x189 0x33 0x0 0x0 0xffffffff 0x7f42efe0d238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125373,
+            "name": "npEntitlements:",
+            "runtime_ns": 270410,
+            "runqueue_wait_ns": 82503,
+            "timeslices": 44,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efae76b0 0x0 0x0 0x0 0x0 0x18 0x7efae7608 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124776,
+            "name": "shadPS4:Main",
+            "runtime_ns": 176438,
+            "runqueue_wait_ns": 0,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7f437eff9390 0x89 0x0 0x7f437eff9290 0x0 0xffffffff 0x7f437eff9148 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124225,
+            "name": "libusb_event",
+            "runtime_ns": 129714,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "do_sys_poll",
+            "syscall": "7 0x7f45ddff9420 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f45ddff93b8 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125660,
+            "name": "AK Suspended",
+            "runtime_ns": 117326,
+            "runqueue_wait_ns": 13035,
+            "timeslices": 15,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef897f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef897d68 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125374,
+            "name": "npTrophies::Wor",
+            "runtime_ns": 93701,
+            "runqueue_wait_ns": 96485,
+            "timeslices": 9,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efab7f00 0x0 0x0 0x0 0x0 0x18 0x7efab7e58 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1124231,
+            "name": "shadps4:disk$0",
+            "runtime_ns": 72347,
+            "runqueue_wait_ns": 1673,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cdef7c0 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ac7fa238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124228,
+            "name": "shadPS4:KernelS",
+            "runtime_ns": 67168,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fc740 0x189 0x0 0x0 0x0 0xffffffff 0x7f45dd7f8238 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124235,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 51297,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd06ad8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43adbf8258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124234,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 50135,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd063f8 0x189 0x0 0x0 0x0 0xffffffff 0x7f43ae3f9258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124233,
+            "name": "shadPS4:GpuSche",
+            "runtime_ns": 44257,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d3cd05d18 0x189 0x0 0x0 0x0 0xffffffff 0x7f43aebfa258 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1124238,
+            "name": "shadPS4:ImGuiTe",
+            "runtime_ns": 42924,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d30c2f080 0x189 0x0 0x0 0x0 0xffffffff 0x7f43a8acb168 0x7f45e27b672e\n"
+          },
+          {
+            "tid": 1125671,
+            "name": "LuaGCSchedulerT",
+            "runtime_ns": 33457,
+            "runqueue_wait_ns": 37795,
+            "timeslices": 2,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7ef827f20 0x0 0x0 0x0 0x0 0x18 0x7ef827e78 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125371,
+            "name": "AsyncHTTPQueue",
+            "runtime_ns": 31791,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x7efb45c10 0x0 0x0 0x0 0x0 0x18 0x7efb45b68 0x7f45e282a4f9\n"
+          },
+          {
+            "tid": 1125376,
+            "name": "shadPS4:SaveDat",
+            "runtime_ns": 15071,
+            "runqueue_wait_ns": 0,
+            "timeslices": 1,
+            "wait_channel": "futex_wait_queue",
+            "syscall": "202 0x563d310fd028 0x0 0x0 0x0 0x0 0x0 0x7efa57e58 0x7f45e282a4f9\n"
+          }
+        ]
+      },
+      "screenshot_sha256": {
+        "frame-080s.png": "7073f30b00e96df5320f4022f0f7ea6f38e4e1d2da8fbfec8df23590d0fc7907",
+        "frame-008s.png": "f6ccb90ed4418e6948bc2efcf7ad949251ea69a61674f78f5f0b1d2958ca3dc2",
+        "frame-110s.png": "502021c40458edbb6f0d25a8293df48bb2b928aacbd89b1c9913ae0aaaf27b01",
+        "frame-025s.png": "c8073f5eb14c0f3b0217476138c8c12dd5e7c2ac0141b924a377fb72ae4fad49"
+      },
+      "performance_records": 271,
+      "performance_truncated": false,
+      "validation_layer_active": false,
+      "gpu_work_entries": 0,
+      "visual_review": {
+        "80s": "Gameplay: Kratos and Atreus in snowy forest; 9 FPS, 113.3 ms overlay.",
+        "110s": "Gameplay continues in same scene with character pose changes; 9 FPS, 115.0 ms overlay.",
+        "audio": "Not observed."
+      }
+    }
+  },
+  "monitor_comparison": {
+    "baseline_archive": "universal-two-games-20261106T075007Z-376975.tar.gz",
+    "before_runtime_ns_at_110s": 92386869751,
+    "after_runtime_ns_at_110s": 10729596689,
+    "reduction_percent": 88.38623202851413,
+    "limits": "Different workloads/screenshots and prior external VRAM contention; supports reduced monitor CPU cost, not a matched gameplay FPS improvement."
+  },
+  "findings": [
+    "Both games launched and terminated cleanly at the protected 118-second deadline; exit 0 is not graphics acceptance.",
+    "GoW reaches visually confirmed gameplay at 9 FPS. Page protection takes 22.542 seconds across 9,122,970 calls; GPU waits take 19.153 seconds. Inclusive/concurrent timings are not additive.",
+    "GoT draw/dispatch/submit last timestamps are approximately 34.3 seconds; after 60 seconds median GPU busy is 0%. Game:Main has 88.180 seconds CPU at the 110-second snapshot, dominated by sampled guest timestamp polling and the host fault path. This does not prove clock emulation caused the black screen.",
+    "No GPU fault is reported, but validation and GPU-work tracing were disabled in this performance run; empty gpu-work.log is not absence of GPU execution.",
+    "Both model restoration leases finish RESTORED. Peak total VRAM stays about 5.12 GiB for GoW and 1.60 GiB for GoT; no prior-sized reload spike appears."
+  ],
+  "decision": "KEEP_PR173_DRAFT_RETAIN_TIMER_FIX_MAIN_UNCHANGED_GOT_STALL_AND_GOW_LOW_FPS_UNRESOLVED",
+  "next_step": "Reuse exact successful native binary for GoT-only Vulkan validation and bounded GPU-work capture, 118s TERM +2s KILL, no automated input. No new gameplay build or speculative emulation change."
+}

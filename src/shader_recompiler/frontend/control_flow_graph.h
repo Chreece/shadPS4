@@ -34,7 +34,7 @@ struct Block : Hook {
     [[nodiscard]] bool Contains(u32 pc) const noexcept;
 
     bool operator<(const Block& rhs) const noexcept {
-        return begin < rhs.begin;
+        return begin < rhs.begin || (begin == rhs.begin && is_exec_guard && !rhs.is_exec_guard);
     }
 
     u32 begin;
@@ -49,6 +49,7 @@ struct Block : Hook {
     Block* branch_false{};
     IR::Block* ir_block{};
     bool is_dummy{};
+    bool is_exec_guard{};
 };
 
 class CFG {
@@ -73,6 +74,7 @@ private:
     void EmitBlocks();
     void LinkBlocks();
     void SplitDivergenceScopes();
+    void SplitWaveScopes();
     void RemoveUnreachableBlocks();
 
     void AddLabel(Label address) {

@@ -1,0 +1,158 @@
+{
+  "schema_version": 2,
+  "recorded_utc": "2026-11-06T15:15:11.224882+00:00",
+  "source_commit": "d4b3e763fa4b566d048901a5b2315d2ad3edd5ab",
+  "runner_commit": "f473582ba4869eea3bccad4ac719e64a9947522e",
+  "upstream_commit": "68b4c0c071b4172a94c6dd145706663fb58a202e",
+  "upstream_preparation": "Current upstream equals retained base; no rebase necessary. Fifty preceding retained commits remain ancestors. No user-side ref freshness checks.",
+  "native_capture": {
+    "archive": "universal-two-games-20261106T143400Z-3259737.tar.gz",
+    "archive_sha256": "ea3c0233bcada73be04009aa1b6daf9b312db1bffb9e22cd44e2d8bc5e49923d",
+    "library_file_id": "libfile_7605e4c080008191bd1edd2cff05eb4f",
+    "source_commit": "9515fcb15e328c70692fc9ee7113337a619d168b",
+    "runner_commit": "f473582ba4869eea3bccad4ac719e64a9947522e",
+    "binary_sha256": "197b9688b3b205836bb548f1776fc1704e281e7194e124413ec797af53a51f95",
+    "build_cpu_startup": "PASS"
+  },
+  "got": {
+    "exit": -11,
+    "elapsed_seconds": 100.816,
+    "runner_deadline_reached": false,
+    "owned_child_terminated": true,
+    "terminal_failure": "Runtime::CopyMip source-width assertion, vk_runtime.cpp:498",
+    "previous_failure": "Captured b5500bd4 permutations compile successfully; the prior descriptor Phi assertion is absent.",
+    "visual": "80s Sony presents screen; menu/gameplay not established in this capture. User previously reported menu/Continue with missing fill.",
+    "gpu_failure": null,
+    "guest_gpu_buffer_residency_fault_reports": 29,
+    "inference": "MipOf and SliceOf clamp tiny compressed dimensions to one block; CopyMip used an unclamped source block count. Exact native source/destination dimensions were not captured, so tiny BC mip attribution remains an inference.",
+    "remaining": "Missing fill, loading and progression need native verification."
+  },
+  "gow": {
+    "screenshot_80s_fps": 8,
+    "screenshot_80s_ms": 123.3,
+    "shutdown_confirmed": false,
+    "shutdown_thread": {
+      "name": "SDLAudioP43",
+      "state": "D",
+      "wchan": "dma_fence_wait_any_timeout"
+    },
+    "page_protect": {
+      "calls": 8234084,
+      "self_seconds": 20.794302529
+    },
+    "buffer_readback": {
+      "calls": 15538,
+      "bytes": 3723247040
+    },
+    "gpu_wait": {
+      "calls": 29580,
+      "self_seconds": 28.685025938,
+      "max_seconds": 10.161751122
+    },
+    "gpu_command_cpu_seconds": {
+      "80s": 58.178,
+      "110s": 76.356
+    },
+    "audio_thread_cpu_seconds": {
+      "SDLAudioP43": [
+        0.273,
+        0.374
+      ],
+      "AK_AudioOutThread": [
+        0.0485,
+        0.0601
+      ]
+    },
+    "conclusion": "Low FPS and shutdown remain unresolved. The thread name does not establish an Audio3D deadlock; the recorded wait is a Linux GPU-fence wait."
+  },
+  "audio_pr_review": {
+    "url": "https://github.com/shadps4-emu/shadPS4/pull/5492",
+    "reviewed_head": "9f55474ad45778f8ac08e923574f214d492997f2",
+    "status": "OPEN_UNMERGED",
+    "included": false,
+    "behavior": "Moves mixed-queue playback to a feeder; ASYNC returns without calling AudioOutOutput on the caller, SYNC waits for queue room; full queue polling sleeps 250us.",
+    "applicability": "Could reduce mixed-audio caller blocking and loading cost. GoW opens associated main/pad audio ports; DrainAssociatedPorts remains synchronous and is called before the new feeder logic. No evidence that this changes the captured GPU-fence shutdown wait or 8 FPS.",
+    "upstream_validation": "Author reports The Quarry loading improvement; review requests other Audio3D game testing.",
+    "decision": "Keep separate from the mip-copy candidate; no audio patch applied."
+  },
+  "change": {
+    "file": "src/video_core/renderer_vulkan/vk_runtime.cpp",
+    "behavior": "Clamp source compressed width/height/pitch block counts to one, matching cache subresource checks. Preserve copy extents and record mismatching dimensions in assertions.",
+    "scope": "Generic texture subresource handling; no title, shader, vendor or address selectors."
+  },
+  "validation": {
+    "release_build": "PASS GCC14 Release; all source bytes match the built checkout",
+    "build": {
+      "binary_sha256": "c43302a6d97212fa5e28474a074433f11691f9ccc525d60f20a9d198b274ea9d",
+      "startup": [
+        {
+          "arguments": [
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "arguments": [
+            "--show-fps",
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "arguments": [
+            "--fullscreen",
+            "true",
+            "--help"
+          ],
+          "exit": 0
+        }
+      ]
+    },
+    "production_fixture": {
+      "formats": [
+        "BC1",
+        "BC3",
+        "BC7",
+        "RGBA8"
+      ],
+      "base_sizes": [
+        4,
+        8,
+        16,
+        32
+      ],
+      "mip_cases": 56,
+      "candidate": "PASS real ImageInfo::MipOf/SliceOf and extracted actual CopyMip body; captured copy extents/subresources checked",
+      "baseline": "First tiny BC1 mip reproduces assertion exit -11",
+      "incompatible_width": "Still rejects with source/destination dimensions, exit -11",
+      "limitation": "Command submission and image barriers substituted; no local Vulkan device execution."
+    },
+    "openorbis": {
+      "filename": "compressed-mip-alias-openorbis-20261106.zip",
+      "library_file_id": "libfile_1d1fb930c4d88191930a96ef3d58ccc5",
+      "sha256": "d5448e94b892b279c7dc5b10d8e15d30bde3107ef2d73c4445702d0a096c7f12",
+      "original_kernel": "Bonaire assembly PASS",
+      "c_syntax": "GCC C11 -Wall -Wextra -Werror PASS",
+      "sdk_build": false,
+      "physical_console": false
+    },
+    "handoff": "Three cases: exact pinned invocation, checksum failure, download failure; process/download boundaries substituted.",
+    "native_candidate_test": false
+  },
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=d4b3e763fa4b566d048901a5b2315d2ad3edd5ab\nRUNNER=f473582ba4869eea3bccad4ac719e64a9947522e\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-test.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n 34f2f79331c006cdf6e66a75c02a480e64f3cfd9128b4171bd8597917dde39e5 \\\n \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 \\\nSHADPS4_TEST_CAPTURE_FIRST_SHADERS=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nSHADPS4_TEST\n",
+  "policy": {
+    "raw_guest_data_published": false,
+    "game_or_shader_specific_emulation": false,
+    "forced_counters": false,
+    "coherence_bypass": false,
+    "automatic_input": false,
+    "runtime_upstream_freshness_checks": false,
+    "main_changed": false
+  },
+  "pending": [
+    "Native GoT CopyMip result and loading progression",
+    "GoT missing fill graphics",
+    "GoW low FPS and coherence cost",
+    "GoW GPU-fence shutdown completion"
+  ]
+}

@@ -197,8 +197,8 @@ GraphicsPipeline::GraphicsPipeline(
     } else if (is_rect_list || is_quad_list) {
         const auto type = is_quad_list ? AuxShaderType::QuadListTCS : AuxShaderType::RectListTCS;
         if (!preloading) {
-            const auto& fs_info = runtime_infos[u32(Shader::SwStage::Fragment)].hw.fs;
-            sdata.tcs = Shader::Backend::SPIRV::EmitAuxilaryTessShader(type, fs_info);
+            const auto& vs_info = *infos[u32(Shader::SwStage::Vertex)];
+            sdata.tcs = Shader::Backend::SPIRV::EmitAuxilaryTessShader(type, vs_info, profile);
         }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eTessellationControl,
@@ -215,9 +215,9 @@ GraphicsPipeline::GraphicsPipeline(
         });
     } else if (is_rect_list || is_quad_list) {
         if (!preloading) {
-            const auto& fs_info = runtime_infos[u32(Shader::SwStage::Fragment)].hw.fs;
+            const auto& vs_info = *infos[u32(Shader::SwStage::Vertex)];
             sdata.tes = Shader::Backend::SPIRV::EmitAuxilaryTessShader(
-                AuxShaderType::PassthroughTES, fs_info);
+                AuxShaderType::PassthroughTES, vs_info, profile);
         }
         shader_stages.emplace_back(vk::PipelineShaderStageCreateInfo{
             .stage = vk::ShaderStageFlagBits::eTessellationEvaluation,
@@ -380,7 +380,12 @@ GraphicsPipeline::GraphicsPipeline(
         if (control.enable && (color_scaled_min_max || alpha_scaled_min_max)) {
             LOG_WARNING(
                 Render_Vulkan,
-                "Unimplemented use of min/max blend op with blend factor not equal to one.");
+                "Unimplemented scaled min/max blend: attachment={} format={} "
+                "color-op={} color-src={} color-dst={} alpha-op={} alpha-src={} alpha-dst={}",
+                i, u32(key.color_buffers[i].num_format), u32(attachment.colorBlendOp),
+                u32(attachment.srcColorBlendFactor), u32(attachment.dstColorBlendFactor),
+                u32(attachment.alphaBlendOp), u32(attachment.srcAlphaBlendFactor),
+                u32(attachment.dstAlphaBlendFactor));
         }
     }
 
@@ -499,24 +504,40 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
         }
         for (const auto& image : stage->images) {
             const u32 num_bindings = image.NumBindings(*stage);
-            bindings.push_back({
-                .binding = binding,
-                .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
-                                                   : vk::DescriptorType::eSampledImage,
-                .descriptorCount = num_bindings,
-                .stageFlags = stage_bit,
-            });
-            binding += num_bindings;
+            const auto add_images = [&](u32 count) {
+                bindings.push_back({
+                    .binding = binding,
+                    .descriptorType = image.is_written ? vk::DescriptorType::eStorageImage
+                                                       : vk::DescriptorType::eSampledImage,
+                    .descriptorCount = count,
+                    .stageFlags = stage_bit,
+                });
+                binding += count;
+            };
+            for (u32 i = 0; i < image.NumImageArrays(); ++i) {
+                add_images(num_bindings);
+            }
+            if (image.is_guest_indexed) {
+                bindings.push_back({
+                    .binding = binding++,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer,
+                    .descriptorCount = 1,
+                    .stageFlags = stage_bit,
+                });
+            }
         }
         for (const auto& sampler : stage->samplers) {
+            const u32 count = sampler.NumBindings(*stage);
             bindings.push_back({
-                .binding = binding++,
+                .binding = binding,
                 .descriptorType = vk::DescriptorType::eSampler,
-                .descriptorCount = 1,
+                .descriptorCount = count,
                 .stageFlags = stage_bit,
             });
+            binding += count;
         }
     }
+    ValidateDescriptorLimits(bindings);
     uses_push_descriptors = binding < instance.MaxPushDescriptors();
     const auto flags = uses_push_descriptors
                            ? vk::DescriptorSetLayoutCreateFlagBits::ePushDescriptorKHR

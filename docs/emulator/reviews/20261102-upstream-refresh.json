@@ -1,0 +1,179 @@
+{
+  "schema_version": 2,
+  "review_id": "upstream-refresh-20261102",
+  "timestamp_utc": "2026-11-02T08:22:35.555183+00:00",
+  "prior_candidate": "7b62b61b8629cbd52205cc1151b92f9997b2a720",
+  "prior_upstream": "8a66adabf74072e24162b098d7bfd3156b475393",
+  "native_observed_upstream": "ed8a479e20deceddd591777c32e7f1a7fec4841d",
+  "integrated_upstream": "16157ae67cccb7176c5e830070ec16d5dd729bce",
+  "rebased_source_before_journal": "601ca165cb931d1b2a96cc1433804568929ccee8",
+  "archive_branch": "archive/universal-pre-upstream-20261102-7b62b61b",
+  "archive": {
+    "name": "universal-two-games-20261102T070452Z-2727204.tar(1).gz",
+    "bytes": 13207141,
+    "sha256": "0b6ab4554b3b169ba1e36dbede71a241a0ab42e1763fef5f62031d9723a3dad6"
+  },
+  "uploaded_result": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261102T070453Z-2727215",
+    "timestamp_utc": "2026-11-02T07:05:06.056212+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "NEW_UPSTREAM_REQUIRES_INTEGRATION",
+    "result": "BLOCKED_UPSTREAM_ADVANCED",
+    "exit_code": 3,
+    "requested_commit": "7b62b61b8629cbd52205cc1151b92f9997b2a720",
+    "source_commit": "7b62b61b8629cbd52205cc1151b92f9997b2a720",
+    "upstream_commit": "ed8a479e20deceddd591777c32e7f1a7fec4841d",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261102T070453Z-2727215.tar.gz",
+    "decision": "Rebase reviewed generic fixes onto latest upstream, rebuild and rerun bounded native capture. No installed binary changed.",
+    "uploaded_archive_sha256": "0b6ab4554b3b169ba1e36dbede71a241a0ab42e1763fef5f62031d9723a3dad6",
+    "review_file": "docs/emulator/reviews/20261102-upstream-refresh.json",
+    "reviewed_result": "BLOCKED_BEFORE_BUILD_AND_GAME_LAUNCH"
+  },
+  "upstream_changes": [
+    {
+      "commit": "ed8a479e20deceddd591777c32e7f1a7fec4841d",
+      "description": "Reject compute image clear shortcut when buffer and image component counts differ; use the normal compute path."
+    },
+    {
+      "commit": "64627b72b1fbbc93d4e17970f9dcb05399a913f7",
+      "description": "Update macOS mesa-kosmickrisp submodule pin from 52d87b35 to 89621426."
+    },
+    {
+      "commit": "16157ae67cccb7176c5e830070ec16d5dd729bce",
+      "description": "Invalidate VFS path/case caches after filesystem mutations and preserve streaming directory enumeration. Detected during the first local build and integrated before publication."
+    }
+  ],
+  "retained_patch_comparison": "1:  43b739c1 ! 1:  8506278e Rebase universal integration and recover ordered GDS capture\n    @@ src/core/libraries/kernel/file_system.cpp: s32 PS4_SYSV_ABI posix_unlink(const c\n     +        return -1;\n          }\n      \n    -     LOG_INFO(Kernel_Fs, \"Unlinked {}\", path);\n    +     mnt->InvalidateCache(path);\n     \n      ## src/core/libraries/kernel/kernel.cpp ##\n     @@\n2:  7b62b61b = 2:  601ca165 Fix ordered-GDS operand capture and constant lane-read elimination\n",
+  "conflicts": [],
+  "validation": {
+    "full_release_build": "PASS: complete GCC 14 Release shadps4 target with SDL X11 desktop backend on final refreshed source and one-line compile repair. Final reconfigure/rebuild exit 0.",
+    "cpu_regressions": {
+      "result": "PASS",
+      "ctest_cases": 31,
+      "suites": 9,
+      "additional": "Seven renderer source contracts, 10,418 production SRT checks, sparse/descriptor/mapping/ABI checks.",
+      "log_sha256": "3257e2957b343ac87d402922d85d9ecb8856779be65d4d57a9a36000e6383072"
+    },
+    "native_startup": "PASS: all three existing isolated XDG startup, preservation and refusal scenarios against the final linked executable; GPU_NOT_RUN.",
+    "game_gpu_run": "NOT_RUN",
+    "macos_build": "NOT_RUN",
+    "runner_source_preservation": "PASS: all build/graphics/harness/observer bytes identical to 7b62b61b; strict upstream gate retained.",
+    "patch_preservation": "PASS: initial rebase onto 64627b72 preserves both patches exactly. Final rebase onto 16157ae6 changes only context around the retained unlink repair to include upstream cache invalidation. DS operand/lane-read patch remains unchanged. Independent composition of old candidate and new upstream yields exactly the rebased tree 0285e05f6d5f0aaea3caa5c3d490fdfec938b488; no merge commit was created.",
+    "configure": "PASS GCC 14 Release, SDL X11 desktop backend; no system packages installed.",
+    "build_environment": "Fresh workspace. Hash-verified Ubuntu toolchain/development packages extracted under /tmp. Missing libuv and pkg-config were supplied there before configuration; emulator source was not changed to accommodate dependencies.",
+    "pinned_submodules": {
+      "result": "PASS",
+      "count": 54,
+      "snapshot_sha256": "a36de10c687b2befdcd9f9a5506017ffb586eb79386d9f6cb36e97c28bd8bcc2",
+      "new_mesa_wrapper": "89621426a2390cf94f07187cd99a3d158d4295f5",
+      "new_mesa_source": "1c853169eff74d19a521094ac26964acb4652e93"
+    },
+    "runner_syntax_and_journal": "PASS Bash syntax, Python parse, all journal JSON lines and diff whitespace.",
+    "new_tests_committed": false,
+    "build_source_identity": "Worktree on local rebased commit 601ca165cb931d1b2a96cc1433804568929ccee8 plus the one-line unnamed-parameter compile repair. Source tree before journal edits is 2347c65e87c3cdb388f0361653dd713ca1311244. Publication changes commit metadata and journal only; the host runner rebuilds the final immutable commit.",
+    "initial_cpu_regressions_on_64627b72": {
+      "result": "PASS",
+      "ctest_cases": 31,
+      "suites": [
+        {
+          "suite": "graphics_diagnostics-test.log",
+          "tests": 2
+        },
+        {
+          "suite": "image_transfer-test.log",
+          "tests": 4
+        },
+        {
+          "suite": "kernel_sanitizer-test.log",
+          "tests": 1
+        },
+        {
+          "suite": "kernel_thread_atexit-test.log",
+          "tests": 1
+        },
+        {
+          "suite": "ngs2_hle-test.log",
+          "tests": 11
+        },
+        {
+          "suite": "occlusion_query-test.log",
+          "tests": 2
+        },
+        {
+          "suite": "quit_dialog-test.log",
+          "tests": 6
+        },
+        {
+          "suite": "startup_loading-test.log",
+          "tests": 3
+        },
+        {
+          "suite": "userservice-test.log",
+          "tests": 1
+        }
+      ],
+      "log_sha256": "e4795c9fc362cbcd1630a157cd096ff6b9ab26624b7c48da31f03ecba553f06d",
+      "additional": "Renderer contracts; 10,418 SRT primitive checks; sparse Vulkan/recorder scenarios; descriptor, mapping and guest-HLE ABI checks."
+    },
+    "unlink_integration": {
+      "result": "PASS",
+      "cases": 13,
+      "source": "Exact posix_unlink and sceKernelUnlink bodies from final rebased 601ca165; actual IOFile and host filesystem operations.",
+      "coverage": "Missing/null/long/directory/read-only/unmounted paths, successful/open-file/already-deleted/no-host deletion, errno mapping and closed/deleted IO errors. Cache invalidation is checked once after successful deletion and never after rejected calls.",
+      "fixture": "Temporary copy outside repository; current Exists/InvalidateCache mount interface supplied. No emulator body altered and no test committed.",
+      "limitations": "Synthetic mount/handle table; no GPU/game run. Privilege-drop permission case not run in this capability-restricted container.",
+      "initial_attempt": "Legacy fixture extraction used a removed Windows boundary and failed before producing a test binary. Adapter switched to the exact current syscall function boundaries and mount interface.",
+      "log_sha256": "8a448c33271f2cdc098018b949b603740cfb7eca9cd9e2eb334f208b9dc6ce4d"
+    },
+    "initial_release_build_on_64627b72": {
+      "result": "PASS",
+      "target": "shadps4",
+      "source": "8e7c7c6cb1f196a1dc5dbe7da8a4c3ad3419618d",
+      "steps": 2531,
+      "log_sha256": "8e27952e81685bb22a7a27727493f88cdb930786f97980112bb97a151b523c4d",
+      "game_launched": false
+    },
+    "initial_cpu_attempt_on_16157ae6": "FAIL: upstream unused parameter in no-op virtual IBackend::InvalidateCache under existing -Werror build. Recorded and repaired without suppressing warnings.",
+    "local_binary_sha256": "2a3df59a3547389340bcfed33a5f4114783a198888662ea8af086d3ef88456c7",
+    "build_log_sha256": "3da0fd26159a7f835fd7e026f3b794971ce48442d2c01b90440bd49afd31cc7d",
+    "startup_log_sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+    "native_build_attempts": [
+      {
+        "source": "8e7c7c6c on upstream 64627b72",
+        "result": "PASS full Release build; superseded by newer upstream before publication"
+      },
+      {
+        "source": "601ca165 on upstream 16157ae6",
+        "result": "PASS full target and startup; one-line header repair was made during compilation, so a final reconfigure/rebuild followed to ensure every object is current"
+      },
+      {
+        "source_tree": "2347c65e87c3cdb388f0361653dd713ca1311244",
+        "result": "PASS final full target and startup after compile repair",
+        "rebuilt_steps": 113
+      }
+    ]
+  },
+  "decision": "Rebased onto latest verified upstream 16157ae6, retaining prior patches and repairing only the unused-parameter build error. Full local Release, CPU, focused unlink and startup checks pass. Keep PR118 draft and fork main unchanged; rebuild published immutable commit for bounded GoW capture then GoT. No new GPU/gameplay success is claimed.",
+  "runner_hashes": {
+    "scripts/shadps4-universal-two-game-check.sh": "5e32ba4f1ed4cf8c4105fef7dfca603d3e7f84f8e1f9e026371941f9aa7838ba",
+    "scripts/shadps4-universal-upstream-build.sh": "6f827be5ef09ff9e296a970c7c02d3ebda7b4c05d5d4a1dd79189716968e6416",
+    "tools/development/run_universal_verified_graphics.py": "a6827de5a5044d3facd8c7a5103ff5bd2236ecf6f46978ce91ec849ebc764689"
+  },
+  "validated_source_tree_before_journal": "2347c65e87c3cdb388f0361653dd713ca1311244",
+  "initial_integrated_upstream": "64627b72b1fbbc93d4e17970f9dcb05399a913f7",
+  "first_rebased_source_before_journal": "8e7c7c6cb1f196a1dc5dbe7da8a4c3ad3419618d",
+  "first_patch_comparison": "1:  43b739c1 = 1:  3226251c Rebase universal integration and recover ordered GDS capture\n2:  7b62b61b = 2:  8e7c7c6c Fix ordered-GDS operand capture and constant lane-read elimination\n",
+  "initial_retained_cumulative_patch_id": "f23a23d1e51892afbbea904546571e4ee9a2fd32",
+  "integration_fix": {
+    "file": "src/core/file_sys/ifile.h",
+    "problem": "Upstream default InvalidateCache names an unused rel_path parameter; existing strict CPU fixture builds reject it with -Werror=unused-parameter.",
+    "change": "Remove the parameter name from the no-op virtual definition. Signature, default argument, vtable, overrides and runtime behavior are unchanged. No warning suppression or test edit.",
+    "reproduction": "Final-upstream CPU suite failed compiling the current production header before this one-line repair.",
+    "validation": "PASS: original strict CPU build failure reproduced, corrected suite passes all 31 cases; final Release target links and all three startup checks pass."
+  },
+  "rebased_source_tree_before_compile_repair": "0285e05f6d5f0aaea3caa5c3d490fdfec938b488"
+}

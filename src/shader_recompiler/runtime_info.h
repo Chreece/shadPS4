@@ -230,9 +230,15 @@ struct HwComputeRuntimeInfo {
     u32 shared_memory_size;
     std::array<u32, 3> workgroup_size;
     std::array<bool, 3> tgid_enable;
+    bool tg_size_enable;
+    bool ordered_append;
+    bool ordered_append_per_group;
 
     bool operator==(const HwComputeRuntimeInfo& other) const noexcept {
-        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable;
+        return workgroup_size == other.workgroup_size && tgid_enable == other.tgid_enable &&
+               shared_memory_size == other.shared_memory_size &&
+               tg_size_enable == other.tg_size_enable && ordered_append == other.ordered_append &&
+               ordered_append_per_group == other.ordered_append_per_group;
     }
 };
 
@@ -249,11 +255,11 @@ struct RuntimeInfo {
         AmdGpu::FpDenormMode fp_denorm_mode16_64 : 2;
         AmdGpu::FpRoundMode fp_round_mode32 : 2;
         AmdGpu::FpRoundMode fp_round_mode16_64 : 2;
-        u32 num_allocated_vgprs : 8;
+        u32 num_allocated_vgprs : 9;
         u32 num_user_data : 5;
         u32 num_input_vgprs : 2;
         u32 dx10_clamp : 1;
-        u32 reserved : 8;
+        u32 reserved : 7;
         bool operator==(const Properties&) const noexcept = default;
     } props;
     union SwInfo {

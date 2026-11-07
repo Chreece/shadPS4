@@ -19,6 +19,9 @@ namespace Shader::Backend::SPIRV {
 using Sirit::Id;
 
 class EmitContext;
+Id EmitOrderedGdsResumeSite(EmitContext& ctx);
+Id EmitOrderedGdsLoadState(EmitContext& ctx, IR::Inst* inst, u32 offset);
+void EmitOrderedGdsStoreState(EmitContext& ctx, IR::Inst* inst, u32 offset, Id value);
 
 // Microinstruction emitters
 Id EmitPhi(EmitContext& ctx, IR::Inst* inst);
@@ -64,7 +67,7 @@ void EmitSetMaskLaneVariable(EmitContext& ctx);
 void EmitGetMaskLaneVariable(EmitContext& ctx);
 void EmitSetScc(EmitContext& ctx);
 Id EmitReadConst(EmitContext& ctx, IR::Inst* inst, Id addr, Id offset);
-Id EmitReadConstBuffer(EmitContext& ctx, u32 handle, Id index);
+Id EmitReadConstBuffer(EmitContext& ctx, const IR::Value& handle, Id index);
 Id EmitLoadBufferU8(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
 Id EmitLoadBufferU16(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
 Id EmitLoadBufferU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address);
@@ -83,6 +86,14 @@ void EmitStoreBufferU32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address
 void EmitStoreBufferU32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x3(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferU32x4(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
+void EmitStoreBufferU32Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                               Id guard);
+void EmitStoreBufferU32x2Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x3Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
+void EmitStoreBufferU32x4Guarded(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value,
+                                 Id guard);
 void EmitStoreBufferU64(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
 void EmitStoreBufferF32x2(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address, Id value);
@@ -441,6 +452,8 @@ Id EmitImageSampleRaw(EmitContext& ctx, IR::Inst* inst, u32 handle, Id address1,
                       Id address3, Id address4);
 Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id bias,
                               const IR::Value& offset);
+Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                                     Id bias, const IR::Value& offset, Id gpu_texture_id);
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
                               const IR::Value& offset);
 Id EmitImageSampleDrefImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id dref,
@@ -453,6 +466,9 @@ Id EmitImageGatherDref(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
                        const IR::Value& offset, Id dref);
 Id EmitImageQueryDimensions(EmitContext& ctx, IR::Inst* inst, u32 handle, Id lod, bool skip_mips);
 Id EmitImageQueryLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords);
+Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                            Id derivatives_dx, Id derivatives_dy, const IR::Value& offset,
+                            Id gpu_texture_id);
 Id EmitImageGradient(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id derivatives_dx,
                      Id derivatives_dy, const IR::Value& offset, const IR::Value& lod_clamp);
 Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms);
@@ -479,19 +495,28 @@ Id EmitCubeFaceCoordS(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitCubeFaceCoordT(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitCubeFaceMajorAxis(EmitContext& ctx, IR::Inst* inst, Id x, Id y, Id z);
 Id EmitLaneId(EmitContext& ctx);
+Id EmitGroupReduceUMin(EmitContext& ctx, Id value);
+Id EmitGroupReduceOr(EmitContext& ctx, Id value);
 Id EmitWarpId(EmitContext& ctx);
 Id EmitQuadBroadcast(EmitContext& ctx, Id value, Id index);
 Id EmitShuffle(EmitContext& ctx, Id value, Id index);
 Id EmitShuffleXor(EmitContext& ctx, Id value, Id mask);
-Id EmitReadFirstLane(EmitContext& ctx, Id value);
+Id EmitReadFirstLane(EmitContext& ctx, Id value, Id exec);
 Id EmitReadLane(EmitContext& ctx, Id value, Id lane);
-Id EmitWriteLane(EmitContext& ctx, Id value, Id write_value, u32 lane);
+Id EmitWriteLane(EmitContext& ctx, Id value, Id write_value, Id lane);
 Id EmitBallot(EmitContext& ctx, Id bit);
 Id EmitBallotFindLsb(EmitContext& ctx, Id mask);
 Id EmitInverseBallot(EmitContext& ctx, Id mask);
 Id EmitGroupAny(EmitContext& ctx, Id bit);
 Id EmitDataAppend(EmitContext& ctx, Id gds_dw_offset, Id exec);
 Id EmitDataConsume(EmitContext& ctx, Id gds_dw_offset, Id exec);
+// Live guest register capture is emitted in frontend IR, but writing
+// actual GPU checkpoint storage and later restoring state are not enabled.
+void EmitOrderedGdsCheckpointRegister(EmitContext& ctx, u32 site_pc, u32 bank, u32 index,
+                                      Id guest_value, Id logical_slot, Id lane);
+// Runtime wave creation ordering must be implemented before this can execute.
+Id EmitOrderedGdsCount(EmitContext& ctx, Id runtime_m0, Id address, Id guest_exec_mask,
+                       u32 encoded_control, u32 site_pc);
 
 void EmitEmitVertex(EmitContext& ctx);
 void EmitEmitPrimitive(EmitContext& ctx);

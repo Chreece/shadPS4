@@ -1,0 +1,248 @@
+{
+  "schema_version": 2,
+  "record_id": "generic-texture-contract-restoration-20261102",
+  "timestamp_utc": "2026-11-02T19:08:08.463667+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pull_request": 122,
+  "base_source_commit": "f6c7b43eb34b282809f67016ec6d2d1e4f583a92",
+  "upstream_main_checked": "2183807e592b36d4440384878165b43d930c1dee",
+  "published_production_commit": "4400802878015f1e2cdbcb61388dfe25d54ccbf0",
+  "local_production_commit": "6f69d3b38a3de418ea2b63b6ed4846f50cf0d522",
+  "verified_production_tree": "c3c86aa4152bab4d1adc404b379dafef78036f04",
+  "commit_identity_note": "API and local author metadata yield different commit IDs; all six production blob SHAs and the complete Git tree are identical. Local binary was built from the local production commit. Native runner builds the immutable published candidate separately.",
+  "uploaded_archive": {
+    "name": "universal-two-games-20261102T183253Z-3263793.tar.gz",
+    "sha256": "e9f27718d774c94dcc1e1cf3d29aa29f527359f02dd63f6a798ba609ab5ab544"
+  },
+  "native_results": [
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261102T184658Z-3375187",
+      "timestamp_utc": "2026-11-02T19:08:08.463667+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 121,
+      "archive": "universal-two-games-20261102T183253Z-3263793.tar.gz",
+      "archive_sha256": "e9f27718d774c94dcc1e1cf3d29aa29f527359f02dd63f6a798ba609ab5ab544",
+      "source_commit": "f6c7b43eb34b282809f67016ec6d2d1e4f583a92",
+      "game": "CUSA34384",
+      "result": "NATIVE_GAME_CRASH_PREVIOUS_STATE_NOT_RESTORED",
+      "fatal": "Unresolvable equal-address Color1D to layered Color2D overlap",
+      "native_observation": {
+        "binary_sha256": "e6c75172d98a086d29598b2bb7aacbcc17e4b312580a5f8e74539f7069a0669f",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 3376291,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "elapsed_seconds": 17.483,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 5222,
+        "warning_lines": 235,
+        "error_lines": 19,
+        "selected_diagnostic_lines": 190,
+        "full_console_bytes": 777616,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 8,
+        "srt_source_blocks": {
+          "4203478:4203478": 1,
+          "4203481:4203481": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201296:4201296": 1,
+          "4201306:4201306": 1
+        },
+        "memory_histograms_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "new_fix_pull_request": 122,
+      "menu_or_gameplay_recovered": false,
+      "ds_first_pass_captured": false,
+      "main_promoted": false,
+      "overlap": {
+        "address": "0x10330b8500",
+        "format": "R8Unorm",
+        "size": "1x1x1",
+        "pitch": 32,
+        "tile_mode": "0xd",
+        "old_type": 8,
+        "new_type": 9,
+        "old_layers": 1,
+        "new_layers": 2,
+        "old_bytes": 256,
+        "new_bytes": 512,
+        "mips": 1,
+        "safe_to_delete": false,
+        "previous_fix_missing_from_integrated_source": "f8cc5e39e1522316a79d749f4186a55c00e950e8"
+      }
+    },
+    {
+      "schema_version": 2,
+      "record_id": "universal-graphics-20261102T184722Z-3378186",
+      "timestamp_utc": "2026-11-02T19:08:08.463667+00:00",
+      "scope": "UNIVERSAL_SHADPS4",
+      "pull_request": 121,
+      "archive": "universal-two-games-20261102T183253Z-3263793.tar.gz",
+      "archive_sha256": "e9f27718d774c94dcc1e1cf3d29aa29f527359f02dd63f6a798ba609ab5ab544",
+      "source_commit": "f6c7b43eb34b282809f67016ec6d2d1e4f583a92",
+      "game": "CUSA11456",
+      "result": "NATIVE_GAME_CRASH_PREVIOUS_STATE_NOT_RESTORED",
+      "fatal": "SurfaceFormat assertion: data_format=39 (BC5), num_format=11 (UbnormNz)",
+      "native_observation": {
+        "binary_sha256": "e6c75172d98a086d29598b2bb7aacbcc17e4b312580a5f8e74539f7069a0669f",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -11,
+        "owned_child_pid": 3378191,
+        "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+        "elapsed_seconds": 29.96,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 5770,
+        "warning_lines": 402,
+        "error_lines": 1210,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 786262,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 3,
+        "srt_source_blocks": {
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1
+        },
+        "memory_histograms_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "new_fix_pull_request": 122,
+      "menu_or_gameplay_recovered": false,
+      "ds_first_pass_captured": false,
+      "main_promoted": false,
+      "visual_review": "frame-025s.png black, 29 FPS overlay; no menu",
+      "last_shader": "0x8e743c8e",
+      "indexed_tables_before_fatal": {
+        "entries": 24,
+        "bound_2d": 24,
+        "stride": 340
+      },
+      "format_mapping_provenance": "Recovered current/src/video_core/amdgpu/pixel_format.h has both UbnormNz remap and conversion cases; integrated source lacked them. No raw descriptor bytes or stack trace identify the exact failing ordinary binding."
+    }
+  ],
+  "restorations": [
+    {
+      "path": "src/video_core/texture_cache/image_info.cpp",
+      "origin_commit": "f8cc5e39e1522316a79d749f4186a55c00e950e8",
+      "change": "Move original strict Color1D-to-layered-Color2D same-storage guard into ImageInfo; call existing ExpandImage. The expansion uploads newly exposed layers, copies valid GPU-written layer zero, rebinds live views and releases the old image. It does not discard the overlap or substitute a null texture."
+    },
+    {
+      "path": "src/video_core/amdgpu/pixel_format.h",
+      "origin_file": "got-shader-parity-20261102T164131085649Z/current/src/video_core/amdgpu/pixel_format.h",
+      "change": "Restore UbnormNz remap to Unorm and existing biased conversion. Preserve default and constant channels when converting sampled/read/gathered texels. Shader binary version 20 invalidates old output."
+    }
+  ],
+  "validation": {
+    "native_gcc14_build_link": "PASS",
+    "local_binary_sha256": "ed90dc443e8606c8a181487e6210b82a9ea844822fccdcc7870a3515b05b9f85",
+    "startup_scenarios": 3,
+    "existing_ctest_suites": 9,
+    "existing_ctest_cases": 31,
+    "existing_source_contract_cases": 7,
+    "srt_primitive_checks": 10418,
+    "sparse_allocator_modes": [
+      "recorder",
+      "real Vulkan headers"
+    ],
+    "existing_descriptor_vma_hle_checks": "PASS",
+    "production_texture_checks": 3954,
+    "texture_fixture_coverage": "Actual ImageInfo tiled layouts for widths 1/8/32, layers 2/6; 26 incompatible variations per layout. Actual discovery/flattening/patching for R8/RG8/RGBA8/BC4/BC5, unorm/ubnorm/ubnorm-nz, identity/swapped/constant channels, sample/read/four gather components, endpoints/intermediate values. No replacement implementation is used for the production transformation. Expected values apply channel conversion before swizzle.",
+    "format_baseline": "Old remap=11 conversion=0 exit1; restored remap=0 conversion=3 exit0.",
+    "patching_baseline": "Previous production resource_patching_pass fails constant/default channel comparison (exit134); corrected production pass succeeds.",
+    "production_spirv_modules_vulkan13": 6,
+    "gpu_game_execution_here": "NOT_AVAILABLE",
+    "new_repository_tests": false
+  },
+  "attempts": [
+    {
+      "stage": "initial_build",
+      "result": "PASS_FOR_RESTORED_MAPPING_AND_OVERLAP"
+    },
+    {
+      "stage": "constant_channel_build",
+      "result": "FAIL: BitField/u32 conditional ambiguous; corrected with explicit u32 extraction, then full compile/link PASS"
+    },
+    {
+      "stage": "temporary_fixture_compile",
+      "result": "FAIL: fixture opcode spellings and BitField assignments mismatched API; corrected to CompositeExtractF32x4 and Assign, then PASS3954"
+    },
+    {
+      "stage": "hardware_shader_assembly",
+      "result": "FAIL: LLVM modifier ordering glc/da; corrected, all three kernels assemble and host C11 syntax passes"
+    },
+    {
+      "stage": "old_production_patching_counterexample",
+      "result": "EXPECTED_FAIL: default/constant channel changed by bias"
+    },
+    {
+      "stage": "final_formatted_production_commit_build_and_startup",
+      "result": "PASS"
+    }
+  ],
+  "hardware_probe": {
+    "file": "texture-contracts-openorbis.zip",
+    "sha256": "b0aae8e5702b26a777fe8cedd5b7c9fa434d31f39ac110bf3e2b89ec3a81436e",
+    "url": "https://chatgpt.com/library?file_id=libfile_bc9f2dbb693081918188eb82a08de5e5&account_id=personal",
+    "kernels": 3,
+    "bounded_dispatches": 40,
+    "bonaire_assembly": "PASS",
+    "host_c11_syntax": "PASS",
+    "sdk_link": "NOT_RUN",
+    "ps4_execution": "NOT_RUN",
+    "initial_version_sha256": "e351ca4cd59b7e5dadaca707c219a73371e58ac50db9541c4ee151a4aa7158be",
+    "library_version": 1,
+    "shader_resources": "16 VGPRs and32 SGPRs; maximum used v12/s27. Initial host resource word allocated8 VGPRs; corrected before any SDK link or native run."
+  },
+  "limitations": [
+    "No post-change native game result. GoT menu/world and GoW videos/continuation remain unproven.",
+    "The historical overlap donor had fixture validation; the journal does not establish a historical post-fix native game pass.",
+    "Indexed numeric conversions remain explicitly unsupported; this restores ordinary descriptor conversion and does not remove that guard.",
+    "Border/filtering edge cases and hardware-biased-format precision remain unmeasured by the shared probe.",
+    "Dedicated ordered-counter seed and guest reentry remain unimplemented; no seed or result fabricated.",
+    "No non-Linux build or native GPU was available here."
+  ],
+  "decision": "DRAFT_PR_ONLY_PENDING_BOUNDED_NATIVE_GAME_VERIFICATION",
+  "main_changed": false,
+  "historical_binaries_changed": false,
+  "next_test": {
+    "runner": "scripts/shadps4-universal-two-game-check.sh",
+    "runner_sha256": "5e32ba4f1ed4cf8c4105fef7dfca603d3e7f84f8e1f9e026371941f9aa7838ba",
+    "mode": "build",
+    "max_seconds_per_game": 120,
+    "automatic_input": false,
+    "capture_once_env": true,
+    "acceptance": "GoW passes same-storage overlap and records the next real blocker/ordered capture. GoT passes BC5/11 binding and must show its previous menu or better before restoration is claimed. A successful process/build is insufficient."
+  }
+}

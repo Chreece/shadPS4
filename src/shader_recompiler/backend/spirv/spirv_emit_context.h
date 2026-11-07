@@ -232,6 +232,7 @@ public:
 
     Id shared_u16{};
     Id shared_u32{};
+    Id shared_f32{};
     Id shared_u64{};
 
     Id input_u32{};
@@ -285,10 +286,12 @@ public:
 
     Id shared_memory_u16{};
     Id shared_memory_u32{};
+    Id shared_memory_f32{};
     Id shared_memory_u64{};
 
     Id shared_memory_u16_type{};
     Id shared_memory_u32_type{};
+    Id shared_memory_f32_type{};
     Id shared_memory_u64_type{};
 
     Id bary_coord{};
@@ -302,12 +305,19 @@ public:
     struct TextureDefinition {
         const VectorIds* data_types;
         Id id;
+        std::array<Id, 9> indexed_ids{};
+        std::array<Id, 9> indexed_types{};
+        Id indexed_metadata{};
+        Id indexed_metadata_pointer_type{};
         Id sampled_type;
         Id image_type;
         AmdGpu::ImageType view_type;
         bool is_integer = false;
         bool is_storage = false;
         MipStorageFallbackMode mip_fallback_mode{};
+        u32 image_array_size{1};
+        bool is_guest_indexed{};
+        bool is_guest_mixed_indexed{};
     };
 
     enum class PointerType : u32 {
@@ -355,9 +365,28 @@ public:
     boost::container::small_vector<BufferDefinition, 16> buffers;
     boost::container::small_vector<TextureDefinition, 8> images;
     boost::container::small_vector<Id, 4> samplers;
+    boost::container::small_vector<u32, 4> sampler_array_sizes;
     std::unordered_map<u32, Id> first_to_last_label_map;
 
     size_t flatbuf_index{};
+    size_t ordered_gds_checkpoint_index{};
+    bool has_ordered_gds_checkpoint_binding{};
+    size_t ordered_gds_capture_index{};
+    bool has_ordered_gds_capture_binding{};
+    size_t ordered_gds_auth_index{};
+    bool has_ordered_gds_auth_binding{};
+    // Explicitly compiled FIRST PASS only. A guest DS_ORDERED_COUNT ends
+    // the wave's execution after its live register/packet capture; the
+    // normal gameplay emitter never sets this. No counter value is produced
+    // along a reachable GPU path until authenticated host resolution and
+    // a separate state-restoring guest continuation are implemented.
+    bool ordered_gds_capture_pass{};
+    size_t ordered_gds_state_index{};
+    size_t ordered_gds_resume_index{};
+    Id ordered_gds_resume_site{};
+    Id ordered_gds_previous{};
+    Id ordered_gds_resume_consumed{};
+    Id ordered_gds_state_base{};
     size_t bda_pagetable_index{};
     size_t fault_buffer_index{};
     Id physical_pointer_type_u32;

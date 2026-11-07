@@ -1,12 +1,22 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <array>
+#include <atomic>
 #include <limits>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <magic_enum/magic_enum.hpp>
+#include "common/logging/log.h"
+#include "shader_recompiler/guest_tsharp_array.h"
 #include "shader_recompiler/info.h"
 #include "shader_recompiler/ir/basic_block.h"
 #include "shader_recompiler/ir/ir_emitter.h"
 #include "shader_recompiler/ir/opcodes.h"
 #include "shader_recompiler/ir/operand_helper.h"
+#include "shader_recompiler/ir/passes/indexed_sample_eligibility.h"
 #include "shader_recompiler/ir/passes/ir_passes.h"
 #include "shader_recompiler/ir/passes/resource_pass.h"
 #include "shader_recompiler/ir/reinterpret.h"
@@ -102,6 +112,7 @@ public:
         const u32 index{Add(buffer_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_dw1_mask == existing.post_op_dw1_mask &&
+                   desc.post_op_dw2_shift == existing.post_op_dw2_shift &&
                    desc.buffer_type == existing.buffer_type;
         })};
         auto& buffer = buffer_resources[index];
@@ -114,9 +125,19 @@ public:
     u32 Add(const ImageResource& desc) {
         const u32 index{Add(image_resources, desc, [&desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.is_array == existing.is_array &&
+                   desc.is_depth == existing.is_depth && desc.is_r128 == existing.is_r128 &&
+                   desc.is_atomic_float_emulated == existing.is_atomic_float_emulated &&
                    desc.mip_fallback_mode == existing.mip_fallback_mode &&
                    desc.constant_mip_index == existing.constant_mip_index &&
-                   desc.post_op == existing.post_op;
+                   desc.post_op == existing.post_op &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.is_guest_mixed_indexed == existing.is_guest_mixed_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_entry_limit == existing.indexed_entry_limit &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_descriptor_offset_bytes ==
+                       existing.indexed_descriptor_offset_bytes &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         auto& image = image_resources[index];
         image.is_atomic |= desc.is_atomic;
@@ -128,7 +149,14 @@ public:
         const u32 index{Add(sampler_resources, desc, [this, &desc](const auto& existing) {
             return desc.sharp_fetch == existing.sharp_fetch && desc.post_op == existing.post_op &&
                    desc.post_op_tsharp_dw3_off == existing.post_op_tsharp_dw3_off &&
-                   desc.is_depth == existing.is_depth;
+                   desc.is_depth == existing.is_depth && desc.is_integer == existing.is_integer &&
+                   desc.integer_binding == existing.integer_binding &&
+                   desc.is_guest_indexed == existing.is_guest_indexed &&
+                   desc.indexed_guest_entries == existing.indexed_guest_entries &&
+                   desc.indexed_record_stride_bytes == existing.indexed_record_stride_bytes &&
+                   desc.indexed_image_offset_bytes == existing.indexed_image_offset_bytes &&
+                   desc.indexed_sampler_offset_bytes == existing.indexed_sampler_offset_bytes &&
+                   desc.indexed_table_fetch == existing.indexed_table_fetch;
         })};
         return index;
     }
@@ -147,6 +175,9 @@ private:
         if (it != descriptors.end()) {
             return static_cast<u32>(std::distance(descriptors.begin(), it));
         }
+        ASSERT_MSG(descriptors.size() < descriptors.capacity(),
+                   "Shader exceeds the distinct resource binding capacity of {}",
+                   descriptors.capacity());
         descriptors.push_back(desc);
         return static_cast<u32>(descriptors.size()) - 1;
     }
@@ -168,8 +199,12 @@ SharpLocation SharpLocationFromSource(const IR::Inst* inst) {
         return static_cast<SharpLocation>(inst->Arg(0).ScalarReg());
     } else if (inst->GetOpcode() == IR::Opcode::ReadConstBuffer) {
         location = inst->Flags<IR::BufferInstInfo>().flatbuf_off_dw;
-    } else {
+    } else if (inst->GetOpcode() == IR::Opcode::ReadConst) {
         location = inst->Flags<SharpLocation>();
+    } else {
+        // Unrecognised descriptor producers have no valid CPU SHARP offset.
+        // Never interpret arbitrary IR instruction metadata as an address.
+        return UNKNOWN_LOCATION;
     }
     if (location == 0) {
         LOG_WARNING(Render_Recompiler, "Sharp source was not flatenned");
@@ -184,6 +219,7 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     SharpFetch<T> sharp_fetch{};
     for (u32 i = 0; i < sharp.num_dwords; i++) {
         auto dword = sharp.dwords[i];
+        sharp_fetch.clear_masks[i] = sharp.clear_masks[i];
         if (dword.IsImmediate()) {
             sharp_fetch.immediates[i] = dword.U32();
         } else {
@@ -194,10 +230,15 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
             }
         }
     }
-    if (sharp_fetch.summary != Summary::Invalid) {
+    // One bulk load is safe only for full contiguous flat-buffer reads.
+    // A masked descriptor, immediate word, or unresolved source must use
+    // the per-word fetch to retain the guest's original value.
+    const u32 full_mask = (1u << sharp.num_dwords) - 1u;
+    if (sharp_fetch.summary != Summary::Invalid && sharp_fetch.load_mask == full_mask &&
+        std::ranges::all_of(sharp_fetch.clear_masks, [](u32 bits) { return bits == 0; })) {
         const u32 base = sharp_fetch.offsets[0];
         for (u32 i = 1; i < sharp.num_dwords; ++i) {
-            if (sharp_fetch.offsets[i] - base != i) {
+            if (u32(sharp_fetch.offsets[i] - base) != i) {
                 return sharp_fetch;
             }
         }
@@ -206,12 +247,78 @@ SharpFetch<T> ConstructSharpFetch(const SharpReference& sharp) {
     return sharp_fetch;
 }
 
+// Bounded read-only provenance for SHARP descriptors which could not be
+// resolved into the host flat buffer. A GPU-dependent source cannot be
+// recovered by substituting a zero or copying another material's descriptor.
+static void LogUnflattenedSharpSource(const Info& info, const SharpReference& sharp,
+                                      const char* role, bool indexed) {
+    static thread_local std::unordered_map<u64, std::array<u32, 2>> reports;
+    const bool image = std::string_view(role) == "image";
+    if (reports.size() >= 128 && !reports.contains(info.pgm_hash)) {
+        return;
+    }
+    auto& counts = reports[info.pgm_hash];
+    auto& count = counts[image ? 0u : 1u];
+    if (count++ >= 3u) {
+        return;
+    }
+    std::string sources;
+    for (u32 i = 0; i < sharp.num_dwords && i < sharp.dwords.size(); ++i) {
+        const auto value = sharp.dwords[i];
+        if (!sources.empty()) {
+            sources += ",";
+        }
+        if (value.IsEmpty()) {
+            sources += fmt::format("{}:empty", i);
+        } else if (value.IsImmediate()) {
+            sources += fmt::format("{}:imm", i);
+        } else if (const IR::Inst* producer = value.TryInst()) {
+            u32 flattened_slot = 0;
+            if (producer->GetOpcode() == IR::Opcode::ReadConstBuffer) {
+                flattened_slot = producer->Flags<IR::BufferInstInfo>().flatbuf_off_dw;
+            } else if (producer->GetOpcode() == IR::Opcode::ReadConst) {
+                flattened_slot = producer->Flags<SharpLocation>();
+            }
+            sources += fmt::format("{}:{}@{}", i, magic_enum::enum_name(producer->GetOpcode()),
+                                   flattened_slot);
+        } else {
+            sources += fmt::format("{}:noninst", i);
+        }
+    }
+    LOG_INFO(Render_Recompiler,
+             "SHARP_RESOURCE_PROVENANCE shader={:#x} stage={} role={} indexed={} "
+             "dwords={} post_op={} sources={}",
+             info.pgm_hash, static_cast<u32>(info.hw_stage), role, indexed, sharp.num_dwords,
+             static_cast<u32>(sharp.post_op), sources);
+}
+
 void PatchBufferSharp(const ResourceDiscovery& resource, Info& info, Descriptors& descriptors,
                       const Profile& profile) {
     IR::Inst& inst = *resource.user;
 
+    const auto sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]);
+    // A shader can select V# descriptor dwords using a GPU-dependent SRT
+    // address. A failed host SHARP fetch is not a valid zero/null descriptor.
+    // Preserve the real guest vector and lower the scalar buffer read via
+    // guest GPU address translation, rather than choosing a host value.
+    const IR::Inst* const original_handle = inst.Arg(0).TryInst();
+    if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer &&
+        sharp_fetch.summary == SharpFetch<AmdGpu::Buffer>::Summary::Invalid &&
+        resource.sharps[0].post_op == SharpFetchPostOp::None && original_handle &&
+        original_handle->GetOpcode() == IR::Opcode::CompositeConstructU32x4) {
+        // Cap logs per shader rather than globally: the previous cap of 32
+        // was exhausted by one shader and hid the other three stalled families.
+        static thread_local std::unordered_map<u64, u32> reports;
+        if (reports.size() < 128 || reports.contains(info.pgm_hash)) {
+            if (reports[info.pgm_hash]++ < 3u) {
+                LOG_INFO(Render_Recompiler, "GPU_DYNAMIC_BUFFER_SHARP shader={:#x} stage={}",
+                         info.pgm_hash, static_cast<u32>(info.hw_stage));
+            }
+        }
+        return;
+    }
     const u32 buffer_binding = descriptors.Add(BufferResource{
-        .sharp_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.sharps[0]),
+        .sharp_fetch = sharp_fetch,
         .used_types = BufferDataType(inst, profile),
         .buffer_type = BufferType::Guest,
         .is_written = IsBufferStore(inst),
@@ -243,14 +350,139 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
         .sharp_fetch = ConstructSharpFetch<AmdGpu::Image>(resource.sharps[0]),
         .is_depth = bool(inst_info.is_depth),
         .is_atomic = is_atomic,
+        .is_atomic_float_emulated = (inst.GetOpcode() == IR::Opcode::ImageAtomicFMin32 ||
+                                     inst.GetOpcode() == IR::Opcode::ImageAtomicFMax32) &&
+                                    !profile.supports_image_fp32_atomic_min_max,
         .is_array = bool(inst_info.is_array),
         .is_written = is_written,
         .is_r128 = bool(inst_info.is_r128),
         .post_op = resource.sharps[0].post_op,
     };
 
+    // Strided guest T# may have a single real, provably scalar S#.
+    // It must contain four evaluable descriptor dwords and be valid.
+    bool verified_uniform_sampler = false;
+    if (resource.has_indexed_table && resource.indexed_record_stride_bytes != 0u &&
+        !resource.has_indexed_sampler_table &&
+        resource.sharps[1].post_op == SharpFetchPostOp::None &&
+        resource.sharps[1].num_dwords == 4u) {
+        const auto fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]);
+        AmdGpu::Sampler real{};
+        verified_uniform_sampler = fetch.Fetch(info.flattened_ud_buf.data(), &real) && real.Valid();
+    }
+
+    const bool uniform_sharps =
+        resource.sharps[0].num_dwords == 8u && resource.sharps[1].num_dwords == 4u &&
+        image_res.sharp_fetch.summary != SharpFetch<AmdGpu::Image>::Summary::Invalid &&
+        ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]).summary !=
+            SharpFetch<AmdGpu::Sampler>::Summary::Invalid;
+
+    if (resource.has_indexed_table && !uniform_sharps &&
+        profile.supports_sampled_image_nonuniform_indexing &&
+        (resource.indexed_record_stride_bytes == 0u ||
+         (resource.has_indexed_sampler_table &&
+          profile.supports_sampler_array_nonuniform_indexing &&
+          resource.sharps[1].post_op == SharpFetchPostOp::None) ||
+         verified_uniform_sampler) &&
+        !is_written && IsBindableGuestIndexedSampleMode(inst_info)) {
+        const auto table_fetch = ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+        const u32 record_stride = resource.indexed_record_stride_bytes;
+        const u32 record_offset = resource.indexed_descriptor_offset_bytes;
+        const bool needs_indexed_sampler = record_stride != 0u && !verified_uniform_sampler;
+        const u32 indexed_limit = needs_indexed_sampler
+                                      ? std::min(profile.max_guest_indexed_image_entries,
+                                                 profile.max_guest_indexed_sampler_entries)
+                                      : profile.max_guest_indexed_image_entries;
+        image_res.indexed_table_fetch = table_fetch;
+        image_res.indexed_entry_limit = indexed_limit;
+        image_res.indexed_record_stride_bytes = record_stride;
+        image_res.indexed_descriptor_offset_bytes = record_offset;
+        AmdGpu::Buffer table{};
+        if (table_fetch.Fetch(info.flattened_ud_buf.data(), &table) && table.Valid() &&
+            table.base_address != 0) {
+            const u32 entries =
+                record_stride != 0u
+                    ? CompleteGuestTsharpRecordEntries(static_cast<u32>(table.stride),
+                                                       static_cast<u32>(table.num_records),
+                                                       record_stride, record_offset, indexed_limit)
+                    : CompleteGuestTsharpTableEntries(static_cast<u32>(table.stride),
+                                                      static_cast<u32>(table.num_records),
+                                                      indexed_limit);
+            if (entries != 0u) {
+                image_res.is_guest_indexed = true;
+                // Only use dimension-typed GPU image sampling when the whole
+                // guest table fits real Vulkan descriptor resource limits.
+                image_res.is_guest_mixed_indexed =
+                    info.hw_stage == HwStage::Fragment && !inst_info.has_offset &&
+                    !inst_info.has_derivatives &&
+                    entries <= profile.max_guest_mixed_indexed_image_entries;
+                if (image_res.is_guest_mixed_indexed) {
+                    image_res.indexed_entry_limit =
+                        std::min(indexed_limit, profile.max_guest_mixed_indexed_image_entries);
+                }
+                image_res.indexed_guest_entries =
+                    GuestTsharpBindingCapacity(entries, image_res.indexed_entry_limit);
+            }
+        }
+    }
+
+    // Discovery can recognize a valid GPU-selected source while the host
+    // cannot bind a real texture table. Report the actual rejection gate,
+    // not just the source opcode. This never changes the shader or bindings.
+    if (resource.has_indexed_table && !uniform_sharps && !image_res.is_guest_indexed) {
+        static thread_local std::unordered_map<u64, u32> reports;
+        if (reports.size() < 128u || reports.contains(info.pgm_hash)) {
+            if (reports[info.pgm_hash]++ < 2u) {
+                const bool sampled_eligible =
+                    !is_written && IsBindableGuestIndexedSampleMode(inst_info);
+                const bool sampler_eligible =
+                    resource.indexed_record_stride_bytes == 0u ||
+                    (resource.has_indexed_sampler_table &&
+                     profile.supports_sampler_array_nonuniform_indexing &&
+                     resource.sharps[1].post_op == SharpFetchPostOp::None) ||
+                    verified_uniform_sampler;
+                const bool format_eligible = sampled_eligible &&
+                                             profile.supports_sampled_image_nonuniform_indexing &&
+                                             sampler_eligible;
+                const auto indexed_fetch =
+                    ConstructSharpFetch<AmdGpu::Buffer>(resource.indexed_table_sharp);
+                AmdGpu::Buffer indexed_header{};
+                const bool fetched =
+                    format_eligible &&
+                    indexed_fetch.Fetch(info.flattened_ud_buf.data(), &indexed_header);
+                const bool valid =
+                    fetched && indexed_header.Valid() && indexed_header.base_address != 0;
+                const u64 bytes = valid ? (indexed_header.stride == 0
+                                               ? static_cast<u64>(indexed_header.num_records)
+                                               : static_cast<u64>(indexed_header.stride) *
+                                                     indexed_header.num_records)
+                                        : 0u;
+                LOG_INFO(Render_Recompiler,
+                         "INDEXED_MATERIAL_BIND_REJECT shader={:#x} stage={} "
+                         "stride={} offset={} sample_mode_ok={} sampler_mode_ok={} "
+                         "table_fetch_kind={} table_fetched={} table_valid={} "
+                         "guest_base={:#x} guest_bytes={} guest_stride={} guest_records={}",
+                         info.pgm_hash, static_cast<u32>(info.hw_stage),
+                         resource.indexed_record_stride_bytes,
+                         resource.indexed_descriptor_offset_bytes, sampled_eligible,
+                         sampler_eligible, static_cast<u32>(indexed_fetch.summary), fetched, valid,
+                         valid ? static_cast<u64>(indexed_header.base_address) : 0u, bytes,
+                         valid ? static_cast<u32>(indexed_header.stride) : 0u,
+                         valid ? static_cast<u32>(indexed_header.num_records) : 0u);
+            }
+        }
+    }
+
+    // An unresolved image SHARP is distinct from an *accepted* GPU indexed
+    // texture table. Log the real source words without forcing any binding.
+    if (image_res.sharp_fetch.summary == SharpFetch<AmdGpu::Image>::Summary::Invalid) {
+        LogUnflattenedSharpSource(info, resource.sharps[0], "image", image_res.is_guest_indexed);
+    }
     auto image = image_res.GetSharp(info);
     ASSERT(image.GetType() != AmdGpu::ImageType::Invalid);
+    ASSERT_MSG(!image_res.is_atomic_float_emulated ||
+                   image.GetDataFmt() == AmdGpu::DataFormat::Format32,
+               "Float image atomic fallback requires a 32-bit texel");
 
     if (needs_mip_storage_fallback) {
         // If the mip level to IMAGE_(LOAD/STORE)_MIP is a constant, set up ImageResource
@@ -324,14 +556,53 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
 
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
         auto& lod_prod = resource.sharps[1].post_op_data.lod_prod;
-        const u32 sampler_binding = descriptors.Add(SamplerResource{
+        SamplerResource sampler_res{
             .sharp_fetch = ConstructSharpFetch<AmdGpu::Sampler>(resource.sharps[1]),
             .post_op = resource.sharps[1].post_op,
             .post_op_tsharp_dw3_off =
                 lod_prod.IsEmpty() ? UNKNOWN_LOCATION : SharpLocationFromSource(lod_prod.Inst()),
             .is_depth = bool(inst_info.is_depth), // true for the _C (compare) opcodes
-        });
+            .is_integer = !image_res.is_guest_indexed && AmdGpu::IsInteger(image.GetNumberFmt()),
+        };
+        if (image_res.is_guest_indexed && !verified_uniform_sampler) {
+            if (image_res.indexed_record_stride_bytes != 0u) {
+                ASSERT(resource.has_indexed_sampler_table);
+            }
+            sampler_res.is_guest_indexed = true;
+            sampler_res.indexed_table_fetch = image_res.indexed_table_fetch;
+            sampler_res.indexed_guest_entries = image_res.indexed_guest_entries;
+            sampler_res.indexed_record_stride_bytes = image_res.indexed_record_stride_bytes;
+            sampler_res.indexed_image_offset_bytes = image_res.indexed_descriptor_offset_bytes;
+            sampler_res.indexed_sampler_offset_bytes = resource.indexed_sampler_offset_bytes;
+        }
+        if (image_res.is_guest_indexed && verified_uniform_sampler) {
+            static thread_local std::unordered_map<u64, u32> reports;
+            const u64 shader = info.pgm_hash;
+            if (reports.size() < 96u || reports.contains(shader)) {
+                u32& count = reports[shader];
+                if (count++ < 2u) {
+                    LOG_INFO(Render_Recompiler,
+                             "IndexedUniformSamplerBound: shader={:#x} "
+                             "record_stride={} entries={}",
+                             shader, image_res.indexed_record_stride_bytes,
+                             image_res.indexed_guest_entries);
+                }
+            }
+        }
+        if (sampler_res.sharp_fetch.summary == SharpFetch<AmdGpu::Sampler>::Summary::Invalid) {
+            LogUnflattenedSharpSource(info, resource.sharps[1], "sampler",
+                                      sampler_res.is_guest_indexed);
+        }
+        if (image_res.is_guest_indexed) {
+            auto integer_sampler = sampler_res;
+            integer_sampler.is_integer = true;
+            sampler_res.integer_binding = descriptors.Add(integer_sampler);
+        }
+        const u32 sampler_binding = descriptors.Add(sampler_res);
         inst.SetArg(0, ir.Imm32(image_binding | sampler_binding << 16));
+        if (image_res.is_guest_indexed) {
+            inst.SetArg(1, resource.indexed_texture_id);
+        }
     } else {
         inst.SetArg(0, ir.Imm32(image_binding));
     }
@@ -448,6 +719,10 @@ void PatchGlobalDataShareAccess(IR::Inst& inst, Info& info, Descriptors& descrip
         .buffer_type = BufferType::GdsBuffer,
         .is_written = true,
     });
+
+    // Only ordinary GDS accesses are patched to the 64 KiB memory buffer.
+    // CIK's DS_ORDERED_COUNT uses dedicated ordered-count packer state.
+    // It stays separate in IR and is not an instruction patched here.
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
 
@@ -632,6 +907,11 @@ IR::U32 CalculateBufferAddress(IR::IREmitter& ir, const IR::Inst& inst, const In
 
 void PatchBufferArgs(IR::Inst& inst, Info& info) {
     const auto handle = inst.Arg(0);
+    // A GPU-dynamic scalar read retained its original non-immediate V#
+    // handle. The SPIR-V emitter uses its true, lane-selected descriptor.
+    if (inst.GetOpcode() == IR::Opcode::ReadConstBuffer && !handle.IsImmediate()) {
+        return;
+    }
     const auto buffer_res = info.buffers[handle.U32()];
     const auto buffer = buffer_res.GetSharp(info);
 
@@ -645,8 +925,30 @@ void PatchBufferArgs(IR::Inst& inst, Info& info) {
                 CalculateBufferAddress(ir, inst, info, buffer, buffer.stride));
 }
 
+IR::Value ApplyImageReadNumberConversion(IR::IREmitter& ir, const IR::Value& texel,
+                                         const AmdGpu::Image& image,
+                                         const IR::TextureInstInfo& inst_info) {
+    const auto conversion = image.GetNumberConversion();
+    if (conversion != AmdGpu::NumberConversion::UnormToUbnorm) {
+        return ApplyReadNumberConversionVec4(ir, texel, conversion);
+    }
+    const auto mapping = image.DstSelect();
+    const auto components = AmdGpu::NumComponents(image.GetDataFmt());
+    std::array<IR::F32, 4> values;
+    for (u32 i = 0; i < values.size(); ++i) {
+        const auto selector =
+            u32(mapping.array[inst_info.is_gather ? u32(inst_info.gather_comp) : i]);
+        values[i] = IR::F32{ir.CompositeExtract(texel, i)};
+        if (selector >= u32(AmdGpu::CompSwizzle::Red) &&
+            selector < u32(AmdGpu::CompSwizzle::Red) + components) {
+            values[i] = ApplyReadNumberConversion(ir, values[i], conversion);
+        }
+    }
+    return ir.CompositeConstruct(values[0], values[1], values[2], values[3]);
+}
+
 void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image_res,
-                          const AmdGpu::Image& image) {
+                          const AmdGpu::Image& image, const IR::Value& gpu_tsharp_word3) {
     const auto handle = inst.Arg(0);
     const auto& sampler_res = info.samplers[(handle.U32() >> 16) & 0xFFFF];
     const auto sampler = sampler_res.GetSharp(info);
@@ -775,6 +1077,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         return coord;
     };
 
+    // Preserve the original coordinate-register position before parsing the
+    // usual 2D sample. The third coordinate is only used on a guest-selected
+    // 3D/Cube path; ordinary 2D sampling retains its original coordinates.
+    const u32 coords_start = addr_reg;
     // Now we can load body components as noted in Table 8.9 Image Opcodes with Sampler
     const IR::Value coords = [&] -> IR::Value {
         switch (view_type) {
@@ -815,6 +1121,10 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.ImageGather(handle, coords, offset, inst_info);
         }
         if (inst_info.has_derivatives) {
+            if (image_res.is_guest_indexed) {
+                return ir.ImageGradientIndexed(handle, coords, derivatives_dx, derivatives_dy,
+                                               offset, IR::U32{inst.Arg(1)}, inst_info);
+            }
             return ir.ImageGradient(handle, coords, derivatives_dx, derivatives_dy, offset,
                                     lod_clamp, inst_info);
         }
@@ -827,17 +1137,32 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
         if (explicit_lod) {
             return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
         }
+        if (image_res.is_guest_indexed) {
+            IR::Value sampled_coords = coords;
+            if (image_res.is_guest_mixed_indexed && !inst_info.has_offset) {
+                // T# dword 3 carries bits [31:28] = genuine guest image type.
+                // Retain its GPU-selected value in coords.w. The unused z
+                // coordinate has no effect on Color2D samples, but is
+                // consumed for correctly typed Color3D/Cube samples.
+                sampled_coords = ir.CompositeConstruct(
+                    ir.CompositeExtract(coords, 0u), ir.CompositeExtract(coords, 1u),
+                    get_coord(coords_start + 2u, 2u),
+                    ir.BitCast<IR::F32>(IR::U32{gpu_tsharp_word3}));
+            }
+            return ir.ImageSampleImplicitLodIndexed(handle, sampled_coords, bias, offset,
+                                                    IR::U32{inst.Arg(1)}, inst_info);
+        }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();
 
-    auto converted = ApplyReadNumberConversionVec4(ir, texel, image.GetNumberConversion());
+    auto converted = ApplyImageReadNumberConversion(ir, texel, image, inst_info);
     if (sampler.force_degamma && image.GetNumberFmt() != AmdGpu::NumberFormat::Srgb) {
         converted = ApplyForceDegamma(ir, texel);
     }
     inst.ReplaceUsesWith(converted);
 }
 
-void PatchImageArgs(IR::Inst& inst, Info& info) {
+void PatchImageArgs(IR::Inst& inst, Info& info, const ResourceDiscovery& resource) {
     // Nothing to patch for dimension query.
     if (inst.GetOpcode() == IR::Opcode::ImageQueryDimensions) {
         return;
@@ -850,7 +1175,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
 
     // Sample instructions must be handled separately using address register data.
     if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw) {
-        return PatchImageSampleArgs(inst, info, image_res, image);
+        return PatchImageSampleArgs(inst, info, image_res, image, resource.sharps[0].dwords[3]);
     }
 
     IR::IREmitter ir{*inst.GetParent(), IR::Block::InstructionList::s_iterator_to(inst)};
@@ -913,8 +1238,7 @@ void PatchImageArgs(IR::Inst& inst, Info& info) {
             // Storage image requires shader swizzle.
             texel = ApplySwizzle(ir, texel, image.DstSelect());
         }
-        const auto converted =
-            ApplyReadNumberConversionVec4(ir, texel, image.GetNumberConversion());
+        const auto converted = ApplyImageReadNumberConversion(ir, texel, image, inst_info);
         inst.ReplaceUsesWith(converted);
     } else {
         inst.SetArg(1, coords);
@@ -953,11 +1277,42 @@ void ResourcePatchingPass(Shader::Info& info, const ResourceDiscoveryList& resou
         IR::Inst& inst = *usage.user;
         if (IsBufferInstruction(inst)) {
             PatchBufferArgs(inst, info);
+            if (!usage.buffer_store_guard.IsEmpty()) {
+                const auto components = u32(inst.GetOpcode()) - u32(IR::Opcode::StoreBufferU32);
+                ASSERT(components < 4);
+                inst.ReplaceOpcode(IR::Opcode(u32(IR::Opcode::StoreBufferU32Guarded) + components));
+                inst.SetArg(3, usage.buffer_store_guard);
+            }
         } else if (IsImageInstruction(inst)) {
-            PatchImageArgs(inst, info);
+            PatchImageArgs(inst, info, usage);
         } else if (IsDataRingInstruction(inst)) {
             PatchGlobalDataShareAccess(inst, info, descriptors, profile);
         }
+    }
+
+    if (info.uses_ordered_gds) {
+        ASSERT_MSG(info.buffers.size() <= NUM_BUFFERS - 3,
+                   "ordered GDS capture/checkpoint/auth descriptors exceed buffer limit");
+        // These two independent GPU-written SSBOs are NOT guest V# SHARPs,
+        // ordinary 64KiB GDS RAM or dedicated CIK packer-counter storage.
+        // The capture packet stores actual live M0/EXEC/site/control/payload;
+        // epoch/token and valid flags remain invalid until authenticated
+        // dispatch inputs and a guest continuation pass are wired.
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsEpochAuth,
+            .is_written = false,
+        });
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsCapture,
+            .is_written = true,
+        });
+        (void)descriptors.Add(BufferResource{
+            .used_types = IR::Type::U32,
+            .buffer_type = BufferType::OrderedGdsCheckpoint,
+            .is_written = true,
+        });
     }
 }
 
