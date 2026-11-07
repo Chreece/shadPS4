@@ -21,7 +21,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '201a880cba00c0605bb23dd1a5c04e079c9cd560010c380e32c11a2eb50769da'
+OBSERVER_SHA256 = '684cba09690571ae6aa32f8639cf26d2fc779c98768422061a8507611af8fc5a'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -273,6 +273,44 @@ def kernel_gpu_timeouts(out, started, ended):
                     re.search(r'amdgpu:.*ring .*timeout', line, re.IGNORECASE)):
                 failures.add(line.strip())
     return sorted(failures)
+
+
+def kernel_gpu_failures(out, started, ended):
+    if started is None or ended is None:
+        return []
+    patterns = {
+        'USER_PAGES': r'amdgpu:.*init_user_pages: Failed to get user pages',
+        'VM_VALIDATION': r'amdgpu_vm_validate\(\) failed',
+        'COMMAND_MEMORY': r'amdgpu_cs_ioctl.*Not enough memory for command submission',
+        'RING_TIMEOUT': r'amdgpu:.*ring .*timeout',
+    }
+    groups, seen = {}, set()
+    for name in ('kernel-journal-root.json', 'kernel-journal.json',
+                 'kernel-gpu-journal-root.json', 'kernel-gpu-journal.json'):
+        path = out / name
+        if not path.is_file():
+            continue
+        result = json.loads(path.read_text())
+        if result.get('exit_code') != 0:
+            continue
+        for line in result.get('stdout', '').splitlines():
+            stamp = re.search(r'\[\s*(\d+\.\d+)\]', line)
+            if not stamp or not started <= float(stamp.group(1)) <= ended or line in seen:
+                continue
+            seen.add(line)
+            for kind, pattern in patterns.items():
+                if not re.search(pattern, line, re.IGNORECASE):
+                    continue
+                when = float(stamp.group(1))
+                group = groups.setdefault(kind, {'kind': kind, 'count': 0,
+                    'first_monotonic': when, 'last_monotonic': when,
+                    'first': line.strip(), 'last': line.strip()})
+                group['count'] += 1
+                if when < group['first_monotonic']:
+                    group.update(first_monotonic=when, first=line.strip())
+                if when >= group['last_monotonic']:
+                    group.update(last_monotonic=when, last=line.strip())
+    return sorted(groups.values(), key=lambda group: group['first_monotonic'])
 
 
 def collect_display_health(out, display, query_display=True, since_epoch=None):
@@ -528,7 +566,8 @@ def restore_models(out, record, observer):
     if not leases:
         return
     native = record.get('native', {})
-    unsafe = (record.get('kernel_gpu_timeouts') or native.get('gpu_failure') or
+    unsafe = (record.get('kernel_gpu_timeouts') or record.get('kernel_gpu_failures') or
+              native.get('gpu_failure') or native.get('gpu_memory_headroom_failure') or
               record.get('game_launched') and not native.get('owned_child_terminated', False))
     if not unsafe:
         try:
@@ -801,6 +840,7 @@ def main():
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         record['recovered_captures'] = recover_incomplete_captures(project, out, module)
+        module.capture_gpu_clients(out, 'preflight')
         if module.existing_games():
             raise RuntimeError('AN_EMULATOR_IS_ALREADY_RUNNING')
         game = Path(os.environ.get('SHADPS4_TEST_GAME', '/mnt/roms-all/ps4-games/CUSA11456/eboot.bin'))
@@ -811,6 +851,14 @@ def main():
         if not shutil.which('import'):
             raise RuntimeError('SCREENSHOT_TOOL_IMPORT_MISSING')
         verify_display(out, record, display)
+        health_start = time.monotonic() - 2.0
+        collect_display_health(out, display, query_display=False, since_epoch=time.time() - 2.0)
+        record['preflight_kernel_gpu_failures'] = kernel_gpu_failures(
+            out, health_start, time.monotonic())
+        if record['preflight_kernel_gpu_failures']:
+            record['preflight_failure'] = 'RECENT_KERNEL_GPU_FAILURE'
+            record['stop_remaining_tests'] = True
+            raise RuntimeError('RECENT_KERNEL_GPU_FAILURE; host GPU must recover before testing')
         if diagnostics:
             verify_validation_layer(out, record)
         old = profile_source(project)
@@ -893,8 +941,11 @@ def main():
                                        since_epoch=record.get('native_start_epoch'))
                 record['kernel_gpu_timeouts'] = kernel_gpu_timeouts(
                     out, record.get('native_start_monotonic'), record.get('native_end_monotonic'))
-                if record['kernel_gpu_timeouts']:
-                    record['result'] = 'KERNEL_GPU_TIMEOUT_DURING_CAPTURE'
+                record['kernel_gpu_failures'] = kernel_gpu_failures(
+                    out, record.get('native_start_monotonic'), record.get('native_end_monotonic'))
+                if record['kernel_gpu_failures']:
+                    record['result'] = ('KERNEL_GPU_TIMEOUT_DURING_CAPTURE'
+                        if record['kernel_gpu_timeouts'] else 'KERNEL_GPU_MEMORY_FAILURE_DURING_CAPTURE')
                     record['stop_remaining_tests'] = True
                     rc = 1
             except Exception as exc:
