@@ -844,6 +844,9 @@ Rasterizer::DispatchOriginalGcnOrderedCaptureImpl(OrderedGdsEpochDeviceBuffers& 
         pipeline->BindResources(set_writes, push_data);
         const auto command = scheduler.CommandBuffer();
         command.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+        scheduler.RecordWork("kind=ordered-gds shader=%llx phase=%u groups=%u,%u,%u",
+                             static_cast<unsigned long long>(stage.pgm_hash), expected_epoch,
+                             groups.x, groups.y, groups.z);
         if (indirect) {
             ASSERT_MSG(indirect_command_buffer, "missing real GPU indirect GCN command");
             command.dispatchIndirect(indirect_command_buffer->Handle(), indirect_command_offset);

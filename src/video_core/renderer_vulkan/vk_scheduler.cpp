@@ -13,11 +13,137 @@ namespace Vulkan {
 
 std::mutex Scheduler::submit_mutex;
 
+struct Scheduler::GpuProgress {
+    static constexpr u32 QueriesPerPool = 4096;
+    static constexpr u32 MaxPools = 8;
+    struct Pool {
+        vk::UniqueQueryPool handle;
+        std::array<u64, QueriesPerPool> sequences{};
+        std::array<u64, QueriesPerPool> ticks{};
+        u32 used{};
+        u64 tick{};
+    };
+    const Instance& instance;
+    Semaphore& semaphore;
+    std::mutex mutex;
+    std::vector<Pool> pools;
+    u32 active{};
+    u64 skipped{};
+    u64 retired_sequence{};
+    bool supported{};
+
+    GpuProgress(const Instance& instance, Semaphore& semaphore)
+        : instance{instance}, semaphore{semaphore} {
+        const auto families = instance.GetPhysicalDevice().getQueueFamilyProperties();
+        supported = instance.IsHostQueryResetSupported() &&
+                    families.at(instance.GetGraphicsQueueFamilyIndex()).timestampValidBits != 0;
+        std::fprintf(stderr, "GRAPHICS_WORK_PROGRESS_ENABLED semaphore=%p supported=%u\n",
+                     static_cast<void*>(&semaphore), unsigned(supported));
+    }
+
+    void Record(vk::CommandBuffer command, u64 sequence, u64 tick) {
+        if (!supported) {
+            return;
+        }
+        std::scoped_lock lock{mutex};
+        if (pools.empty() || pools[active].used == QueriesPerPool) {
+            auto reusable = std::ranges::find_if(pools, [&](const Pool& pool) {
+                return pool.tick < tick && semaphore.IsFree(pool.tick);
+            });
+            if (reusable != pools.end()) {
+                active = u32(reusable - pools.begin());
+                retired_sequence =
+                    std::max(retired_sequence, reusable->sequences[reusable->used - 1]);
+                reusable->used = 0;
+                reusable->tick = 0;
+            } else if (pools.size() < MaxPools) {
+                auto [result, handle] =
+                    instance.GetDevice().createQueryPoolUnique(vk::QueryPoolCreateInfo{
+                        .queryType = vk::QueryType::eTimestamp, .queryCount = QueriesPerPool});
+                if (result != vk::Result::eSuccess) {
+                    supported = false;
+                    std::fprintf(stderr, "GRAPHICS_WORK_PROGRESS_DISABLED result=%d\n",
+                                 int(result));
+                    return;
+                }
+                active = u32(pools.size());
+                pools.push_back(Pool{.handle = std::move(handle)});
+            } else {
+                ++skipped;
+                return;
+            }
+            instance.GetDevice().resetQueryPool(*pools[active].handle, 0, QueriesPerPool);
+        }
+        auto& pool = pools[active];
+        pool.tick = std::max(pool.tick, tick);
+        pool.sequences[pool.used] = sequence;
+        pool.ticks[pool.used] = tick;
+        command.writeTimestamp2(vk::PipelineStageFlagBits2::eAllCommands, *pool.handle,
+                                pool.used++);
+    }
+
+    void Dump(u64 requested) {
+        std::scoped_lock lock{mutex};
+        u64 last_complete = retired_sequence;
+        std::vector<u64> pending;
+        for (const auto& pool : pools) {
+            if (!pool.used) {
+                continue;
+            }
+            std::array<std::array<u64, 2>, QueriesPerPool> results{};
+            const auto result = instance.GetDevice().getQueryPoolResults(
+                *pool.handle, 0, pool.used, pool.used * sizeof(results[0]), results.data(),
+                sizeof(results[0]),
+                vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWithAvailability);
+            if (result != vk::Result::eSuccess && result != vk::Result::eNotReady) {
+                std::fprintf(stderr, "GRAPHICS_WORK_PROGRESS_UNAVAILABLE result=%d\n", int(result));
+                continue;
+            }
+            for (u32 i = 0; i < pool.used; ++i) {
+                if (pool.ticks[i] > requested) {
+                    continue;
+                }
+                if (results[i][1]) {
+                    last_complete = std::max(last_complete, pool.sequences[i]);
+                } else {
+                    pending.push_back(pool.sequences[i]);
+                }
+            }
+        }
+        u64 first_pending = std::numeric_limits<u64>::max();
+        for (const auto sequence : pending) {
+            if (sequence > last_complete) {
+                first_pending = std::min(first_pending, sequence);
+            }
+        }
+        std::fprintf(stderr,
+                     "GRAPHICS_WORK_PROGRESS semaphore=%p before-completed-seq=%llu "
+                     "first-unavailable-seq=%llu skipped=%llu supported=%u\n",
+                     static_cast<void*>(&semaphore), static_cast<unsigned long long>(last_complete),
+                     static_cast<unsigned long long>(first_pending),
+                     static_cast<unsigned long long>(skipped), unsigned(supported));
+        std::fflush(stderr);
+    }
+};
+
+void Scheduler::RecordGpuProgress(u64 sequence, const char* format) const {
+    if (gpu_progress && !std::string_view{format}.starts_with("kind=shader") &&
+        !std::string_view{format}.starts_with("kind=texture-")) {
+        gpu_progress->Record(CommandBuffer(), sequence, CurrentTick());
+    }
+}
+
 Scheduler::Scheduler(const Instance& instance)
     : instance{instance}, work_semaphore{instance}, command_pool{instance, &work_semaphore} {
 #if TRACY_GPU_ENABLED
     profiler_scope = reinterpret_cast<tracy::VkCtxScope*>(std::malloc(sizeof(tracy::VkCtxScope)));
 #endif
+    const char* progress = std::getenv("SHADPS4_GPU_PROGRESS");
+    if (progress && std::string_view{progress} == "1" &&
+        VideoCore::GraphicsDiagnostics::Enabled() && !Common::PerformanceDiagnostics::Enabled()) {
+        gpu_progress = std::make_unique<GpuProgress>(instance, work_semaphore);
+        work_semaphore.SetWaitDiagnostic([this](u64 requested) { gpu_progress->Dump(requested); });
+    }
     BeginSession();
     priority_pending_ops_thread =
         std::jthread(std::bind_front(&Scheduler::PriorityPendingOpsThread, this));
@@ -169,6 +295,7 @@ void Scheduler::BeginSession() {
     EndSession();
 
     auto& session = sessions.emplace_back();
+    session.tick = CurrentTick();
 
     const vk::CommandBufferBeginInfo begin_info = {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
@@ -204,6 +331,11 @@ void Scheduler::EndSession() {
     }
 
     EndRendering();
+    const auto sequence =
+        VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, session.tick, "kind=session-end");
+    if (sequence && gpu_progress) {
+        gpu_progress->Record(session.primary, sequence, session.tick);
+    }
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
     if (profiler_ctx) {

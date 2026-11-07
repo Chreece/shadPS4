@@ -69,6 +69,9 @@ void Semaphore::Wait(u64 tick) {
     for (;;) {
         const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
         if (result != vk::Result::eSuccess && result != vk::Result::eTimeout) {
+            if (wait_diagnostic) {
+                wait_diagnostic(tick);
+            }
             VideoCore::GpuWorkDiagnostics::Dump("wait-error", this, KnownGpuTick(), tick);
             UNREACHABLE_MSG("Failed to wait for master semaphore: {}", vk::to_string(result));
         }
@@ -77,8 +80,12 @@ void Semaphore::Wait(u64 tick) {
                                                 std::chrono::steady_clock::now() - began)
                                                 .count());
         if (result == vk::Result::eTimeout) {
+            Refresh();
             ++timeouts;
             if (timeouts == 1) {
+                if (wait_diagnostic) {
+                    wait_diagnostic(tick);
+                }
                 VideoCore::GpuWorkDiagnostics::Dump("wait-timeout", this, KnownGpuTick(), tick);
             }
         }
