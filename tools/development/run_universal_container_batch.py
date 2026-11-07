@@ -368,6 +368,7 @@ def main():
         raise RuntimeError('INVALID_BATCH_ARGUMENTS')
     runner = load_module('graphics', out / 'graphics.py')
     observer = load_module('observer', out / 'observer.py')
+    seconds = runner.test_duration_seconds()
     project = out.parent.parent
     lock = (project / 'tests/.universal-ollama-container.lock').open('a+')
     fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -402,7 +403,8 @@ def main():
                 rc = 130
                 break
             lease.check()
-            print('TESTING=' + game + ' MAX_SECONDS=120 AUTOMATIC_INPUT=NO', flush=True)
+            print(f'TESTING={game} RUN_SECONDS={seconds} SHUTDOWN_SECONDS=2 AUTOMATIC_INPUT=NO',
+                  flush=True)
             uncertain = True
             result, problem = run_game(out, game, pin, runner_pin, lease, interrupted,
                                        first_game=game == games[0])

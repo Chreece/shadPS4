@@ -77,10 +77,13 @@ struct ImageOperands {
     }
 
     void AddOffset(EmitContext& ctx, AmdGpu::ImageType image_type, const IR::Value& offset,
-                   bool can_use_runtime_offsets = false) {
+                   bool can_use_runtime_offsets = false, bool force_y_zero = false) {
         if (offset.IsEmpty()) {
             return;
         }
+        const bool two_components = image_type == AmdGpu::ImageType::Color2D ||
+                                    image_type == AmdGpu::ImageType::Color2DArray ||
+                                    image_type == AmdGpu::ImageType::Cube;
         spv::ImageOperandsMask op_mask{};
         Id value{};
         if (offset.IsImmediate()) {
@@ -93,13 +96,16 @@ struct ImageOperands {
                 case IR::Opcode::CompositeConstructU32x2:
                     op_mask = spv::ImageOperandsMask::ConstOffset;
                     value = ctx.ConstS32(static_cast<s32>(inst->Arg(0).U32()),
-                                         static_cast<s32>(inst->Arg(1).U32()));
+                                         force_y_zero ? 0 : static_cast<s32>(inst->Arg(1).U32()));
                     break;
                 case IR::Opcode::CompositeConstructU32x3:
                     op_mask = spv::ImageOperandsMask::ConstOffset;
-                    value = ctx.ConstS32(static_cast<s32>(inst->Arg(0).U32()),
-                                         static_cast<s32>(inst->Arg(1).U32()),
-                                         static_cast<s32>(inst->Arg(2).U32()));
+                    value = two_components
+                                ? ctx.ConstS32(static_cast<s32>(inst->Arg(0).U32()),
+                                               force_y_zero ? 0 : static_cast<s32>(inst->Arg(1).U32()))
+                                : ctx.ConstS32(static_cast<s32>(inst->Arg(0).U32()),
+                                               force_y_zero ? 0 : static_cast<s32>(inst->Arg(1).U32()),
+                                               static_cast<s32>(inst->Arg(2).U32()));
                     break;
                 default:
                     break;
@@ -115,6 +121,14 @@ struct ImageOperands {
             }
             op_mask = spv::ImageOperandsMask::Offset;
             value = ctx.Def(offset);
+            if (two_components && offset.Type() == IR::Type::U32x3) {
+                value = ctx.OpVectorShuffle(ctx.U32[2], value, value, 0u, 1u);
+            }
+            if (force_y_zero) {
+                value = ctx.OpCompositeConstruct(ctx.U32[2],
+                                                 ctx.OpCompositeExtract(ctx.U32[1], value, 0u),
+                                                 ctx.u32_zero_value);
+            }
             ctx.AddCapability(spv::Capability::ImageGatherExtended);
             if (!can_use_runtime_offsets) {
                 LOG_INFO(Render_Vulkan, "Emitting runtime image sample offset: shader={:#x}",
@@ -268,7 +282,7 @@ static Id ConvertIndexedSample(EmitContext& ctx, Id raw, Id metadata) {
 
 static Id SampleIndexedImage(EmitContext& ctx, u32 handle, Id gpu_texture_id, Id dimension,
                              const std::array<Id, 3>& coords, const std::array<Id, 3>& dx,
-                             const std::array<Id, 3>& dy, const IR::Value& offset) {
+                             const std::array<Id, 3>& dy, const IR::Value& offset, Id lod = {}, Id is_1d = {}) {
     const auto& texture = ctx.images[handle & 0xffffu];
     ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
     const Id valid =
@@ -309,25 +323,48 @@ static Id SampleIndexedImage(EmitContext& ctx, u32 handle, Id gpu_texture_id, Id
         ctx.Decorate(image, spv::Decoration::NonUniform);
         const Id sampler =
             LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size, number != 0);
-        const Id sampled = ctx.OpSampledImage(ctx.TypeSampledImage(image_type), image, sampler);
-        ctx.Decorate(sampled, spv::Decoration::NonUniform);
         const auto view = dim == 0   ? AmdGpu::ImageType::Color2D
                           : dim == 1 ? AmdGpu::ImageType::Color3D
                                      : AmdGpu::ImageType::Cube;
         const Id fixed_coords = FixImageCoords<true>(ctx, coords[dim], view);
-        ImageOperands operands;
-        if (Sirit::ValidId(dx[dim])) {
-            operands.AddDerivatives(ctx, view, dx[dim], dy[dim]);
-        } else {
-            operands.Add(spv::ImageOperandsMask::Lod, ctx.ConstF32(0.f));
-        }
-        operands.AddOffset(ctx, view, offset);
         const Id result_type = number == 0 ? ctx.F32[4] : number == 1 ? ctx.S32[4] : ctx.U32[4];
-        const Id raw = ctx.OpImageSampleExplicitLod(result_type, sampled, fixed_coords,
-                                                    operands.mask, operands.operands);
+        const auto sample = [&](bool force_y_zero) {
+            const Id sampled = ctx.OpSampledImage(ctx.TypeSampledImage(image_type), image, sampler);
+            ctx.Decorate(sampled, spv::Decoration::NonUniform);
+            ImageOperands operands;
+            if (Sirit::ValidId(lod)) {
+                operands.Add(spv::ImageOperandsMask::Lod, lod);
+            } else if (Sirit::ValidId(dx[dim])) {
+                operands.AddDerivatives(ctx, view, dx[dim], dy[dim]);
+            } else {
+                operands.Add(spv::ImageOperandsMask::Lod, ctx.ConstF32(0.f));
+            }
+            operands.AddOffset(ctx, view, offset, false, force_y_zero);
+            return ctx.OpImageSampleExplicitLod(result_type, sampled, fixed_coords,
+                                                operands.mask, operands.operands);
+        };
+        Id end_label = labels[i];
+        Id raw;
+        if (dim == 0 && Sirit::ValidId(is_1d) && !offset.IsEmpty()) {
+            const Id one = ctx.OpLabel();
+            const Id two = ctx.OpLabel();
+            end_label = ctx.OpLabel();
+            ctx.OpSelectionMerge(end_label, spv::SelectionControlMask::MaskNone);
+            ctx.OpBranchConditional(is_1d, one, two);
+            ctx.AddLabel(one);
+            const Id one_sample = sample(true);
+            ctx.OpBranch(end_label);
+            ctx.AddLabel(two);
+            const Id two_sample = sample(false);
+            ctx.OpBranch(end_label);
+            ctx.AddLabel(end_label);
+            raw = ctx.OpPhi(result_type, std::array{one_sample, one, two_sample, two});
+        } else {
+            raw = sample(false);
+        }
         const Id result = number == 0 ? raw : ctx.OpBitcast(ctx.F32[4], raw);
         incoming.push_back(result);
-        incoming.push_back(labels[i]);
+        incoming.push_back(end_label);
         ctx.OpBranch(merge);
     }
     ctx.AddLabel(merge);
@@ -389,6 +426,35 @@ Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handl
         }
     }
     return SampleIndexedImage(ctx, handle, gpu_texture_id, dimension, positions, dx, dy, offset);
+}
+
+Id EmitImageSampleExplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                                     Id lod, const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    std::array<Id, 3> positions{coords};
+    Id dimension = ctx.ConstU32(0u);
+    Id is_1d{};
+    if (texture.is_guest_mixed_indexed) {
+        const Id word3 = ctx.OpBitcast(ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
+        const Id type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
+        const Id is_3d =
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color3D)));
+        const Id is_cube =
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Cube)));
+        is_1d = ctx.OpLogicalOr(
+            ctx.U1[1], ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1D))),
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1DArray))));
+        dimension = ctx.OpSelect(ctx.U32[1], is_3d, ctx.ConstU32(1u),
+                                 ctx.OpSelect(ctx.U32[1], is_cube, ctx.ConstU32(2u), dimension));
+        const Id x = ctx.OpCompositeExtract(ctx.F32[1], coords, 0u);
+        positions[0] = ctx.OpSelect(
+            ctx.F32[2], is_1d, ctx.OpCompositeConstruct(ctx.F32[2], x, ctx.ConstF32(0.5f)),
+            ctx.OpVectorShuffle(ctx.F32[2], coords, coords, 0u, 1u));
+        positions[1] = ctx.OpVectorShuffle(ctx.F32[3], coords, coords, 0u, 1u, 2u);
+        positions[2] = positions[1];
+    }
+    return SampleIndexedImage(ctx, handle, gpu_texture_id, dimension, positions, {}, {}, offset,
+                              lod, is_1d);
 }
 
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
