@@ -15,6 +15,7 @@ import argparse
 import bisect
 import struct
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -161,7 +162,8 @@ def term_owned(child,phase,deadline=None):
                 pass
             child.wait(timeout=max(0.0,deadline-time.monotonic()))
     except (OSError,subprocess.TimeoutExpired) as error:
-        return f'{type(error).__name__}: {error}'
+        if child.poll() is None:
+            return f'{type(error).__name__}: {error}'
     print('OWNED_GAME_PROCESS_TERMINATED='+phase,flush=True)
     return None
 
@@ -864,13 +866,46 @@ def gpu_memory_headroom_failure(usage):
 
 
 def collect_gpu_clients(proc=Path('/proc'), max_seconds=0.25,
-                        max_processes=4096, max_descriptors=16384):
+                        max_processes=4096, max_descriptors=65536,
+                        kfd=Path('/sys/class/kfd/kfd/proc')):
     began = time.monotonic()
     record = {'monotonic_seconds': began, 'clients': [], 'processes_scanned': 0,
               'descriptors_scanned': 0, 'unreadable_processes': 0,
               'unreadable_descriptors': 0, 'truncated': False,
-              'scope': 'readable DRM fdinfo; shared clients may have multiple holders; '
-                       'not a complete allocation census'}
+              'scope': 'readable DRM fdinfo and KFD counters; shared clients may have multiple '
+                       'holders; counters must not be summed across interfaces',
+              'effective_uid': os.geteuid(), 'kfd_processes': [],
+              'kfd_available': False}
+    try:
+        for process in kfd.iterdir():
+            record['kfd_available'] = True
+            if not process.name.isdecimal():
+                continue
+            if time.monotonic() - began >= max_seconds or len(record['kfd_processes']) >= 128:
+                record['truncated'] = True
+                break
+            item = {'pid': int(process.name), 'vram_bytes_by_gpu': {}}
+            try:
+                for counter in process.iterdir():
+                    if (time.monotonic() - began >= max_seconds or
+                            len(item['vram_bytes_by_gpu']) >= 32):
+                        record['truncated'] = True
+                        break
+                    if not re.fullmatch(r'vram_\d+', counter.name):
+                        continue
+                    with counter.open() as stream:
+                        value = stream.read(128).strip()
+                    if value.isdecimal():
+                        item['vram_bytes_by_gpu'][counter.name[5:]] = int(value)
+                for name in ('comm', 'cgroup'):
+                    with (proc / process.name / name).open() as stream:
+                        item[name] = stream.read(4096).strip()
+            except OSError as error:
+                item['read_error'] = str(error)
+            record['kfd_processes'].append(item)
+        record['kfd_available'] = True
+    except OSError as error:
+        record['kfd_error'] = str(error)
     try:
         for process in proc.iterdir():
             if not process.name.isdecimal():
@@ -884,6 +919,7 @@ def collect_gpu_clients(proc=Path('/proc'), max_seconds=0.25,
                 uid = process.stat().st_uid
                 with (process / 'comm').open() as stream:
                     name = stream.read(256).strip()
+                cgroup = None
                 seen = set()
                 for descriptor in (process / 'fdinfo').iterdir():
                     if (time.monotonic() - began >= max_seconds or
@@ -909,9 +945,15 @@ def collect_gpu_clients(proc=Path('/proc'), max_seconds=0.25,
                     if identity[2] is not None and identity in seen:
                         continue
                     seen.add(identity)
+                    if cgroup is None:
+                        try:
+                            with (process / 'cgroup').open() as stream:
+                                cgroup = stream.read(4096).strip()
+                        except OSError:
+                            cgroup = 'UNAVAILABLE'
                     record['clients'].append({'pid': int(process.name), 'uid': uid,
                                               'name': name, 'fd': descriptor.name,
-                                              'fields': fields})
+                                              'cgroup': cgroup, 'fields': fields})
                     if len(record['clients']) >= 128:
                         record['truncated'] = True
                         break
@@ -926,9 +968,16 @@ def collect_gpu_clients(proc=Path('/proc'), max_seconds=0.25,
 
 
 def capture_gpu_clients(out, label, timeout=0.6):
+    privileged = os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1'
+    command = [sys.executable, str(Path(__file__).resolve()), '--gpu-client-snapshot']
+    if privileged:
+        collector = ('import json, os, re, time\nfrom pathlib import Path\n' +
+                     inspect.getsource(collect_gpu_clients) +
+                     '\nprint(json.dumps(collect_gpu_clients()))\n')
+        command = ['sudo', '-n', '--', '/usr/bin/python3', '-I', '-c', collector]
     try:
         captured = subprocess.run(
-            [sys.executable, str(Path(__file__).resolve()), '--gpu-client-snapshot'],
+            command,
             stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
         if captured.returncode:
             record = {'error': 'GPU_CLIENT_SNAPSHOT_FAILED', 'exit_code': captured.returncode}
@@ -936,6 +985,7 @@ def capture_gpu_clients(out, label, timeout=0.6):
             record = json.loads(captured.stdout)
     except (OSError, ValueError, subprocess.TimeoutExpired) as error:
         record = {'error': type(error).__name__}
+    record['privileged_requested'] = privileged
     save(out / f'gpu-clients-{label}.json', record)
 
 
@@ -1080,10 +1130,10 @@ def main():
                 for second in due:
                     if elapsed>=second and second not in taken:
                         taken.add(second)
-                        if second == 25:
+                        if second in (25, 80):
                             snapshot_budget = min(0.6, 118 - (time.monotonic() - began))
                             if snapshot_budget > 0.05:
-                                capture_gpu_clients(report, '025s', snapshot_budget)
+                                capture_gpu_clients(report, f'{second:03d}s', snapshot_budget)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
                         if second in (80, 110) and live_symbols is not None:
@@ -1107,6 +1157,7 @@ def main():
         print('OBSERVER_ERROR='+failure,flush=True)
         result['exit_reason']='OBSERVER_EXCEPTION'
     finally:
+        result['trigger_reason'] = result.get('exit_reason')
         if child is not None:
             if child.poll() is None:
                 stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL',began+120.0)
@@ -1114,8 +1165,6 @@ def main():
                     result['termination_error']=stop_error
             result['owned_child_terminated']=child.poll() is not None
             result['exit_code']=child.poll()
-            if not result['owned_child_terminated']:
-                result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
         result['elapsed_seconds']=round(time.monotonic()-began,3)
         capture_gpu_clients(report, 'after-stop')
         if console.is_file():
@@ -1140,9 +1189,14 @@ def main():
             except Exception as error:
                 failure=f'{type(error).__name__}: {error}'
         if not result['owned_child_terminated'] and child is not None:
-            result['trigger_reason']=result['exit_reason']
-            result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
             capture_owned_stop_state(child.pid,report)
+            result['exit_code'] = child.poll()
+            result['owned_child_terminated'] = result['exit_code'] is not None
+            if not result['owned_child_terminated']:
+                result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
+            elif result.get('termination_error'):
+                result['termination_confirmed_after_timeout'] = True
+        result['elapsed_seconds']=round(time.monotonic()-began,3)
         if failure:
             result['failure']=failure
         save(report/'native-result.json',result)

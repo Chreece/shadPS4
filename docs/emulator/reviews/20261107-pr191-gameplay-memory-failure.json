@@ -1,0 +1,686 @@
+{
+  "timestamp_utc": "2026-11-07T13:04:56.875642+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "native_pr": 191,
+  "runner_pr": 192,
+  "archive": "universal-two-games-20261107T125028Z-3703698.tar.gz",
+  "archive_sha256": "55768685f2091725d87b37a646dc14eeb2f2bb63548718cc4cdb60c0d659bcfc",
+  "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+  "native_binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+  "native_result": "FAILED_GOT_VISUALS_AND_VRAM_GUARD_GOW_SKIPPED",
+  "graphics_verified": false,
+  "cutscene_verified": false,
+  "source_changed": false,
+  "main_changed": false,
+  "all_bugs_fixed": false,
+  "screenshots": {
+    "008s": "Loading screen",
+    "025s": "PlayStation introductory video",
+    "080s": "In-game scene with very dark/missing surfaces, bright approximately 16x16 upper-left patch, saving overlay and 4 FPS / 249.4 ms. No visual recovery.",
+    "110s": "Not captured; memory guard stopped the run early."
+  },
+  "failure_timeline": [
+    {
+      "elapsed_seconds": 83.655,
+      "monotonic_seconds": 510183.185242,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 25,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 10544267264,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 587911168
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5161404 KiB",
+            "drm-memory-gtt": "492948 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "8978384770 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 84.061,
+      "monotonic_seconds": 510183.590912,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 23,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 10547945472,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 587911168
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5164996 KiB",
+            "drm-memory-gtt": "492948 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9058612440 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 84.465,
+      "monotonic_seconds": 510183.995248,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 28,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 10547961856,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 587911168
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5165012 KiB",
+            "drm-memory-gtt": "492948 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9163250746 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 84.871,
+      "monotonic_seconds": 510184.400815,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 25,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 10548625408,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 587911168
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5165660 KiB",
+            "drm-memory-gtt": "492948 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9252029282 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 85.274,
+      "monotonic_seconds": 510184.804696,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 36,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 9948884992,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 1204473856
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5165692 KiB",
+            "drm-memory-gtt": "492948 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9327205947 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 85.682,
+      "monotonic_seconds": 510185.2124,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 93,
+          "mem_busy_percent": 2,
+          "mem_info_vram_used": 10409594880,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 1167519744
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5105728 KiB",
+            "drm-memory-gtt": "552528 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "20480 KiB",
+            "drm-shared-gtt": "20480 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9351019328 ns"
+          }
+        }
+      ]
+    },
+    {
+      "elapsed_seconds": 86.087,
+      "monotonic_seconds": 510185.6177,
+      "gpus": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 100,
+          "mem_busy_percent": 2,
+          "mem_info_vram_used": 25351495680,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 1872207872
+        }
+      ],
+      "emulator_drm_clients": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "4977",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5015240 KiB",
+            "drm-memory-gtt": "644040 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "20480 KiB",
+            "drm-shared-gtt": "20480 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "9351531072 ns"
+          }
+        }
+      ]
+    }
+  ],
+  "memory_failure": {
+    "card": "card0",
+    "device": "0000:03:00.0",
+    "free_bytes": 401530880,
+    "minimum_free_bytes": 8589934592,
+    "elapsed_seconds": 86.087
+  },
+  "readable_ownership": {
+    "emulator_vram_KiB_at_guard": 5015240,
+    "emulator_vram_KiB_later_snapshot": 5109640,
+    "unreadable_processes_at_guard_snapshot": 572,
+    "board_used_bytes_at_guard": 25351495680,
+    "board_total_bytes": 25753026560,
+    "global_jump_bytes": 14941900800,
+    "interval_seconds": 0.405,
+    "attribution": "Unknown. The global jump is not reflected in the emulator DRM allocation. Unreadable peers and KFD allocations are not excluded; neither an emulator leak nor Ollama reload is established."
+  },
+  "ollama": {
+    "monitor_samples": 178,
+    "models_reported": [],
+    "restoration": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS",
+    "interpretation": "Empty /api/ps responses do not exclude an in-flight or separate-process model allocation."
+  },
+  "kernel": {
+    "interval": {
+      "start": 510099.415106683,
+      "end": 510189.06537152
+    },
+    "classified_groups": [
+      {
+        "kind": "USER_PAGES",
+        "count": 651,
+        "first_monotonic": 510185.892018,
+        "last_monotonic": 510186.008053,
+        "first": "[510185.892018] homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1",
+        "last": "[510186.008053] homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1"
+      },
+      {
+        "kind": "VM_VALIDATION",
+        "count": 738,
+        "first_monotonic": 510186.236019,
+        "last_monotonic": 510187.236039,
+        "first": "[510186.236019] homeserver kernel: [drm:amdgpu_cs_parser_bos.isra.0 [amdgpu]] *ERROR* amdgpu_vm_validate() failed.",
+        "last": "[510187.236039] homeserver kernel: [drm:amdgpu_cs_parser_bos.isra.0 [amdgpu]] *ERROR* amdgpu_vm_validate() failed."
+      },
+      {
+        "kind": "COMMAND_MEMORY",
+        "count": 1294,
+        "first_monotonic": 510186.236099,
+        "last_monotonic": 510189.06403,
+        "first": "[510186.236099] homeserver kernel: [drm:amdgpu_cs_ioctl [amdgpu]] *ERROR* Not enough memory for command submission!",
+        "last": "[510189.064030] homeserver kernel: [drm:amdgpu_cs_ioctl [amdgpu]] *ERROR* Not enough memory for command submission!"
+      }
+    ],
+    "ring_timeouts": [],
+    "root_journal_truncated": false,
+    "full_root_journal_bytes": 543968,
+    "scope_note": "Counts are deduplicated and limited to the native interval. The full journal also contains later submission errors, which are not included in those counts. No submitting PID is present in these lines; do not assign the faults to a process from the text alone."
+  },
+  "shutdown": {
+    "original_record_exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+    "original_record_owned_terminated": false,
+    "actual_trigger": "GPU_MEMORY_HEADROOM_EXHAUSTED",
+    "last_snapshot": "Main process is Z (zombie), Threads: 1, FDSize: 0; emulator DRM client absent from after-stop snapshot. It exited after the short wait timed out.",
+    "defects": [
+      "Final process poll occurred before diagnostic work; no poll/reap after the captured exited state.",
+      "Cleanup replaced the original trigger with the unconfirmed-stop label."
+    ],
+    "ownership_safety": "No inference that a live or unreadable process is safe; corrected code requires child.poll() to report an exit status."
+  },
+  "trace": {
+    "gpu_history_bytes": 0,
+    "reason": "No exit dump was captured before forced termination; empty history is not zero GPU work.",
+    "small_pass_count": 60,
+    "render_sizes": {
+      "2048x2048": 60
+    },
+    "viewport_regions": "All recorded small passes use x/y scale 32,-32, i.e. 64x64 guest regions in larger targets.",
+    "corner_limit": "The patch remains visible. The logs do not connect these passes to the output corner or prove that the missing world is compressed there.",
+    "sparse_residency_reports": 20,
+    "sparse_residency_interpretation": "Accessed non-GPU cached memory diagnostics are handled residency events, not the kernel GPU memory fault reports."
+  },
+  "runtime_warning_error_audit": {
+    "Error audioout.cpp sceAudioOutMasteringInit": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error audioout.cpp sceAudioOutMasteringSetParam": {
+      "count": 5,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error emulator.cpp ExtractTrophies": {
+      "count": 1,
+      "examples": [
+        "Couldn't extract trophy file trophy00.trp"
+      ]
+    },
+    "Error file_system.cpp sceKernelStat": {
+      "count": 1,
+      "examples": [
+        "error = 2"
+      ]
+    },
+    "Error gamelivestreaming.cpp sceGameLiveStreamingInitialize": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error gnmdriver.cpp sceGnmSetWaveLimitMultipliers": {
+      "count": 2231,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error http.cpp sceHttpsLoadCert": {
+      "count": 1,
+      "examples": [
+        "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+      ]
+    },
+    "Error http2.cpp sceHttp2Init": {
+      "count": 1,
+      "examples": [
+        "(DUMMY) called"
+      ]
+    },
+    "Error kernel.cpp __sys_regmgr_call": {
+      "count": 2,
+      "examples": [
+        "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+        "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+      ]
+    },
+    "Error netctl.cpp sceNetCtlInit": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error np_manager.cpp sceNpRegisterStateCallbackForToolkit": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error np_manager.cpp sceNpSetContentRestriction": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+      "count": 1,
+      "examples": [
+        "Failed to open trophy XML: File was not found"
+      ]
+    },
+    "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+      "count": 1,
+      "examples": [
+        "Could not find trophy files."
+      ]
+    },
+    "Error pad.cpp scePadInit": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error ssl2.cpp sceSslInit": {
+      "count": 2,
+      "examples": [
+        "(DUMMY) called poolSize = 262144",
+        "(DUMMY) called poolSize = 524288"
+      ]
+    },
+    "Error stubs.cpp CommonStub": {
+      "count": 9,
+      "examples": [
+        "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+        "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f",
+        "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0xc95520",
+        "Stub: sceNpGameIntentInitialize (nid: m87BHxt-H60) called, returning zero to 0xc9655e"
+      ]
+    },
+    "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Error systemservice.cpp sceSystemServiceParamGetString": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called"
+      ]
+    },
+    "Warning app_content.cpp sceAppContentInitialize": {
+      "count": 1,
+      "examples": [
+        "(DUMMY) called"
+      ]
+    },
+    "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+      "count": 1,
+      "examples": [
+        "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+      ]
+    },
+    "Warning emit_spirv_image.cpp AddOffset": {
+      "count": 3,
+      "examples": [
+        "Runtime offset provided to unsupported image sample instruction"
+      ]
+    },
+    "Warning emulator.cpp Run": {
+      "count": 1,
+      "examples": [
+        "No dumped system fonts, expect missing text or instability"
+      ]
+    },
+    "Warning linker.cpp Resolve": {
+      "count": 315,
+      "examples": [
+        "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+        "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)",
+        "Linker: Stub resolved ueega6v3GUw as sceRtcSetTick (lib: libSceRtc, mod: libSceRtc)",
+        "Linker: Stub resolved M1TvFst-jrM as sceRtcConvertUtcToLocalTime (lib: libSceRtc, mod: libSceRtc)"
+      ]
+    },
+    "Warning lower_buffer_format_to_raw.cpp LowerBufferFormatInst": {
+      "count": 1,
+      "examples": [
+        "Skipping lowering for null buffer sharp"
+      ]
+    },
+    "Warning module.cpp LoadDynamicInfo": {
+      "count": 6,
+      "examples": [
+        "DT_FLAGS is NOT 0x04 should check!"
+      ]
+    },
+    "Warning module.cpp LoadModuleToMemory": {
+      "count": 4,
+      "examples": [
+        "Unable to read SCE Library Version segment of module eboot.bin",
+        "Unable to read SCE Library Version segment of module libSceFios2.prx",
+        "Unable to read SCE Library Version segment of module libc.prx",
+        "Unable to read SCE Library Version segment of module libSceNpToolkit2.prx"
+      ]
+    },
+    "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+      "count": 519,
+      "examples": [
+        "Sharp source was not flatenned"
+      ]
+    },
+    "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+      "count": 1,
+      "examples": [
+        "Thread-atexit count callback registered; module unloading remains unsupported"
+      ]
+    },
+    "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+      "count": 1,
+      "examples": [
+        "Thread-atexit report callback registered; module unloading remains unsupported"
+      ]
+    },
+    "Warning userservice.cpp sceUserServiceInitialize": {
+      "count": 1,
+      "examples": [
+        "(dummy) called"
+      ]
+    },
+    "Warning videodec2.cpp sceVideodec2AllocateComputeQueue": {
+      "count": 1,
+      "examples": [
+        "called"
+      ]
+    },
+    "Warning vk_graphics_pipeline.cpp GraphicsPipeline": {
+      "count": 21,
+      "examples": [
+        "Unimplemented scaled min/max blend: attachment=5 format=0 color-op=4 color-src=6 color-dst=1 alpha-op=4 alpha-src=6 alpha-dst=1"
+      ]
+    },
+    "Warning vk_instance.cpp CollectImageFormatInfo": {
+      "count": 5,
+      "examples": [
+        "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+        "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+        "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })",
+        "Surface format data_format=13, number_format=5 is not fully supported (vk_format=R32G32B32Sint, missing features={ SampledImage | TransferSrc | TransferDst })"
+      ]
+    },
+    "Warning vk_instance.cpp lambda": {
+      "count": 1,
+      "examples": [
+        "Extension VK_NV_framebuffer_mixed_samples unavailable."
+      ]
+    },
+    "Warning vk_rasterizer.cpp BindTextures": {
+      "count": 6,
+      "examples": [
+        "Indexed sampler table: shader=0xb5c898c7 slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0",
+        "Indexed sampler table: shader=0x7eaf40ad slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0"
+      ]
+    },
+    "Warning vk_resource_pool.cpp Commit": {
+      "count": 4,
+      "examples": [
+        "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+        "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024",
+        "Descriptor pool underprovisioned: type=SampledImage required=251161 pool=251146",
+        "Descriptor pool underprovisioned: type=Sampler required=111627 pool=111620"
+      ]
+    },
+    "Warning vk_runtime.cpp SanitizeCopyLayers": {
+      "count": 8,
+      "examples": [
+        "Coercing copy source layers 1 and destination layers 2 to minimum.",
+        "Coercing copy source layers 2 and destination layers 3 to minimum.",
+        "Coercing copy source layers 3 and destination layers 4 to minimum.",
+        "Coercing copy source layers 4 and destination layers 5 to minimum."
+      ]
+    }
+  },
+  "remaining_renderer_issues": [
+    "GoT missing/dark geometry and corner artifact",
+    "Low gameplay FPS",
+    "GoW cutscene not exercised in this batch",
+    "Three runtime texture-offset warnings",
+    "519 descriptor provenance warnings; sampler-table and pool-sizing diagnostics",
+    "21 scaled min/max blend warnings on active attachment 5; unresolved, not dismissed as an unused attachment",
+    "Separate depth/stencil coherence and missing dumped resources remain unresolved"
+  ],
+  "runner_fix": {
+    "commit": "95c999a885a7f295df8811cf194bfdbf6a42300d",
+    "branch": "fix/native-memory-evidence-20261107",
+    "files": [
+      "scripts/shadps4-universal-two-game-check.sh",
+      "tools/development/run_universal_verified_graphics.py",
+      "tools/development/shadps4_native_120_observer_20261026.py"
+    ],
+    "changes": [
+      "Preserve trigger and recheck/reap a process that exits during final diagnostics.",
+      "Classify current-interval user-page, VM-validation and submission-memory errors as GPU failures.",
+      "Defer model restoration after memory-headroom and kernel GPU failures.",
+      "Check recent kernel GPU errors before launch.",
+      "Use existing one-time sudo authentication for bounded read-only DRM/KFD ownership and cgroup snapshots; add 80-second snapshot."
+    ],
+    "privileged_scope": "sudo -n -- /usr/bin/python3 -I -c with only the read-only collector and standard-library imports. No process command lines, environments, mounts, resets, service stops or changes to Sunshine. Explicit denied/truncated counters; KFD availability varies by kernel.",
+    "limits": "0.25-second scan budget, 0.6-second subprocess timeout, bounded processes/descriptors/clients/counter fields. Read failures do not imply no allocations. Shared DRM/KFD memory must not be summed."
+  },
+  "validation": {
+    "checks": 38,
+    "passed": [
+      "old zombie race reproduced",
+      "late process exit reaped",
+      "original memory trigger preserved",
+      "timeout history retained",
+      "VRAM failure still rejected",
+      "live process remains unsafe",
+      "wait timeout with observed exit reconciled",
+      "memory defers restoration",
+      "kernel defers restoration",
+      "live defers restoration",
+      "KFD bytes and GPU identity captured",
+      "KFD container identity captured",
+      "DRM same-process duplicates suppressed",
+      "shared holders retained",
+      "non-GPU process excluded",
+      "DRM cgroup captured",
+      "missing KFD explicit",
+      "time cap explicit",
+      "descriptor cap explicit",
+      "process cap explicit",
+      "invalid KFD counter excluded",
+      "root command noninteractive and isolated",
+      "root helper is readonly collector only",
+      "root timeout bounded",
+      "root scope recorded",
+      "timeout snapshot preserves cleanup",
+      "denied snapshot preserves cleanup",
+      "isolated readonly collector runs",
+      "badjson snapshot reported",
+      "failed snapshot reported",
+      "actual user-page and VM/submission failures classified",
+      "historical window ignored",
+      "unknown interval ignored",
+      "no false ring timeout",
+      "duplicate journal messages counted once",
+      "failed reads ignored",
+      "observer checksum chain",
+      "runner checksum chain"
+    ],
+    "actual_kernel_failure_groups": [
+      {
+        "kind": "USER_PAGES",
+        "count": 651,
+        "first_monotonic": 510185.892018,
+        "last_monotonic": 510186.008053,
+        "first": "[510185.892018] homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1",
+        "last": "[510186.008053] homeserver kernel: amdgpu: init_user_pages: Failed to get user pages: -1"
+      },
+      {
+        "kind": "VM_VALIDATION",
+        "count": 738,
+        "first_monotonic": 510186.236019,
+        "last_monotonic": 510187.236039,
+        "first": "[510186.236019] homeserver kernel: [drm:amdgpu_cs_parser_bos.isra.0 [amdgpu]] *ERROR* amdgpu_vm_validate() failed.",
+        "last": "[510187.236039] homeserver kernel: [drm:amdgpu_cs_parser_bos.isra.0 [amdgpu]] *ERROR* amdgpu_vm_validate() failed."
+      },
+      {
+        "kind": "COMMAND_MEMORY",
+        "count": 1294,
+        "first_monotonic": 510186.236099,
+        "last_monotonic": 510189.06403,
+        "first": "[510186.236099] homeserver kernel: [drm:amdgpu_cs_ioctl [amdgpu]] *ERROR* Not enough memory for command submission!",
+        "last": "[510189.064030] homeserver kernel: [drm:amdgpu_cs_ioctl [amdgpu]] *ERROR* Not enough memory for command submission!"
+      }
+    ],
+    "native_games_run_here": false,
+    "boundaries": "Mocked termination/root authentication/Ollama. Actual archive parsed and isolated readonly collector executed."
+  },
+  "syntax": "Python compilation, bash -n and git diff --check pass. No emulator source changes, so successful native build/CPU/startup record is reused; no new hardware semantic probe needed.",
+  "kfd_reference": {
+    "url": "https://kernel.googlesource.com/pub/scm/linux/kernel/git/torvalds/linux/+/05e96e96a315fa49faca4da2aedd1761a218b616/drivers/gpu/drm/amd/amdkfd/kfd_process.c",
+    "basis": "kfd_procfs_add_sysfs_files and kfd_procfs_show expose per-process vram_<gpuid> byte counters on kernels providing this interface."
+  },
+  "next_command": "(\n  set -euo pipefail\n  P=0d82e3ff401f2a5fafc7543f8afb9ab004be30f8\n  R=95c999a885a7f295df8811cf194bfdbf6a42300d\n  S=\"$HOME/projects/shadps4/scripts/shadps4-universal-two-game-check.sh\"\n  mkdir -p \"$(dirname \"$S\")\"\n  T=\"$S.download.$$\"\n  trap 'rm -f -- \"$T\"' EXIT\n  curl --ipv4 --fail --location --retry 3 \\\n    \"https://raw.githubusercontent.com/Chreece/shadPS4/$R/scripts/shadps4-universal-two-game-check.sh\" -o \"$T\"\n  printf '%s  %s\\n' \\\n    ac41f443d2ad056863c1879f95d84c0f17b1b48900dbe7c26483257317a211be \"$T\" | sha256sum --check -\n  mv -- \"$T\" \"$S\"\n  SHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  SHADPS4_TEST_GPU_TRACE=1 \\\n  SHADPS4_KERNEL_JOURNAL_SUDO=1 \\\n    bash \"$S\" \"$P\" existing \"$R\"\n)\n",
+  "decision": "Retain emulator source/binary; run with corrected evidence collection only when host GPU preflight is healthy. Identify the sudden global VRAM allocation before another speculative renderer rebuild. Native renderer defects are not marked fixed."
+}
