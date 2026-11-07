@@ -177,6 +177,26 @@ def restore(log: Path, unloaded: list[tuple[str, int]]) -> None:
             emit(log, 'MODEL_RESTORE_FAILED', model=name, error=str(exc))
 
 
+def sunshine_fd_snapshot() -> list[dict]:
+    """Read-only descriptor snapshots to diagnose Sunshine's observed EMFILE failure."""
+    instances = []
+    for proc in Path('/proc').glob('[0-9]*'):
+        try:
+            if (proc / 'comm').read_text().strip() != 'sunshine':
+                continue
+            entry = {'pid': int(proc.name), 'fd_count': len(list((proc / 'fd').iterdir()))}
+            for line in (proc / 'limits').read_text().splitlines():
+                if line.startswith('Max open files'):
+                    bits = line.split()
+                    entry['fd_soft_limit'] = bits[-3]
+                    entry['fd_hard_limit'] = bits[-2]
+                    break
+            instances.append(entry)
+        except (OSError, ValueError):
+            continue
+    return instances
+
+
 def run(binary: Path, args: list[str]) -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
     (PROJECT / 'tests').mkdir(parents=True, exist_ok=True)
@@ -213,12 +233,22 @@ def run(binary: Path, args: list[str]) -> int:
                      reason='vram_unavailable' if available is None else 'vram_below_8_gib',
                      free_gib=round(available / 1024 ** 3, 2) if available is not None else None)
                 return 75  # finally still restores the models that we unloaded
-            emit(log, 'START_ESDE', executable=str(binary), args=args)
+            emit(log, 'START_ESDE', executable=str(binary), args=args,
+                 sunshine=sunshine_fd_snapshot())
             child = subprocess.Popen([str(binary), *args])
-            exit_code = child.wait()
+            while True:
+                try:
+                    exit_code = child.wait(timeout=5)
+                    break
+                except subprocess.TimeoutExpired:
+                    now_free = free_bytes()
+                    emit(log, 'SESSION_RESOURCE_SAMPLE',
+                         free_gib=round(now_free / 1024 ** 3, 2) if now_free is not None else None,
+                         sunshine=sunshine_fd_snapshot())
             final_free = free_bytes()
             emit(log, 'ESDE_EXITED', exit_code=exit_code,
-                 final_free_gib=round(final_free / 1024 ** 3, 2) if final_free is not None else None)
+                 final_free_gib=round(final_free / 1024 ** 3, 2) if final_free is not None else None,
+                 sunshine=sunshine_fd_snapshot())
         except (InterruptedError, KeyboardInterrupt) as exc:
             emit(log, 'ESDE_INTERRUPTED', signal=str(exc))
             if child is not None and child.poll() is None:
