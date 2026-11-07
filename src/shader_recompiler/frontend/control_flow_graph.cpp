@@ -34,9 +34,9 @@ static IR::Condition MakeCondition(const GcnInst& inst) {
     case Opcode::S_CBRANCH_SCC1:
         return IR::Condition::Scc1;
     case Opcode::S_CBRANCH_VCCZ:
-        return IR::Condition::Vccz;
+        return IR::Condition::WaveVccz;
     case Opcode::S_CBRANCH_VCCNZ:
-        return IR::Condition::Vccnz;
+        return IR::Condition::WaveVccnz;
     case Opcode::S_CBRANCH_EXECZ:
         return IR::Condition::Execz;
     case Opcode::S_CBRANCH_EXECNZ:
