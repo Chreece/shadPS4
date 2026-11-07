@@ -934,9 +934,10 @@ def main():
             container_lease = json.loads(Path(container_lease_path).read_text())
             if (container_lease.get('guard_pid') != os.getppid() or
                     container_lease.get('result') != 'HELD_STOPPED' or
-                    not container_lease.get('containers')):
+                    not container_lease.get('discovery', {}).get('complete')):
                 raise RuntimeError('INVALID_PARENT_OLLAMA_CONTAINER_LEASE')
-            record['ollama_isolation'] = 'CONTAINERS_STOPPED_FOR_ENTIRE_BATCH'
+            record['ollama_isolation'] = ('CONTAINERS_STOPPED_FOR_ENTIRE_BATCH'
+                if container_lease['containers'] else 'NO_MODEL_CONTAINERS_FOUND_GUARD_ACTIVE')
             record['ollama_container_lease'] = container_lease_path
             record['ollama_container_ids'] = [item['id'] for item in container_lease['containers']]
         elif record['vram_free_before'] < MIN_FREE:
