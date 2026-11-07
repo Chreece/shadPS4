@@ -41,6 +41,7 @@ enum class Event {
     StencilUpload,
     StencilSave,
     DepthStencilCopy,
+    SubresourceView,
     Count
 };
 inline std::array<std::atomic<unsigned long long>, static_cast<size_t>(Event::Count)> g_counts{};
@@ -72,7 +73,8 @@ inline constexpr std::array names{"enabled",
                                   "depth-stencil-access",
                                   "stencil-upload",
                                   "stencil-save",
-                                  "depth-stencil-copy"};
+                                  "depth-stencil-copy",
+                                  "subresource-view"};
 static_assert(names.size() == static_cast<size_t>(Event::Count));
 
 inline unsigned long long ElapsedMs() {

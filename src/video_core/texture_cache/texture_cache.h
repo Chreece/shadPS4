@@ -89,6 +89,7 @@ public:
     struct ImageDesc {
         ImageInfo info;
         ImageViewInfo view_info;
+        SubresourceBase backing_base{};
         BindingType type{BindingType::Texture};
 
         ImageDesc() = default;

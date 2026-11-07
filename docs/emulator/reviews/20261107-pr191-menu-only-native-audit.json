@@ -1,0 +1,834 @@
+{
+  "timestamp_utc": "2026-11-07T12:48:28.670162+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pr": 191,
+  "archive": "universal-two-games-20261107T121512Z-3459111.tar.gz",
+  "archive_sha256": "88b3a4c07a98ff97c26d2da60ecbc7aedc7b3a62a3ea0f03d550529a91ccf8ec",
+  "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+  "runner_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+  "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+  "result": "MENU_CAPTURE_INCONCLUSIVE_USER_INPUT_UNAVAILABLE",
+  "user_context": "Moonlight could not connect to Sunshine; neither game was controlled. Sunshine is being investigated separately and is outside this task.",
+  "emulator_source_changed": false,
+  "runner_changed": false,
+  "graphics_verified": false,
+  "cutscene_verified": false,
+  "performance_improvement_verified": false,
+  "all_bugs_fixed": false,
+  "runs": [
+    {
+      "record_id": "universal-graphics-20261107T123316Z-3597953",
+      "game": "CUSA11456",
+      "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+      "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+      "exit": {
+        "elapsed_seconds": 118.317,
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null
+      },
+      "free_vram_at_launch_bytes": 20628967424,
+      "model_restored": true,
+      "full_console_bytes": 3827893,
+      "full_console_matches_observer_byte_count": true,
+      "console_excerpt_note": "The observer excerpt is truncated, but the outer full console-tail.log contains all recorded bytes and was audited.",
+      "runtime_audit": {
+        "Error audioout.cpp sceAudioOutMasteringInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error audioout.cpp sceAudioOutMasteringSetParam": {
+          "count": 3,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Error file_system.cpp sceKernelStat": {
+          "count": 1,
+          "examples": [
+            "error = 2"
+          ]
+        },
+        "Error gamelivestreaming.cpp sceGameLiveStreamingInitialize": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error gnmdriver.cpp sceGnmSetWaveLimitMultipliers": {
+          "count": 1507,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error http.cpp sceHttpsLoadCert": {
+          "count": 1,
+          "examples": [
+            "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+          ]
+        },
+        "Error http2.cpp sceHttp2Init": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Error netctl.cpp sceNetCtlInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error np_manager.cpp sceNpRegisterStateCallbackForToolkit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error np_manager.cpp sceNpSetContentRestriction": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 2,
+          "examples": [
+            "(DUMMY) called poolSize = 262144",
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 9,
+          "examples": [
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0xc95520",
+            "Stub: sceNpGameIntentInitialize (nid: m87BHxt-H60) called, returning zero to 0xc9655e"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceParamGetString": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+          ]
+        },
+        "Warning emit_spirv_image.cpp AddOffset": {
+          "count": 3,
+          "examples": [
+            "Runtime offset provided to unsupported image sample instruction"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 315,
+          "examples": [
+            "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved ueega6v3GUw as sceRtcSetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved M1TvFst-jrM as sceRtcConvertUtcToLocalTime (lib: libSceRtc, mod: libSceRtc)"
+          ]
+        },
+        "Warning lower_buffer_format_to_raw.cpp LowerBufferFormatInst": {
+          "count": 1,
+          "examples": [
+            "Skipping lowering for null buffer sharp"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 4,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx",
+            "Unable to read SCE Library Version segment of module libSceNpToolkit2.prx"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 264,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Warning videodec2.cpp sceVideodec2AllocateComputeQueue": {
+          "count": 1,
+          "examples": [
+            "called"
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=5 is not fully supported (vk_format=R32G32B32Sint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_rasterizer.cpp BindTextures": {
+          "count": 6,
+          "examples": [
+            "Indexed sampler table: shader=0xb5c898c7 slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0",
+            "Indexed sampler table: shader=0x7eaf40ad slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0"
+          ]
+        },
+        "Warning vk_resource_pool.cpp Commit": {
+          "count": 4,
+          "examples": [
+            "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+            "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024",
+            "Descriptor pool underprovisioned: type=SampledImage required=251161 pool=251146",
+            "Descriptor pool underprovisioned: type=Sampler required=111627 pool=111620"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum.",
+            "Coercing copy source layers 4 and destination layers 5 to minimum."
+          ]
+        }
+      },
+      "new_warning_error_locations_vs_pr190": [],
+      "oodle_usage_warnings": 0,
+      "small_render_passes": [
+        "tick=5130 cb=0 requested=0x1507960000 backing=0x1507960000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=3 layers=1 render=2048x2048 viewport=736,2016,32,-32 scissor=704,1984,768,2048 clip=false stages=0x6d1830c923c,0x0,0x0,0x3bbf071ae82,0x0",
+        "tick=5130 cb=1 requested=0x150c160000 backing=0x150c160000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=3 layers=1 render=2048x2048 viewport=736,2016,32,-32 scissor=704,1984,768,2048 clip=false stages=0x6d1830c923c,0x0,0x0,0x3bbf071ae82,0x0",
+        "tick=6378 cb=0 requested=0x1507960000 backing=0x1507960000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=1 requested=0x150c160000 backing=0x150c160000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=2 requested=0x1510960000 backing=0x1510960000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=3 requested=0x1513160000 backing=0x1513160000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=4 requested=0x1515960000 backing=0x1515960000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=5 requested=0x1518160000 backing=0x1518160000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=2 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0",
+        "tick=6378 cb=6 requested=0x151a960000 backing=0x151a960000 requested-size=2048x2048 backing-size=2048x2048 mip=0 layer=0 layers=1 render=2048x2048 viewport=2026.5,11,21.5,-11 scissor=2005,0,2048,22 clip=false stages=0x5522c8cdf46,0x0,0x0,0x3bbf071ae83,0x0"
+      ],
+      "subresource_samples": [
+        "GRAPHICS_DIAG ms=40838 event=subresource-view count=1 requested=122c39f800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=1 view-mip=0 view-layer=1 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40839 event=subresource-view count=2 requested=122c3af800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=2 view-mip=0 view-layer=2 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40839 event=subresource-view count=3 requested=122c3bf800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=3 view-mip=0 view-layer=3 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40840 event=subresource-view count=4 requested=122c3cf800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=4 view-mip=0 view-layer=4 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40840 event=subresource-view count=5 requested=122c3df800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=5 view-mip=0 view-layer=5 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40866 event=subresource-view count=6 requested=151b7ffb00 backing=151afffb00 requested-size=32x32 backing-size=256x256 mip=1 layer=0 view-mip=1 view-layer=0 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40866 event=subresource-view count=7 requested=151b9ffb00 backing=151afffb00 requested-size=16x16 backing-size=256x256 mip=2 layer=0 view-mip=2 view-layer=0 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40866 event=subresource-view count=8 requested=151ba7fb00 backing=151afffb00 requested-size=8x8 backing-size=256x256 mip=3 layer=0 view-mip=3 view-layer=0 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40866 event=subresource-view count=16 requested=151ba9ff00 backing=151afffb00 requested-size=4x4 backing-size=256x256 mip=4 layer=1 view-mip=4 view-layer=1 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40866 event=subresource-view count=32 requested=151bcdfb00 backing=151badfb00 requested-size=256x256 backing-size=256x256 mip=0 layer=4 view-mip=0 view-layer=4 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=40878 event=subresource-view count=64 requested=151c030300 backing=151badfb00 requested-size=16x16 backing-size=256x256 mip=4 layer=1 view-mip=4 view-layer=1 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40879 event=subresource-view count=128 requested=151b01fb00 backing=151afffb00 requested-size=64x64 backing-size=256x256 mip=0 layer=2 view-mip=0 view-layer=2 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=40911 event=subresource-view count=256 requested=151bac0b00 backing=151afffb00 requested-size=2x2 backing-size=256x256 mip=5 layer=4 view-mip=5 view-layer=4 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=41017 event=subresource-view count=512 requested=151bf5fb00 backing=151badfb00 requested-size=128x128 backing-size=256x256 mip=1 layer=4 view-mip=1 view-layer=4 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=41142 event=subresource-view count=1024 requested=151ba80f00 backing=151afffb00 requested-size=8x8 backing-size=256x256 mip=3 layer=5 view-mip=3 view-layer=5 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=43039 event=subresource-view count=2048 requested=151bf7fb00 backing=151badfb00 requested-size=128x128 backing-size=256x256 mip=1 layer=5 view-mip=1 view-layer=5 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=44379 event=subresource-view count=4096 requested=151bfffb00 backing=151badfb00 requested-size=64x64 backing-size=256x256 mip=2 layer=4 view-mip=2 view-layer=4 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=46656 event=subresource-view count=8192 requested=151c030b00 backing=151badfb00 requested-size=16x16 backing-size=256x256 mip=4 layer=2 view-mip=4 view-layer=2 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=51535 event=subresource-view count=16384 requested=122c3df800 backing=122c38f800 requested-size=256x256 backing-size=256x256 mip=0 layer=5 view-mip=0 view-layer=5 layers=1 binding=0",
+        "GRAPHICS_DIAG ms=62407 event=subresource-view count=32768 requested=151b02fb00 backing=151afffb00 requested-size=64x64 backing-size=256x256 mip=0 layer=3 view-mip=0 view-layer=3 layers=1 binding=1",
+        "GRAPHICS_DIAG ms=88432 event=subresource-view count=65536 requested=151bf3fb00 backing=151badfb00 requested-size=128x128 backing-size=256x256 mip=1 layer=3 view-mip=1 view-layer=3 layers=1 binding=1"
+      ],
+      "gpu_trace": {
+        "entries": 16384,
+        "bytes": 2291382,
+        "output_truncated": false,
+        "overwritten_older_ring_entries": 2084369,
+        "dump_headers": [
+          "GRAPHICS_WORK_BEGIN reason=exit semaphore=(nil) completed=0 requested=18446744073709551615 recorded=2100753 overwritten=2084369"
+        ],
+        "limitation": "Bounded history retained at exit, not a full trace of all work."
+      },
+      "kernel": {
+        "read_exit_code": 0,
+        "output_bytes": 8184,
+        "truncated": false,
+        "gpu_timeouts": [],
+        "non_apparmor_messages": [],
+        "note": "Only unrelated docker-default AppArmor ptrace denials and suppressed-audit counts. No GPU-reset/device-loss messages during the captured interval."
+      },
+      "validation_layer_active": false,
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png",
+        "frame-080s.png",
+        "frame-110s.png"
+      ]
+    },
+    {
+      "record_id": "universal-graphics-20261107T123543Z-3613390",
+      "game": "CUSA34384",
+      "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+      "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+      "exit": {
+        "elapsed_seconds": 118.416,
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null
+      },
+      "free_vram_at_launch_bytes": 20616843264,
+      "model_restored": true,
+      "full_console_bytes": 10364013,
+      "full_console_matches_observer_byte_count": true,
+      "console_excerpt_note": "The observer excerpt is truncated, but the outer full console-tail.log contains all recorded bytes and was audited.",
+      "runtime_audit": {
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Error file_system.cpp open": {
+          "count": 4,
+          "examples": [
+            "Opening path /app0/exec/wad/orbis_le/sys_files.texpack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/sys_files.lodpack.toc failed, file does not exist",
+            "Opening path /app0/exec/sound/orbis_le/sys_files.audiopack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/mid_chase100_intro.wypsm failed, file does not exist"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error np_tus.cpp sceNpTusSetThreadParam": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 4,
+          "examples": [
+            "Stub: sceKernelGetPageTableStats (nid: tZ2yplY8MBY) called, returning zero to 0x48306f",
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0x4858cc",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0x4858e9",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0x4858fa"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0x483ad0, stack_size = 0x10000, common = 0x0"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 185,
+          "examples": [
+            "Linker: Stub resolved tZ2yplY8MBY as sceKernelGetPageTableStats (lib: libkernel, mod: libkernel)",
+            "Linker: Stub resolved R9lA82OraNs as sceAppContentInitialize (lib: dlcldr, mod: dlcldr)",
+            "Linker: Stub resolved +YX0z-GUSNw as sceCoredumpAttachMemoryRegion (lib: libSceCoredump, mod: libkernel)",
+            "Linker: Stub resolved lOLgyPyECpM as Unknown !!! (lib: dlcldr, mod: dlcldr)"
+          ]
+        },
+        "Warning liverpool.cpp ProcessCompute": {
+          "count": 1653,
+          "examples": [
+            "Encountered compute SetQueueReg: vqid = 4, reg_offset = 0xb"
+          ]
+        },
+        "Warning memory.cpp sceKernelGetDirectMemoryType": {
+          "count": 21,
+          "examples": [
+            "called, direct memory addr = 0x400000",
+            "called, direct memory addr = 0xad988000",
+            "called, direct memory addr = 0xb7240000",
+            "called, direct memory addr = 0xc4704000"
+          ]
+        },
+        "Warning memory.cpp sceKernelSetPrtAperture": {
+          "count": 1,
+          "examples": [
+            "PRT aperture id = 0, address = 0x1000000000, size = 0x7600000000 is set but not used"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 5,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx",
+            "Unable to read SCE Library Version segment of module libSceNpToolkit2.prx"
+          ]
+        },
+        "Warning np_manager.cpp sceNpGetNpId": {
+          "count": 1,
+          "examples": [
+            "sceNpGetNpId: SIGNED_OUT (user_id=1000 shadnet_enabled=false signed_in=false)"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 140,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=5 is not fully supported (vk_format=R32G32B32Sint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_pipeline_cache.cpp CompileModule": {
+          "count": 11,
+          "examples": [
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x4158, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x41d4, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preflight: static site=0x4158, control=0x1300, count=1 (execution remains gated)",
+            "Ordered GDS preflight: static site=0x41d4, control=0x300, count=2 (execution remains gated)"
+          ]
+        },
+        "Warning vk_rasterizer.cpp DispatchOriginalGcnOrderedCaptureImpl": {
+          "count": 2800,
+          "examples": [
+            "PR117 original guest GCN GPU first pass completed: epoch=1, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=2, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=3, waves=11, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=4, waves=11, sites=2; captured phase ready for ordered resolution"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum.",
+            "Coercing copy source layers 4 and destination layers 5 to minimum."
+          ]
+        }
+      },
+      "new_warning_error_locations_vs_pr190": [],
+      "oodle_usage_warnings": 3382,
+      "small_render_passes": [],
+      "subresource_samples": [],
+      "gpu_trace": {
+        "entries": 16384,
+        "bytes": 2206718,
+        "output_truncated": false,
+        "overwritten_older_ring_entries": 12191228,
+        "dump_headers": [
+          "GRAPHICS_WORK_BEGIN reason=exit semaphore=(nil) completed=0 requested=18446744073709551615 recorded=12207612 overwritten=12191228"
+        ],
+        "limitation": "Bounded history retained at exit, not a full trace of all work."
+      },
+      "kernel": {
+        "read_exit_code": 0,
+        "output_bytes": 5456,
+        "truncated": false,
+        "gpu_timeouts": [],
+        "non_apparmor_messages": [],
+        "note": "Only unrelated docker-default AppArmor ptrace denials and suppressed-audit counts. No GPU-reset/device-loss messages during the captured interval."
+      },
+      "validation_layer_active": false,
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png",
+        "frame-080s.png",
+        "frame-110s.png"
+      ]
+    }
+  ],
+  "native_build": {
+    "schema_version": 2,
+    "record_id": "universal-upstream-20261107T121513Z-3459173",
+    "timestamp_utc": "2026-11-07T12:32:01.573241+00:00",
+    "scope": "UNIVERSAL_SHADPS4",
+    "stage": "COMPLETE_BUILD_ONLY",
+    "result": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "exit_code": 0,
+    "requested_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+    "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+    "upstream_commit": "2bd672ea5c188b99d1080029a57ba0926273381c",
+    "upstream_policy": "resolved_during_candidate_preparation",
+    "game_launched": false,
+    "graphics_verified": false,
+    "installed_binary_changed": false,
+    "evidence": "/home/chreece/projects/shadps4/logs/universal-upstream-20261107T121513Z-3459173.tar.gz",
+    "decision": "RETAIN_ISOLATED_CANDIDATE_PENDING_NATIVE_GPU_AND_CROSS_PLATFORM_VALIDATION",
+    "candidate_binary": "/home/chreece/projects/shadps4/tests/universal-upstream-0d82e3ff401f/build/shadps4",
+    "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93"
+  },
+  "visual_review": {
+    "got": "8s loading panel; 25s PlayStation logo; 80s and 110s Continue menu with dark sword/foreground silhouettes. Incomplete rendering is not accepted. 110s overlay 11 FPS / 91.1 ms, a menu sample, not gameplay performance. The previously reported moving corner artifact is not reproduced in these menu frames.",
+    "gow": "8s loading panel; 25s and 80s Santa Monica logo; 110s Continue menu. Overlay 12 FPS / 80.0 ms. No gameplay/cutscene reached in the supplied screenshots.",
+    "corner_diagnosis": "Nine GoT small-pass records use full 2048x2048 attachments and guest-defined 64x64 or 43x22 viewport/scissor regions; they do not show the full scene redirected to the upper-left display. Subresource mip/layer samples are active. A 64x64 uncompressed view against a 256x256 compressed backing can have the same block dimensions; MipOf/SliceOf explicitly account for this, so raw width ratio alone is not a confirmed mip-selection bug."
+  },
+  "remaining_findings": [
+    {
+      "issue": "Runtime texture-sample offsets",
+      "evidence": "3 GoT warnings; AddOffset still returns without applying a nonconstant offset to unsupported sample instructions.",
+      "status": "Known unresolved semantics; no newly established correction in this menu run. Requires a correct universal lowering and validation, not suppressing the warning."
+    },
+    {
+      "issue": "SHARP provenance and descriptor table sizing",
+      "evidence": "GoT 264 and GoW 140 SharpLocationFromSource warnings. GoT six indexed-table diagnostics and four descriptor-pool sizing warnings.",
+      "status": "Retained limitations; no SRT rejection, descriptor allocation failure or new fatal event observed. Not declared harmless or solved."
+    },
+    {
+      "issue": "GPU image coherence and small render regions",
+      "evidence": "Five copy-layer coercions per title; GoT subresource mapping exercised; three initial stencil uploads, more GoW uploads.",
+      "status": "Array growth copies the common layer range; warning alone is not proof of discarded live layers. Native visuals and active depth/stencil readback limitations remain unverified."
+    },
+    {
+      "issue": "Compute queue and ordered-GDS cost",
+      "evidence": "GoW 1653 SetQueueReg offset 0xb warnings; 2800 original-GCN first-pass completion records.",
+      "status": "Queue support gap and previously observed cost remain open. Completion records are diagnostic progress; no full-run CPU performance samples in this GPU-trace mode."
+    },
+    {
+      "issue": "Oodle decompression warning",
+      "evidence": "3382 GoW stdout warnings that destination appears uncached/write-combined.",
+      "status": "Prior performance clue; not proof that host mappings are actually uncached. No warning-suppression workaround."
+    },
+    {
+      "issue": "Missing dumped resources and optional file lookups",
+      "evidence": "Both titles lack dumped system fonts and trophy data. GoW four missing .toc/.wypsm paths, including mid_chase100_intro.wypsm.",
+      "status": "Missing files cannot be repaired by fabricating resources or declaring all probes fatal. Verify the user game/system dump separately if relevant."
+    },
+    {
+      "issue": "Service stubs and initialization diagnostics",
+      "evidence": "All runtime warning/error locations are listed per run, including initial linker warnings.",
+      "status": "Remain incomplete; no new pre-menu fatal dependency established. Does not claim all logged stubs implemented."
+    }
+  ],
+  "native_build_warnings": [
+    {
+      "count": 2,
+      "message": "externals/glslang/glslang/Include/Types.h:1760:19: warning: \u2018blockNameType.glslang::TType::coopvecNV\u2019 may be used uninitialized [-Wmaybe-uninitialized]"
+    },
+    {
+      "count": 1,
+      "message": "/usr/include/c++/14/bits/stl_algobase.h:452:30: warning: \u2018void* __builtin_memmove(void*, const void*, long unsigned int)\u2019 forming offset 8 is out of the bounds [0, 8] [-Warray-bounds=]"
+    },
+    {
+      "count": 1,
+      "message": "externals/protobuf/src/google/protobuf/text_format.cc:261:26: warning: \u2018google::protobuf::TextFormat::ParseLocationRange google::protobuf::TextFormat::ParseInfoTree::GetLocationRange(const google::protobuf::FieldDescriptor*, int) const\u2019 is deprecated: Please use GetFieldLocation() [-Wdeprecated-declarations]"
+    },
+    {
+      "count": 1,
+      "message": "externals/aacdec/fdk-aac/libSBRdec/src/env_extr.cpp:853:39: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "externals/aacdec/fdk-aac/libSACdec/src/sac_bitdec.cpp:1158:49: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "externals/aacdec/fdk-aac/libSACdec/src/sac_bitdec.cpp:1166:33: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "externals/aacdec/fdk-aac/libSACdec/src/sac_bitdec.cpp:1167:49: warning: writing 1 byte into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:581:24: warning: \u2018zError\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:573:21: warning: \u2018adler32\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:568:21: warning: \u2018crc32\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:562:16: warning: \u2018uncompress2\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:557:16: warning: \u2018uncompress\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:552:16: warning: \u2018inflateEnd\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:547:16: warning: \u2018inflate\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:542:16: warning: \u2018inflateReset\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:537:16: warning: \u2018inflateInit2\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:532:16: warning: \u2018inflateInit\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:524:21: warning: \u2018compressBound\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:520:16: warning: \u2018compress2\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:516:16: warning: \u2018compress\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:512:21: warning: \u2018deflateBound\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:508:16: warning: \u2018deflateEnd\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:504:16: warning: \u2018deflate\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:500:16: warning: \u2018deflateReset\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:496:16: warning: \u2018deflateInit2\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 4,
+      "message": "externals/miniz/miniz.h:492:16: warning: \u2018deflateInit\u2019 defined but not used [-Wunused-function]"
+    },
+    {
+      "count": 1,
+      "message": "externals/ext-boost/boost/icl/detail/interval_set_algo.hpp:358:5: warning: writing 17 bytes into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "/usr/include/c++/14/atomic:284:23: warning: \u2018void __atomic_store_4(volatile void*, unsigned int, int)\u2019 writing 4 bytes into a region of size 0 overflows the destination [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:106:25: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:106:51: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:117:27: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:126:14: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:140:14: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/ajm/ajm_at9.cpp:170:74: warning: multi-character character constant [-Wmultichar]"
+    },
+    {
+      "count": 2,
+      "message": "/usr/include/c++/14/bits/atomic_base.h:477:25: warning: \u2018void __atomic_store_1(volatile void*, unsigned char, int)\u2019 writing 1 byte into a region of size 0 overflows the destination [-Wstringop-overflow=]"
+    },
+    {
+      "count": 7,
+      "message": "src/core/libraries/libc_internal/printf.h:168:20: warning: writing 32 bytes into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/libraries/libc_internal/printf.h:371:20: warning: writing 32 bytes into a region of size 31 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 6,
+      "message": "src/core/libraries/libc_internal/printf.h:172:20: warning: writing 32 bytes into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 2,
+      "message": "src/core/libraries/np/np_common.cpp:373:31: warning: \u2018size_t strnlen(const char*, size_t)\u2019 specified bound 17 exceeds source size 16 [-Wstringop-overread]"
+    },
+    {
+      "count": 2,
+      "message": "/usr/include/c++/14/bits/new_allocator.h:172:33: warning: \u2018void operator delete(void*, std::size_t)\u2019 called on pointer \u2018<unknown>\u2019 with nonzero offset [1, 9223372036854775807] [-Wfree-nonheap-object]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/module.cpp:68:16: warning: writing 16 bytes into a region of size 0 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "src/core/module.cpp:67:16: warning: \u2018void* memcpy(void*, const void*, size_t)\u2019 specified bound 18446744073709551600 exceeds maximum object size 9223372036854775807 [-Wstringop-overflow=]"
+    },
+    {
+      "count": 1,
+      "message": "src/video_core/buffer_cache/buffer_cache.cpp:362:21: warning: ignoring return value of \u2018std::pair<const VideoCore::Buffer*, long unsigned int> VideoCore::BufferCache::ObtainBuffer(VAddr, u32, VideoCore::ObtainBufferFlags)\u2019, declared with attribute \u2018nodiscard\u2019 [-Wunused-result]"
+    }
+  ],
+  "native_validation": "Native build, retained CPU regression suite and three executable startup scenarios passed. Compiler warnings remain recorded; these are not runtime crash evidence.",
+  "decision": "Reuse the exact successful native binary for manual gameplay validation after the user has restored Moonlight. No speculative emulator change, rebuild, install, new upstream freshness gate or Sunshine action.",
+  "next_command": "(\n  set -euo pipefail\n  P=0d82e3ff401f2a5fafc7543f8afb9ab004be30f8\n  S=\"$HOME/projects/shadps4/scripts/shadps4-universal-two-game-check.sh\"\n  mkdir -p \"$(dirname \"$S\")\"\n  T=\"$S.download.$$\"\n  trap 'rm -f -- \"$T\"' EXIT\n  curl --ipv4 --fail --location --retry 3 \\\n    \"https://raw.githubusercontent.com/Chreece/shadPS4/$P/scripts/shadps4-universal-two-game-check.sh\" -o \"$T\"\n  printf '%s  %s\\n' \\\n    63c8c3f2dcb8cf2e8894278571284672ab01dc2a3d482effdad01f4e25a1594d \"$T\" | sha256sum --check -\n  mv -- \"$T\" \"$S\"\n  SHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  SHADPS4_TEST_GPU_TRACE=1 \\\n  SHADPS4_KERNEL_JOURNAL_SUDO=1 \\\n    bash \"$S\" \"$P\" existing \"$P\"\n)\n"
+}

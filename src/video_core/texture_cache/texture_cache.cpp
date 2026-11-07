@@ -622,16 +622,9 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
         // Left overlap, the image from cache is a possible subresource of the image requested
         if (auto mip = cache_image.info.MipOf(image_info); mip >= 0) {
             if (auto slice = cache_image.info.SliceOf(image_info, mip); slice >= 0) {
-                // We have a larger image created and a separate one, representing a subres of it
-                // bound as render target. In this case we need to rebind render target.
-                if (cache_image.binding.is_target) {
+                const bool src_has_gpu_data = cache_image.HasGpuValidData();
+                if (cache_image.binding.is_target || cache_image.binding.is_bound) {
                     cache_image.binding.needs_rebind = 1u;
-                    if (merged_image_id) {
-                        GetImage(merged_image_id).binding.is_target = 1u;
-                    }
-
-                    FreeImage(cache_image_id);
-                    return {merged_image_id, -1, -1};
                 }
 
                 // If we don't have an allocated image, we create one here
@@ -645,8 +638,11 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
                     TrackImage(merged_image_id);
                 }
                 auto& merged_image = slot_images[merged_image_id];
-                runtime.CopyMip(&cache_image, &merged_image, mip, slice);
-                TrackGpuImage(merged_image_id);
+                merged_image.binding.is_target |= cache_image.binding.is_target;
+                if (src_has_gpu_data) {
+                    runtime.CopyMip(&cache_image, &merged_image, mip, slice);
+                    TrackGpuImage(merged_image_id);
+                }
                 FreeImage(cache_image_id);
             }
         }
@@ -687,6 +683,10 @@ ImageId TextureCache::ExpandImage(const ImageInfo& info, ImageId image_id) {
 ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     const auto& info = desc.info;
 
+    desc.view_info.range.base.level -= desc.backing_base.level;
+    desc.view_info.range.base.layer -= desc.backing_base.layer;
+    desc.backing_base = {};
+
     ASSERT(info.guest_address != 0);
 
     SmallVector<ImageId, 8> image_ids;
@@ -720,20 +720,13 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     }
 
     // Try to resolve overlaps (if any)
-    int view_mip{-1};
-    int view_slice{-1};
     if (!image_id) {
         for (const auto& cache_id : image_ids) {
-            view_mip = -1;
-            view_slice = -1;
-
             const auto& merged_info = image_id ? slot_images[image_id].info : info;
-            auto [overlap_image_id, overlap_view_mip, overlap_view_slice] =
-                ResolveOverlap(merged_info, desc.type, cache_id, image_id);
+            const auto overlap_image_id =
+                std::get<0>(ResolveOverlap(merged_info, desc.type, cache_id, image_id));
             if (overlap_image_id) {
                 image_id = overlap_image_id;
-                view_mip = overlap_view_mip;
-                view_slice = overlap_view_slice;
             }
         }
     }
@@ -768,12 +761,23 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     image.tick_accessed_last = scheduler.CurrentTick();
     TouchImage(image);
 
-    // If the image requested is a subresource of the image from cache record its location.
-    if (view_mip > 0) {
-        desc.view_info.range.base.level = view_mip;
-    }
-    if (view_slice > 0) {
-        desc.view_info.range.base.layer = view_slice;
+    if (info.guest_address > image.info.guest_address) {
+        const auto mip = info.MipOf(image.info);
+        ASSERT(mip >= 0);
+        const auto slice = info.SliceOf(image.info, mip);
+        ASSERT(slice >= 0);
+        desc.backing_base = {static_cast<u16>(mip), static_cast<u16>(slice)};
+        desc.view_info.range.base.level += desc.backing_base.level;
+        desc.view_info.range.base.layer += desc.backing_base.layer;
+        GraphicsDiagnostics::Emit(
+            GraphicsDiagnostics::Event::SubresourceView,
+            "requested=%llx backing=%llx requested-size=%ux%u backing-size=%ux%u "
+            "mip=%u layer=%u view-mip=%u view-layer=%u layers=%u binding=%u",
+            static_cast<unsigned long long>(info.guest_address),
+            static_cast<unsigned long long>(image.info.guest_address), info.size.width,
+            info.size.height, image.info.size.width, image.info.size.height, mip, slice,
+            desc.view_info.range.base.level, desc.view_info.range.base.layer,
+            desc.view_info.range.extent.layers, static_cast<unsigned>(desc.type));
     }
 
     return image_id;

@@ -701,7 +701,7 @@ def summarize(console,out):
                     gpu_work_overwritten=max(gpu_work_overwritten,int(overwritten.group(1)))
                 line=text[:4096]+'\n'
                 size=len(line.encode('utf-8'))
-                if gpu_work_bytes+size<=4*1024**2:
+                if gpu_work_bytes+size<=8*1024**2:
                     gpu_work.append(line)
                     gpu_work_bytes+=size
                 else:

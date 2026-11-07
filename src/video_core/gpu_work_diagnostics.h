@@ -16,8 +16,8 @@
 
 namespace VideoCore::GpuWorkDiagnostics {
 
-inline constexpr std::size_t Capacity = 2048;
-inline constexpr std::size_t OutputLimit = 2 * 1024 * 1024;
+inline constexpr std::size_t Capacity = 16384;
+inline constexpr std::size_t OutputLimit = 8 * 1024 * 1024;
 
 struct Entry {
     std::uint64_t sequence{};
@@ -57,7 +57,7 @@ inline void Dump(const char* reason, const void* semaphore, std::uint64_t comple
         }
         if (history.output_bytes + bytes > OutputLimit) {
             if (!history.truncated) {
-                std::fputs("GRAPHICS_WORK_TRUNCATED limit=2097152\n", stderr);
+                std::fprintf(stderr, "GRAPHICS_WORK_TRUNCATED limit=%zu\n", OutputLimit);
                 history.truncated = true;
             }
             return;
