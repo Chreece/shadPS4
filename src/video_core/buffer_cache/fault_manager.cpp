@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include "common/div_ceil.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
@@ -93,12 +94,13 @@ void FaultManager::ProcessFaultBuffer() {
     const u32 offset = current_area * PageFaultAreaSize;
     u8* mapped = download_buffer.mapped_data.data() + offset;
     std::memset(mapped, 0, PageFaultAreaSize);
+    download_buffer.Flush(offset, PageFaultAreaSize);
 
     const vk::BufferMemoryBarrier2 pre_barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
         .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderRead,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
@@ -107,7 +109,7 @@ void FaultManager::ProcessFaultBuffer() {
         .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
         .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
         .dstStageMask = vk::PipelineStageFlagBits2::eAllCommands,
-        .dstAccessMask = vk::AccessFlagBits2::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
         .buffer = fault_buffer.Handle(),
         .offset = 0,
         .size = fault_buffer_size,
@@ -155,30 +157,50 @@ void FaultManager::ProcessFaultBuffer() {
     const u32 num_workgroups = Common::DivCeil(num_threads, 64u);
     cmdbuf.dispatch(num_workgroups, 1, 1);
 
+    const std::array post_barriers{
+        post_barrier,
+        vk::BufferMemoryBarrier2{
+            .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+            .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+            .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+            .dstAccessMask = vk::AccessFlagBits2::eHostRead,
+            .buffer = download_buffer.Handle(),
+            .offset = offset,
+            .size = PageFaultAreaSize,
+        },
+    };
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{
         .dependencyFlags = vk::DependencyFlagBits::eByRegion,
-        .bufferMemoryBarrierCount = 1,
-        .pBufferMemoryBarriers = &post_barrier,
+        .bufferMemoryBarrierCount = static_cast<u32>(post_barriers.size()),
+        .pBufferMemoryBarriers = post_barriers.data(),
     });
 
-    scheduler.DeferOperation([this, mapped, area = current_area] {
-        fault_ranges.Clear();
+    scheduler.DeferOperation([this, mapped, offset, area = current_area] {
+        download_buffer.Invalidate(offset, PageFaultAreaSize);
         const u64* fault_buf = std::bit_cast<const u64*>(mapped);
-        const u32 fault_count = fault_buf[0];
+        const u32 fault_count = static_cast<u32>(std::min<u64>(fault_buf[0], MaxPageFaults - 1));
         for (u32 i = 1; i <= fault_count; ++i) {
             fault_ranges.Add(fault_buf[i], sparse_pagesize);
             LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
         }
-        fault_ranges.ForEach([&](VAddr start, VAddr end) {
-            ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
-                       "Buffer size is too large");
-            (void)buffer_cache.ObtainBuffer(start, end - start);
-        });
         fault_areas[area] = 0;
     });
 
     fault_areas[current_area++] = scheduler.CurrentTick();
     current_area %= MaxPendingFaults;
+}
+
+void FaultManager::ResolveFaults() {
+    // Residency may read back images and submit work; callbacks run under scheduler locks.
+    while (!fault_ranges.m_ranges_set.empty()) {
+        auto ranges = std::exchange(fault_ranges, RangeSet{});
+        ranges.ForEach([&](VAddr start, VAddr end) {
+            ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
+                       "Buffer size is too large");
+            (void)buffer_cache.ObtainBuffer(start, static_cast<u32>(end - start),
+                                            ObtainBufferFlags::IgnoreStreamBuffer);
+        });
+    }
 }
 
 } // namespace VideoCore

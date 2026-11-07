@@ -89,6 +89,7 @@ public:
     struct ImageDesc {
         ImageInfo info;
         ImageViewInfo view_info;
+        SubresourceBase backing_base{};
         BindingType type{BindingType::Texture};
 
         ImageDesc() = default;
@@ -129,8 +130,9 @@ public:
     /// Evicts any images that overlap the unmapped range.
     void UnmapMemory(VAddr cpu_addr, size_t size);
 
-    /// Schedules a copy of pending images for download back to CPU memory.
-    void ProcessDownloadImages();
+    void ReadMemory(VAddr addr, u64 size);
+
+    void TrackGpuImage(ImageId image_id);
 
     /// Retrieves the image handle of the image with the provided attributes.
     [[nodiscard]] ImageId FindImage(ImageDesc& desc, bool exact_fmt = false);
@@ -174,10 +176,15 @@ public:
     /// Reuploads image contents.
     void RefreshImage(Image& image);
 
+    void InheritStencilWrites(Image& stencil_image, Image& depth_image);
+
+    void CopyStencil(ImageId depth_id, const ImageInfo& source, const ImageInfo& destination,
+                     const SubresourceRange& range);
+
     /// Retrieves the sampler that matches the provided S# descriptor.
     [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
-                                         AmdGpu::BorderColorBuffer border_color_base,
-                                         bool is_depth);
+                                         AmdGpu::BorderColorBuffer border_color_base, bool is_depth,
+                                         bool is_integer);
 
     /// Retrieves the image with the specified id.
     [[nodiscard]] Image& GetImage(ImageId id) {
@@ -199,7 +206,9 @@ public:
         if (slot_images.IsAllocated(image.depth_id)) {
             auto& depth_image = slot_images[image.depth_id];
             if (depth_image.image_uid == image.depth_uid &&
+                depth_image.info.stencil_addr == image.info.guest_address &&
                 depth_image.flags & ImageFlagBits::Registered) {
+                InheritStencilWrites(image, depth_image);
                 return image.depth_id;
             }
         }
@@ -336,6 +345,9 @@ public:
     }
 
 private:
+    void UploadStencil(Image& image, const ImageInfo& plane, const SubresourceRange& range);
+    void SaveStencil(Image& image);
+
     /// Iterate over all page indices in a range
     template <typename Func>
     static void ForEachPage(PAddr addr, size_t size, Func&& func) {
@@ -363,7 +375,11 @@ private:
     void UnregisterImage(ImageId image);
 
     /// Track CPU reads and writes for image
-    void TrackImage(ImageId image_id);
+    void TrackImage(ImageId image_id) {
+        TrackImage(slot_images[image_id]);
+    }
+
+    void TrackImage(Image& image);
 
     /// Stop tracking CPU reads and writes for image
     void UntrackImage(ImageId image_id);
@@ -386,6 +402,7 @@ private:
 
     /// Removes image from the cache and schedules it for deletion.
     void FreeImage(ImageId image_id) {
+        SaveStencil(slot_images[image_id]);
         {
             std::scoped_lock lk{slot_images[image_id].mutex};
             UntrackImage(image_id);
@@ -411,7 +428,8 @@ private:
     BlitHelper blit_helper;
     TileManager tile_manager;
     absl::flat_hash_map<u64, SamplerId> samplers;
-    absl::flat_hash_set<ImageId> download_images;
+    absl::flat_hash_map<ImageId, u64> download_images;
+    u64 image_write_sequence = 0;
     u64 total_used_memory = 0;
     u64 trigger_gc_memory = 0;
     u64 pressure_gc_memory = 0;
@@ -423,7 +441,6 @@ private:
     u64 gc_tick = 0;
     Common::LRUCache<Image> image_lru_cache;
     Common::LRUCache<Sampler> sampler_lru_cache;
-    const bool readback_linear_images;
     std::mutex download_images_mutex;
     absl::flat_hash_map<VAddr, MetaDataInfo> surface_metas;
 };

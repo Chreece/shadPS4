@@ -1,0 +1,156 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T21:38:08.749997+00:00",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/187",
+  "archive": "universal-graphics-20261106T212323Z-1874653.tar.gz",
+  "archive_sha256": "5c8dbbc1482bdf01fa95d5106f24f457d52efdf8248dbacf5c2d8ba940b8b3f3",
+  "library_file_id": "libfile_024693fcf78c8191998374f6182d44d1",
+  "tested_source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+  "tested_runner_commit": "bf8b7de00607ec19a805cd8720462cb0ccc64c78",
+  "tested_binary_sha256": "2e71fab6d42f8e35573dbe54d25f2540697b8e48785da4cd3bc2f84d9b0469be",
+  "candidate_source_commit": "47a0c8400509d7cfa89d02fd0f38c1a06f193dfe",
+  "candidate_source_tree": "8ea99418f14c56bbb1609a290bfaa1144303af33",
+  "next_runner_commit": "47a0c8400509d7cfa89d02fd0f38c1a06f193dfe",
+  "upstream_commit": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_preparation_check": "Current main checked during preparation and unchanged; no upstream or fork freshness checks during build/launch.",
+  "native_acceptance": "FAILED_GOT_DARK_MISSING_SURFACES_LOW_FPS_GOW_NOT_INCLUDED",
+  "games": {
+    "got": {
+      "elapsed_seconds": 118.618,
+      "exit_code": 0,
+      "owned_child_terminated": true,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "visual_80s": "Night scene, dark/missing surfaces and small bright upper-left patch. Overlay 4 FPS / 247.2 ms.",
+      "visual_110s": "Night battle scene still progressing with largely dark surfaces. Overlay 3 FPS / 355.6 ms.",
+      "manual_control": "Not established by screenshots alone. No automated input.",
+      "vram_free_at_launch": 20616880128,
+      "ollama_restore": "RESTORED exact saved model/context lease",
+      "gpu_failure": null,
+      "unhandled_guest_access": {
+        "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+      },
+      "validation_enabled": false,
+      "performance_enabled": false,
+      "command_trace_enabled": true,
+      "trace": {
+        "entries": 2048,
+        "bytes": 262374,
+        "overwritten": 5537183,
+        "window": "Exit dump only, latest tick 19649 at approximately 116.5\u2013116.7 seconds. No wait-timeout window; completed=0 in an exit dump is not stalled GPU evidence."
+      },
+      "kernel_journal": {
+        "privileged_exit_code": 0,
+        "latest_amdgpu_message_uptime": 453767.48422,
+        "process_start_uptime": 454461.12,
+        "predates_process_seconds": 693.63578,
+        "filtered_result": "All 600 returned AMD/GPU entries are init_user_pages failures older than this process. Unfiltered tail includes subsequent AppArmor ptrace denials from a separate docker-default process.",
+        "interpretation": "Do not attribute old page errors or unrelated container ptrace denials to this GoT run. Bounded tails do not establish the full earlier failure sequence."
+      },
+      "emulator_memory_messages": {
+        "count": 105,
+        "meaning": "Accessed non-GPU cached memory diagnostics, not kernel GPU page-fault reports. No unhandled access is reported."
+      },
+      "previous_layout_path": "Read-only zero-mask stencil state and later writable stencil state are both observed in bounded depth-stencil diagnostics. Validation was off, so no VUID-clearance claim."
+    },
+    "gow": {
+      "included": false,
+      "status": "No new GoW capture in this single-game archive."
+    }
+  },
+  "other_leads": [
+    "Material bindings reject descriptors with guest stride 8 and zero records. Prior scalar-bound review applies: do not invent a table length or bypass bounds.",
+    "Runtime sample offsets are dropped by unsupported image sample emission in three logged compilation groups. Correct mip/filter semantics need a separate implementation; no arbitrary coordinate shift added.",
+    "Upstream PR5601 stencil uploads remain a credible graphics lead, but correct CPU/GPU ownership, clean R8 alias reuse and plane tracking need validation before integration.",
+    "No audio, driver replacement, GDS-order bypass, per-title setting, skipped draw or shader hash exception was added."
+  ],
+  "defect": {
+    "location": "src/video_core/renderer_vulkan/vk_runtime.cpp:BufferImageCopySize",
+    "reference": "https://github.khronos.org/Vulkan-Site/spec/latest/chapters/copies.html#copies-buffers-images",
+    "description": "Combined depth/stencil format sizes, floor-divided compressed strides and u32 products produced incorrect buffer access ranges. The same helper also packs temporary image-copy mips, where undersized footprints overlap following mips.",
+    "examples": [
+      {
+        "case": "Six 1x1 BC1 layers",
+        "baseline_bytes": 8,
+        "correct_bytes": 48
+      },
+      {
+        "case": "5x5 BC3 image",
+        "baseline_bytes": 48,
+        "correct_bytes": 64
+      },
+      {
+        "case": "1920x1080 D32S8 depth plane",
+        "baseline_bytes": 10368000,
+        "correct_bytes": 8294400
+      },
+      {
+        "case": "1920x1080 D32S8 stencil plane",
+        "baseline_bytes": 10368000,
+        "correct_bytes": 2073600
+      },
+      {
+        "case": "16384x16384 RGBA32F",
+        "baseline_bytes": 0,
+        "correct_bytes": 4294967296
+      },
+      {
+        "case": "Two BC1 mips, six array layers",
+        "baseline_next_mip_offset": 16,
+        "correct_next_mip_offset": 48,
+        "correct_total_bytes": 96
+      }
+    ],
+    "causality": "Host defect independently reproduced. The capture does not prove one of these specific bad footprints caused the missing fill or GPU stall."
+  },
+  "changes": [
+    "Select D16, X8_D24, D32 or S8 transfer format from the copy aspect.",
+    "Ceil-divide row, image-height and depth block extents and retain 64-bit pitches and size.",
+    "Apply the same helper to upload/download synchronization and buffer-backed image mip packing.",
+    "Renew explicitly requested sudo journal authentication after a successful build before games; existing-build mode does not add a renewal."
+  ],
+  "validation": {
+    "build": "GCC14 Release complete emulator build passed.",
+    "host_binary_sha256": "882db4cb8d3315986d655e559b6f0d82951638eb760c5775c5604bdc314f5b64",
+    "source_files_identical": 1065,
+    "test_files_identical": 96,
+    "native_cli_startup_scenarios": 3,
+    "ctests": 31,
+    "renderer_contracts": 7,
+    "srt_checks": 10418,
+    "sparse_ranges": 288,
+    "sparse_scenarios": 7,
+    "remaining_cpu": "Descriptor pool/batch, contiguous VMA and HLE ABI passed.",
+    "production_footprint_cases": 22500,
+    "baseline_failures_in_same_cases": 10392,
+    "oracle": "Independent enumeration of touched texel blocks using valid 2D-array/3D region shapes, explicit aspect byte widths and padded/tight layouts. Five named regressions and packed-mip overlap also pass.",
+    "sanitizers": "ASan/UBSan passed; leak detection disabled because the analysis host runs under ptrace.",
+    "runner_auth_cases": 5,
+    "pinned_handoff_cases": 4,
+    "syntax": "Bash syntax and git diff --check passed.",
+    "environment_recovery": "Restored use of existing temporary CMake/Ninja tools and local link-only symlinks to installed libuuid/libudev runtime libraries. Initial missing-tool/development-link failures were resolved without system package changes.",
+    "scope": "No native GPU or game execution on the analysis host. No tests committed; temporary host fixtures remain outside the repository. This changes Vulkan host transfer bookkeeping, not guest instruction semantics."
+  },
+  "next_test": {
+    "mode": "build",
+    "order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "gpu_command_trace": true,
+    "vulkan_validation": false,
+    "max_seconds_per_game": 120,
+    "native_rebuild_required": true,
+    "protections": "Owned-process preflight/shutdown, isolated saves, at least 8 GiB free VRAM, exact model lease restoration when safe, no automatic input, no installed binary change, no Sunshine or SSH restart."
+  },
+  "limitations": [
+    "No measured FPS improvement or GoT fill recovery.",
+    "No new GoW result or cutscene recovery.",
+    "Trace overhead prevents treating this capture as a comparable FPS benchmark.",
+    "Stencil-plane uploads and runtime sample offsets remain unresolved."
+  ],
+  "next_command": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nPIN=47a0c8400509d7cfa89d02fd0f38c1a06f193dfe\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/image-copy-fix.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$PIN/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' f22c830d3adee129272df7c71c7bb98cee208f05f7170c836a1749a041a99b8a \"$run_dir/run.sh\" | sha256sum --check -\nsudo -v\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_GPU_TRACE=1 \\\nSHADPS4_TEST_PERFORMANCE=0 \\\nSHADPS4_KERNEL_JOURNAL_SUDO=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  bash \"$run_dir/run.sh\" \"$PIN\" build \"$PIN\"\nSHADPS4_TEST\n",
+  "journal": {
+    "historical_rows": 775,
+    "appended_rows": 2
+  }
+}

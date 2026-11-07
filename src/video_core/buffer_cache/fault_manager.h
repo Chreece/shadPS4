@@ -23,6 +23,8 @@ public:
 
     void ProcessFaultBuffer();
 
+    void ResolveFaults();
+
 private:
     Vulkan::Scheduler& scheduler;
     BufferCache& buffer_cache;

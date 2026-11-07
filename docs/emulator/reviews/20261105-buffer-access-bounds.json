@@ -1,0 +1,633 @@
+{
+  "schema_version": 2,
+  "record_id": "buffer-bounds-20261105-review",
+  "timestamp_utc": "2026-11-05T19:15:19.087033+00:00",
+  "source_commit": "b5869b4a22e27a5e7d816544f0d3b2c4cfccf3b6",
+  "source_tree": "4a0636e5e6510ace5d40e62aeaad09c69e113a97",
+  "upstream_commit": "98ef621decb6a35dba62e367a8a89186f5d49dcc",
+  "pr": 166,
+  "depends_on_pr": 165,
+  "archive": {
+    "filename": "universal-two-games-20261105T183120Z-3304427.tar.gz",
+    "sha256": "04d222431147d85d5637dc6e82e7f1664dae122c52c76c4ed37d26df250ff57d",
+    "library_file_id": "libfile_c66ea644155c8191bf4f03c5cc4090ae"
+  },
+  "native": [
+    {
+      "game": "CUSA11456",
+      "source_commit": "3bcbc4dcef79f408e70e249cb759dd19c529967d",
+      "binary_sha256": "719d73a328d16d3efadf6bec033c7cd22ff714fb80064aae189811a58c0f8771",
+      "native": {
+        "binary_sha256": "719d73a328d16d3efadf6bec033c7cd22ff714fb80064aae189811a58c0f8771",
+        "game": "/mnt/roms-all/ps4-games/CUSA11456/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -9,
+        "owned_child_pid": 3428733,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 119.864,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 9920,
+        "warning_lines": 591,
+        "error_lines": 1535,
+        "gpu_work_entries": 0,
+        "gpu_work_bytes": 0,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 0,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "buffer-readback": 2048,
+          "image-readback": 128,
+          "image-read-demand": 64,
+          "conditional-exec": 8,
+          "image-buffer-write": 64,
+          "draw-preparation-flush": 32,
+          "copy-layers": 32
+        },
+        "graphics_diagnostics_bytes": 9001,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 1342568,
+        "console_excerpt_complete": true,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 4,
+        "srt_source_blocks": {
+          "5507459:5507459": 1,
+          "5507460:5507460": 1,
+          "5507462:5507462": 1,
+          "5507461:5507461": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "counts": {
+        "sampled_image_pool_warnings": 2,
+        "sampler_pool_warnings": 2,
+        "oversized_buffer_clamps": 631,
+        "ds_completed": 0,
+        "ds_rejections": 0
+      },
+      "visual_110s": {
+        "screen": "black",
+        "fps": 3,
+        "frametime_ms": 334.4
+      },
+      "pool_capacities": [
+        "type=SampledImage required=248869 pool=8192",
+        "type=Sampler required=110608 pool=1024",
+        "type=SampledImage required=248884 pool=248869",
+        "type=Sampler required=110615 pool=110608"
+      ],
+      "count_source": "console-tail.log",
+      "count_source_bytes": 1342568
+    },
+    {
+      "game": "CUSA34384",
+      "source_commit": "3bcbc4dcef79f408e70e249cb759dd19c529967d",
+      "binary_sha256": "719d73a328d16d3efadf6bec033c7cd22ff714fb80064aae189811a58c0f8771",
+      "native": {
+        "binary_sha256": "719d73a328d16d3efadf6bec033c7cd22ff714fb80064aae189811a58c0f8771",
+        "game": "/mnt/roms-all/ps4-games/CUSA34384/eboot.bin",
+        "duration_limit": 120,
+        "time_to_sigterm": 118,
+        "graphics_visual_acceptance": "NOT_OBSERVED",
+        "audio_audible_acceptance": "NOT_OBSERVED",
+        "gameplay_acceptance": "NOT_OBSERVED",
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "owned_child_terminated": true,
+        "exit_code": -9,
+        "owned_child_pid": 3414739,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "elapsed_seconds": 119.766,
+        "gpu_failure": null,
+        "srt_rejections": {},
+        "console_lines": 15501,
+        "warning_lines": 624,
+        "error_lines": 3574,
+        "gpu_work_entries": 0,
+        "gpu_work_bytes": 0,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 0,
+        "graphics_diagnostics_active": true,
+        "graphics_event_sampled_max_counts": {
+          "enabled": 1,
+          "image-readback": 512,
+          "image-read-demand": 256,
+          "image-buffer-write": 512,
+          "buffer-readback": 512,
+          "copy-layers": 5,
+          "draw-preparation-flush": 1
+        },
+        "graphics_diagnostics_bytes": 6697,
+        "graphics_diagnostics_truncated": false,
+        "selected_diagnostic_lines": 420,
+        "full_console_bytes": 2228445,
+        "console_excerpt_complete": false,
+        "gpu_memory_fault_reports": 0,
+        "gpu_memory_fault_pages": {},
+        "srt_source_preparations": 86,
+        "srt_source_blocks": {
+          "4203470:4203470": 1,
+          "4203471:4203471": 1,
+          "4205881:4205881": 1,
+          "4205882:4205882": 1,
+          "4205883:4205883": 1,
+          "4205884:4205884": 1,
+          "4201296:4201296": 1,
+          "4201305:4201305": 1,
+          "4201297:4201297": 1,
+          "4201298:4201298": 1,
+          "4203480:4203480": 1,
+          "4203483:4203483": 1,
+          "4203481:4203481": 1,
+          "4203482:4203482": 1,
+          "4205661:4205661": 1,
+          "4205662:4205662": 1,
+          "4205663:4205663": 1,
+          "4205664:4205664": 1,
+          "4205667:4205667": 1,
+          "4205668:4205668": 1,
+          "4205669:4205669": 1,
+          "4205666:4205666": 1,
+          "4201288:4201288": 1,
+          "4201300:4201300": 1,
+          "4203464:4203464": 1,
+          "4203465:4203465": 1,
+          "4203466:4203466": 1,
+          "4201299:4201299": 1,
+          "4203472:4203472": 1,
+          "4203473:4203473": 1,
+          "4201306:4201306": 1,
+          "4201308:4201308": 1,
+          "4203490:4203490": 1,
+          "4201289:4201289": 1,
+          "4201290:4201290": 1,
+          "4201304:4201304": 1,
+          "4201314:4201314": 1,
+          "4203489:4203489": 1,
+          "4203488:4203488": 1,
+          "4201301:4201301": 1,
+          "4203468:4203468": 1,
+          "4201309:4201309": 1,
+          "4201307:4201307": 1,
+          "4203485:4203485": 1,
+          "4201291:4201291": 1,
+          "4203493:4203493": 1,
+          "4201322:4201322": 1,
+          "4719383:4719383": 1,
+          "4203491:4203491": 1,
+          "4203503:4203503": 1,
+          "4203492:4203492": 1,
+          "4201318:4201318": 1,
+          "4205603:4205603": 1,
+          "4205629:4205629": 1,
+          "4205630:4205630": 1,
+          "4205631:4205631": 1,
+          "4203494:4203494": 1,
+          "4203484:4203484": 1,
+          "4201315:4201315": 1,
+          "4201331:4201331": 1,
+          "4201316:4201316": 1,
+          "4203502:4203502": 1,
+          "4201320:4201320": 1,
+          "4201317:4201317": 1,
+          "4201326:4201326": 1,
+          "4203487:4203487": 1,
+          "4201312:4201312": 1,
+          "4203495:4203495": 1,
+          "4201319:4201319": 1,
+          "4201327:4201327": 1,
+          "4201311:4201311": 1,
+          "4203504:4203504": 1,
+          "4201293:4201293": 1,
+          "4201336:4201336": 1,
+          "4201324:4201324": 1,
+          "4203496:4203496": 1,
+          "4205633:4205633": 1,
+          "4205634:4205634": 1,
+          "4205635:4205635": 1,
+          "4205605:4205605": 1,
+          "4203499:4203499": 1,
+          "4203500:4203500": 1,
+          "4201338:4201338": 1,
+          "4201334:4201334": 1,
+          "4201335:4201335": 1,
+          "4203510:4203510": 1
+        },
+        "memory_histograms_truncated": false,
+        "validation_layer_active": true,
+        "validation_message_ids": {},
+        "first_validation_failure": null,
+        "validation_log_bytes": 127,
+        "validation_evidence_truncated": false,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "counts": {
+        "sampled_image_pool_warnings": 12,
+        "sampler_pool_warnings": 10,
+        "oversized_buffer_clamps": 3557,
+        "ds_completed": 47,
+        "ds_rejections": 0
+      },
+      "visual_110s": {
+        "screen": "Sony Interactive Entertainment presents",
+        "fps": 1,
+        "frametime_ms": 1559.5
+      },
+      "pool_capacities": [
+        "type=SampledImage required=22356 pool=8192",
+        "type=Sampler required=4968 pool=1024",
+        "type=SampledImage required=45792 pool=22356",
+        "type=Sampler required=10176 pool=4968",
+        "type=SampledImage required=62397 pool=45792",
+        "type=Sampler required=13866 pool=10176",
+        "type=SampledImage required=64260 pool=62397",
+        "type=Sampler required=14280 pool=13866",
+        "type=SampledImage required=65799 pool=64260",
+        "type=Sampler required=14622 pool=14280",
+        "type=SampledImage required=81999 pool=65799",
+        "type=Sampler required=18222 pool=14622",
+        "type=SampledImage required=90045 pool=81999",
+        "type=Sampler required=20010 pool=18222",
+        "type=SampledImage required=101439 pool=90045",
+        "type=Sampler required=22542 pool=20010",
+        "type=SampledImage required=135252 pool=101439",
+        "type=SampledImage required=371943 pool=135252",
+        "type=SampledImage required=473384 pool=371943",
+        "type=Sampler required=30057 pool=22542",
+        "type=SampledImage required=509168 pool=473384",
+        "type=Sampler required=32329 pool=30057"
+      ],
+      "count_source": "console-tail.log",
+      "count_source_bytes": 2228445
+    }
+  ],
+  "root_defect": {
+    "observed": "GoT records 631 oversized buffer clamps; two live bindings span approximately 1.4 GiB each. Its final IR accesses only bounded prefixes. GoW records 3557 oversized clamps across multiple shaders.",
+    "mechanism": "BindBuffers reconciles complete guest descriptor extents through ObtainBuffer, which calls texture ReadMemory before residency and synchronization. Unaccessed image aliases therefore incur readback and hazard work.",
+    "correction": "Derive conservative byte prefixes from final IR, include scalar/vector/atomic widths, bind min(guest descriptor size, proven prefix), preserve shared backing for narrowed bindings and bump shader metadata 14 to 15.",
+    "proven_capture_prefixes_bytes": [
+      32,
+      272
+    ],
+    "fallback": "Unknown addresses, overflow, cyclic/deep expressions, unsupported formats and any unproven access retain the full descriptor range. Unreferenced and special resources retain default ranges. Runtime-selected BDA reads are not capped by this analysis.",
+    "depth_compare_reference": "https://docs.vulkan.org/spec/latest/chapters/textures.html#textures-depth-compare-operation",
+    "per_game_changes": false,
+    "limits": "The excess synchronization is established. Its contribution to black output or native FPS is not yet measured. Full universal DS support and menu/gameplay recovery are not claimed."
+  },
+  "validation": {
+    "compiler_checks": 60376,
+    "captured_final_ir_replay": "PASS [32,272]",
+    "coverage": "All classified load/store/atomic widths; multiple accesses; special/dynamic resources; integer wrapping and invalid shifts/extracts; float NaN/negative/overflow; cyclic/deep expressions; 60000 concrete masked-index cases; guest descriptor limits.",
+    "full_gcn_translation": "PASS two original masked/dynamic kernels; masked input prefix32, dynamic input unbounded",
+    "spirv_validation": "PASS two modules targeting Vulkan1.2",
+    "vulkan": {
+      "driver": "Lavapipe/llvmpipe LLVM19.1.7 with Khronos validation",
+      "dispatches": 18,
+      "output_words_checked": 2304,
+      "mismatches": 0,
+      "validation_errors": 0,
+      "descriptor_bytes": [
+        32,
+        512,
+        262144
+      ],
+      "binding_adjustments_bytes": [
+        0,
+        4,
+        12
+      ],
+      "scope": "Original GCN translated by production recompiler; real software-driver compute submissions. Not native physical GPU/game execution."
+    },
+    "full_build": "PASS published source SHA embedded",
+    "binary_sha256": "dee04fce8c8a7681d459d419ed111373f42b844448fbb625658e042d7bb42dd3",
+    "cpu": "PASS existing universal CPU suite",
+    "cli": "PASS three published-binary cases",
+    "preceding_native_build_logs": [
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/build.log",
+        "bytes": 363531,
+        "sha256": "9b71079944e2782d45daa68d4bff92b493277dd76e44b0d30f1ea8755242d195",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-tests.log",
+        "bytes": 7263,
+        "sha256": "274132340e40baffa064eed0982874f1fbe9b8ef0a0b5da8ef2a4bc37babb214",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/fetch.log",
+        "bytes": 117,
+        "sha256": "cd7dade7d89b14c9698a1ab5e0a3cdd3cfda53649ef67f16edd10d6b227eccea",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/native-startup.log",
+        "bytes": 57,
+        "sha256": "bde45f612c877eed394f2908766c9c70e80b579991b13125e6f583e9cdf5a2c9",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/submodules.log",
+        "bytes": 21503,
+        "sha256": "e263a1c814f37e7bc83c34b6406f22e4e4c85861fa6d846aeb0f57c3680fcc96",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/clone.log",
+        "bytes": 92,
+        "sha256": "b3fc7edd0bc764d888874930b1acc728a64aef34d1145c8c22cbbbb2ece54e55",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/checkout.log",
+        "bytes": 91,
+        "sha256": "a029672af7f674cfa5f73e7f276f082a8b00d994e15327bde59b559deca39e2d",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/configure.log",
+        "bytes": 47048,
+        "sha256": "bcc28e4d86613d1f2ac5cd5a4bcdcada9013c37114db051a2b581dce9f96ac37",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/upstream-fetch.log",
+        "bytes": 142,
+        "sha256": "4350da73ac32af27e85b45e7717415216849ee4728c36266af43c440e89b7ef6",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/compiler-check.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/hle-abi.log",
+        "bytes": 30,
+        "sha256": "73f114c9dc2117e84da4a1408b9e20308344ccad57a7fab8b92f37d2953f7373",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_thread_atexit-build.log",
+        "bytes": 516,
+        "sha256": "b328a3830c7e9a11bfedfc01b180e0be1ba46b3a29303e3165cb1b4218a2f0bf",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/occlusion_query-configure.log",
+        "bytes": 447,
+        "sha256": "8994e477ebb142daf927b8e1f2e4187119b1076a151805dce84f5236ada13d55",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/srt-production.log",
+        "bytes": 37,
+        "sha256": "791c797bf025b9ff0d616966c683ec891186f714078779f6dc5d2092472bd0b4",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/userservice-configure.log",
+        "bytes": 443,
+        "sha256": "f5383a728a0994e1ef04b044a094b6ea949cce2a5e783f3a85b3a6386a61ae7e",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/startup_loading-test.log",
+        "bytes": 644,
+        "sha256": "e385f699c8da21b3e784d78a7b5c551a1f71ea10a7eaee1ccc0cda4197617be1",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/startup_loading-build.log",
+        "bytes": 988,
+        "sha256": "e014fdba6972582c8e288751f23b18d53738ce851c50604c04ecd868ee5a41ed",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_sanitizer-configure.log",
+        "bytes": 448,
+        "sha256": "1248e5a36e9ac1a62d570e60a2a6b1d2ac9a98990ce2065c9a3eceec5cabb3f1",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/sparse-production.log",
+        "bytes": 222,
+        "sha256": "9d59e3fd6ec4d3a8dc2e1f7363dca74a86a9258cd54e6e82d4d61e5125e774c5",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/graphics_diagnostics-test.log",
+        "bytes": 545,
+        "sha256": "a4540add2d6768570071b27f43326da8e295ce7899c92bc89eddad642fd35e1a",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/ngs2_hle-configure.log",
+        "bytes": 805,
+        "sha256": "bea8343e18f65b6410c520bdda26c92cdbb2aa22df92c68351441aa14731d352",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/userservice-build.log",
+        "bytes": 347,
+        "sha256": "5dfaadccb74ca49fd7a5b24c70f99579f25e21e69a66f2074cb0cb6f8934f002",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_thread_atexit-configure.log",
+        "bytes": 571,
+        "sha256": "b2d6982ccf6e17a04dd167536d2ddee90abf81bdaeb8c01aeeff26a605864b5e",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/image_transfer-build.log",
+        "bytes": 269,
+        "sha256": "6f279355e569cdb34f857e10b68d0d366c35638b6bde3ac304075199b3ba58d7",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/quit_dialog-build.log",
+        "bytes": 127,
+        "sha256": "505b7d21ea0d36d1c4ceaaf15ffee46c47d46cda37cfd9d064a1ec72bd9624b0",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/contiguous-vma.log",
+        "bytes": 32,
+        "sha256": "80b2b3e0105854386cf168a8df15e199464ce267987c57eecd142693c7f1e6b6",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_sanitizer-test.log",
+        "bytes": 438,
+        "sha256": "ef08f2e133024d66920b45ce43429f3168c705cb59f8ae44751e808af0790b4c",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/ngs2_hle-build.log",
+        "bytes": 4694,
+        "sha256": "5d473bcc6e32081521accacc1c5b801a921a5f15dfd85970ecdebb8db1c2432b",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/ngs2_hle-test.log",
+        "bytes": 1582,
+        "sha256": "b44b0937ecd0cc913518ab6994854cad4d780164417253a2e5d6815ce2a133f3",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/quit_dialog-configure.log",
+        "bytes": 443,
+        "sha256": "cd03a9983a2c82fbbfb0c3215cef8d2ba830b1e755c21d597637d2f9c704c2e7",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/descriptor-heap.log",
+        "bytes": 229,
+        "sha256": "a0bd47f629e30cdc285869b8ef9b8934a8c0647af15ee9bfec1c9ba4cba80a19",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_thread_atexit-test.log",
+        "bytes": 442,
+        "sha256": "1930f5c907c6defd1a9f35f5ede39a10d742bace52108ed631f9f0a81fa31cac",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/quit_dialog-test.log",
+        "bytes": 960,
+        "sha256": "4f6467552dc92bfb3fa949e88d5a0f68dc6bda5eccc6ea7bda8151303dff8c4d",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/startup_loading-configure.log",
+        "bytes": 566,
+        "sha256": "762f2eb7a9ee76aa300b0b3ce61c017e04608263b2b62d796484891e159ddd23",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/occlusion_query-build.log",
+        "bytes": 290,
+        "sha256": "91cfc8c8f51b1caa75461e78da7121ffc02cf99621a8e09a2a01777baec82a2d",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/graphics_diagnostics-configure.log",
+        "bytes": 452,
+        "sha256": "b9ddb1684a7339809cc89fce4be035b42390346334ba08feb522c19c9db3a28b",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/image_transfer-test.log",
+        "bytes": 772,
+        "sha256": "c8542d7f9ebaad8d125f61784a7bd04f1aee33ad3389da32ae65a05b67e3d884",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/renderer-contracts.log",
+        "bytes": 105,
+        "sha256": "74c03fc16fde9a2dfeff03db0ec8f472a5a8dfed04e9e982a912b4b7f64faee3",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/occlusion_query-test.log",
+        "bytes": 539,
+        "sha256": "e4c2c3c0722925be059543251c8c7d691b312f7f63ddd3ddd3ff9fb48936e3d5",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/userservice-test.log",
+        "bytes": 426,
+        "sha256": "f21858fe5bede58dc53a6ff407b096a4b89e3f63956185fcaebdc86e65fb4ce2",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/image_transfer-configure.log",
+        "bytes": 446,
+        "sha256": "2295af433d31355fdbc4fd614d633c3d98ec6d0a14bc71932bcd2dcb3cc99053",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/graphics_diagnostics-build.log",
+        "bytes": 154,
+        "sha256": "300a87f284cce14e24e7fb79170c4b0aaadb6f137206513abed372d2d199d11e",
+        "compiler_errors": []
+      },
+      {
+        "path": "universal-upstream-20261105T183121Z-3304448-files/universal-upstream-20261105T183121Z-3304448/cpu-suite-logs/kernel_sanitizer-build.log",
+        "bytes": 347,
+        "sha256": "efca353a4fb1dd06ec1aa4527326e9e42d2901878375e217dc517adbd140c22b",
+        "compiler_errors": []
+      }
+    ],
+    "homebrew": "Original OpenOrbis masked/dynamic vector-load probe shared in artifact: four dispatches, 512 dword observations, 2-second fence timeout. Assembly and host C syntax pass. SDK linking and PS4 hardware execution unrun.",
+    "rejected_attempts": [
+      "Initial production compile referenced Identity, an IR opcode absent in this checkout; removed, then full build passed.",
+      "First external fixture link ran before the pass object completed and without required uuid/udev library search paths; corrected.",
+      "Expected-width fixture matched SMax32 as a vector suffix; corrected classifier to 32xN, then all classified widths passed.",
+      "First original-GCN compile sent trailing OrbShdr metadata to the decoder and trapped; changed fixture input to raw instruction bytes, then both full translations and SPIR-V validation passed.",
+      "Initial native counts used the bounded capture excerpt; final counts use the more complete console-tail (GoW 12/10 pool warnings and 3557 clamps).",
+      "Native summary first looked for console-excerpt at archive root; corrected capture path. Source publication first attempted an oversized JSON read; retried chunked reads and verified exact git tree before creating the branch."
+    ],
+    "handoff": "PASS success, checksum failure and download failure with boundaries stubbed; no games launched."
+  },
+  "artifact": {
+    "file": "/workspace/scratch/e77588f59ff3/buffer-bounds-evidence-20261105/buffer-access-bounds-evidence-20261105.zip",
+    "sha256": "d0c3d650c6a51f01fe5115e4c2acbcb637c662ba536c277104104db2add169be",
+    "bytes": 32036,
+    "files": 26,
+    "library_file_id": "libfile_4059b784ed788191a2ddfdcc4af3c8e4",
+    "url": "https://chatgpt.com/library?file_id=libfile_4059b784ed788191a2ddfdcc4af3c8e4&account_id=personal"
+  },
+  "next_run": {
+    "source_commit": "b5869b4a22e27a5e7d816544f0d3b2c4cfccf3b6",
+    "runner_commit": "8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa",
+    "wrapper_sha256": "c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f",
+    "capture_requested": false,
+    "command": "#!/usr/bin/env bash\nset -Eeuo pipefail\nSOURCE=b5869b4a22e27a5e7d816544f0d3b2c4cfccf3b6\nRUNNER=8dd2d4c0b17cdd62e592fea4c6e331809e8c8eaa\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-wave.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c86e5270f9d50086c6871dd8e4dba147a4385412b61ef5ddfbf07486ad69634f \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_FIRST_GAME=CUSA34384 bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\n",
+    "protections": "118s TERM +2s KILL, >=8GiB VRAM, conditional exact Ollama lease restoration, stop/defer on GPU loss or live child; no automatic input.",
+    "expectation": "Measure oversized clamps/readback ranges, same-screen FPS and visual progress in both games; preserve 47 observed DS completions without rejection. No predicted menu recovery is treated as a result."
+  },
+  "decision": {
+    "pr165": "NATIVE_POOL_CHURN_REDUCED_READY_FOR_REVIEW_NO_FPS_GAIN",
+    "pr166": "LOCALLY_VALIDATED_BOUNDS_FIX_NATIVE_PENDING",
+    "ds": "47_COMPLETED_NATIVE_DISPATCHES_ZERO_REJECTIONS",
+    "main_changed": false,
+    "main_commit": "bea8a87da2d84ca8b80e206fe0e5e3cde2f46f45",
+    "main_reason": "Retained stack has unresolved rendering regressions; whole ancestry is not promoted. Native cross-title, GPU/lifetime and visual requirements remain.",
+    "got_menu_or_gameplay": false,
+    "gow_menu_or_gameplay": false,
+    "audio_acceptance": "NOT_OBSERVED",
+    "native_exit_interpretation": "Both reached protected deadlines and required KILL: -9 is runner termination, not established spontaneous crash. Empty GPU-work ring at forced termination does not imply no GPU work."
+  }
+}

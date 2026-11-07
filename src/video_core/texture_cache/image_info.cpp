@@ -119,6 +119,9 @@ ImageInfo::ImageInfo(const AmdGpu::DepthBuffer& buffer, u32 num_slices, VAddr ht
                 ImageSizeLinearAligned(pitch, size.height, 8, num_samples);
             stencil_size *= resources.layers;
         }
+        stencil_mip =
+            MipInfo(stencil_size, pitch, props.is_tiled ? buffer.Height() : size.height, 0);
+        stencil_layers = resources.layers;
     }
 
     if (buffer.z_info.format != AmdGpu::DepthBuffer::ZFormat::Invalid) {
@@ -181,6 +184,25 @@ bool ImageInfo::IsCompatible(const ImageInfo& info) const {
            num_samples == info.num_samples && num_bits == info.num_bits;
 }
 
+bool ImageInfo::CanExpandColor1DToColor2DLayers(const ImageInfo& cached) const {
+    if (cached.type != AmdGpu::ImageType::Color1D || type != AmdGpu::ImageType::Color2D ||
+        cached.guest_address != guest_address || guest_address == 0 ||
+        cached.resources.layers != 1 || resources.layers <= cached.resources.layers ||
+        cached.resources.levels != 1 || resources.levels != 1 || cached.size != size ||
+        size.height != 1 || size.depth != 1 || cached.pitch != pitch ||
+        cached.num_bits != num_bits || cached.num_samples != num_samples ||
+        cached.pixel_format != pixel_format || cached.tile_mode != tile_mode ||
+        cached.array_mode != array_mode || cached.bank_swizzle != bank_swizzle ||
+        cached.alt_tile != alt_tile || cached.props.is_tiled != props.is_tiled ||
+        cached.props.is_pow2 != props.is_pow2 || cached.props.is_block || props.is_block ||
+        cached.props.is_depth || props.is_depth || cached.props.is_volume || props.is_volume ||
+        cached.props.has_stencil || props.has_stencil || cached.guest_size == 0 ||
+        guest_size <= cached.guest_size) {
+        return false;
+    }
+    return guest_size % resources.layers == 0 && guest_size / resources.layers == cached.guest_size;
+}
+
 void ImageInfo::UpdateSize() noexcept {
     ASSERT_MSG(array_mode != AmdGpu::ArrayMode::ArrayLinearGeneral,
                "Unhandled array mode: ArrayLinearGeneral");
@@ -205,6 +227,21 @@ void ImageInfo::UpdateSize() noexcept {
     ComputeImageSize(pitch, size.height, size.depth, resources.levels, resources.layers, num_bits,
                      num_samples, props.is_block, props.is_pow2, alt_tile, tile_mode, array_mode,
                      &guest_size, &micro_tiled_mips, mips_layout.data());
+}
+
+ImageInfo ImageInfo::StencilPlane() const {
+    ImageInfo info = *this;
+    info.props.is_depth = false;
+    info.props.has_stencil = false;
+    info.pixel_format = vk::Format::eS8Uint;
+    info.num_bits = 8;
+    info.resources.levels = 1;
+    info.resources.layers = stencil_layers;
+    info.guest_address = stencil_addr;
+    info.guest_size = stencil_size;
+    info.mips_layout = {};
+    info.mips_layout[0] = stencil_mip;
+    return info;
 }
 
 s32 ImageInfo::MipOf(const ImageInfo& info) const {
@@ -268,7 +305,8 @@ s32 ImageInfo::MipOf(const ImageInfo& info) const {
 }
 
 s32 ImageInfo::SliceOf(const ImageInfo& info, s32 mip) const {
-    if (!IsCompatible(info)) {
+    if (!IsCompatible(info) || mip < 0 || mip >= info.resources.levels ||
+        info.resources.layers == 0) {
         return -1;
     }
 
@@ -293,17 +331,22 @@ s32 ImageInfo::SliceOf(const ImageInfo& info, s32 mip) const {
 
     // Check for size alignment.
     const u32 slice_size = info.mips_layout[mip].size / info.resources.layers;
-    if (guest_size % slice_size != 0) {
+    if (slice_size == 0 || guest_size == 0 || guest_size % slice_size != 0) {
         return -1;
     }
 
     // Ensure that address is aligned too.
-    const auto addr_diff = guest_address - (info.guest_address + info.mips_layout[mip].offset);
-    if ((addr_diff % guest_size) != 0) {
+    const auto mip_base = info.guest_address + info.mips_layout[mip].offset;
+    if (guest_address < mip_base) {
+        return -1;
+    }
+    const auto addr_diff = guest_address - mip_base;
+    const auto mip_size = info.mips_layout[mip].size;
+    if (addr_diff % slice_size != 0 || addr_diff >= mip_size || guest_size > mip_size - addr_diff) {
         return -1;
     }
 
-    return addr_diff / guest_size;
+    return addr_diff / slice_size;
 }
 
 } // namespace VideoCore

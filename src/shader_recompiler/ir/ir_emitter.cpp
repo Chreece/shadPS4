@@ -198,6 +198,14 @@ U1 IREmitter::Condition(IR::Condition cond) {
         return LogicalNot(GetExec());
     case IR::Condition::Execnz:
         return GetExec();
+    case IR::Condition::WaveVccz:
+        return IEqual(BitwiseOr(GetVccLo(), GetVccHi()), Imm32(0));
+    case IR::Condition::WaveVccnz:
+        return INotEqual(BitwiseOr(GetVccLo(), GetVccHi()), Imm32(0));
+    case IR::Condition::WaveExecz:
+        return IEqual(Ballot(GetExec()), Imm64(u64{0}));
+    case IR::Condition::WaveExecnz:
+        return INotEqual(Ballot(GetExec()), Imm64(u64{0}));
     default:
         UNREACHABLE_MSG("");
     }
@@ -670,6 +678,20 @@ U32 IREmitter::DataConsume(const U32& gds_dw_offset) {
     return Inst<U32>(Opcode::DataConsume, gds_dw_offset, GetExec());
 }
 
+void IREmitter::OrderedGdsCheckpointRegister(const U32& site_pc, const U32& bank, const U32& index,
+                                             const U32& value, const U32& logical_slot,
+                                             const U32& lane) {
+    Inst(Opcode::OrderedGdsCheckpointRegister, site_pc, bank, index, value, logical_slot, lane);
+}
+
+U32 IREmitter::OrderedGdsCount(const U32& m0, const U32& address, const U64& guest_exec_mask,
+                               const U32& encoded_control, const U32& site_pc) {
+    // A GDS ordered operation observes wave creation order. Do not silently
+    // lower to a regular buffer atomic that has no such ordering guarantee.
+    return Inst<U32>(Opcode::OrderedGdsCount, m0, address, guest_exec_mask, encoded_control,
+                     site_pc);
+}
+
 U32 IREmitter::LaneId() {
     return Inst<U32>(Opcode::LaneId);
 }
@@ -690,8 +712,8 @@ U32 IREmitter::ShuffleXor(const U32& value, const U32& mask) {
     return Inst<U32>(Opcode::ShuffleXor, value, mask);
 }
 
-U32 IREmitter::ReadFirstLane(const U32& value) {
-    return Inst<U32>(Opcode::ReadFirstLane, value);
+U32 IREmitter::ReadFirstLane(const U32& value, const U1& exec) {
+    return Inst<U32>(Opcode::ReadFirstLane, value, exec);
 }
 
 U32 IREmitter::ReadLane(const U32& value, const U32& lane) {
@@ -2145,6 +2167,13 @@ Value IREmitter::ImageSampleImplicitLod(const Value& handle, const Value& coords
     return Inst(Opcode::ImageSampleImplicitLod, Flags{info}, handle, coords, bias, offset);
 }
 
+Value IREmitter::ImageSampleImplicitLodIndexed(const Value& handle, const Value& coords,
+                                               const F32& bias, const Value& offset,
+                                               const U32& gpu_texture_id, TextureInstInfo info) {
+    return Inst(Opcode::ImageSampleImplicitLodIndexed, Flags{info}, handle, coords, bias, offset,
+                gpu_texture_id);
+}
+
 Value IREmitter::ImageSampleExplicitLod(const Value& handle, const Value& coords, const F32& lod,
                                         const Value& offset, TextureInstInfo info) {
     return Inst(Opcode::ImageSampleExplicitLod, Flags{info}, handle, coords, lod, offset);
@@ -2187,6 +2216,14 @@ Value IREmitter::ImageGradient(const Value& handle, const Value& coords,
                                const Value& offset, const F32& lod_clamp, TextureInstInfo info) {
     return Inst(Opcode::ImageGradient, Flags{info}, handle, coords, derivatives_dx, derivatives_dy,
                 offset, lod_clamp);
+}
+
+Value IREmitter::ImageGradientIndexed(const Value& handle, const Value& coords,
+                                      const Value& derivatives_dx, const Value& derivatives_dy,
+                                      const Value& offset, const U32& gpu_texture_id,
+                                      TextureInstInfo info) {
+    return Inst(Opcode::ImageGradientIndexed, Flags{info}, handle, coords, derivatives_dx,
+                derivatives_dy, offset, gpu_texture_id);
 }
 
 Value IREmitter::ImageRead(const Value& handle, const Value& coords, const U32& lod,

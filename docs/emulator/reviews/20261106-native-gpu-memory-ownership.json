@@ -1,0 +1,130 @@
+{
+  "schema_version": 2,
+  "recorded_utc": "2026-11-06T18:00:50.506378+00:00",
+  "source_commit": "0d09d50af1687aa235ad0fd10a85fdc1b31c6934",
+  "runner_commit": "d43d3ec6ad736d55b88ff9551eee16fce20b4cd3",
+  "upstream_commit": "34a1d4dd92a1c853b4045ac264a9927a96b1c830",
+  "upstream_observed_during_review": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_policy": "Reuse the successful immutable native build for pending validation. This changes only the runner; no new emulator candidate or moving-ref checks. Integrate upstream when preparing the next emulator source candidate.",
+  "native_capture": {
+    "archive": "universal-two-games-20261106T172742Z-204322.tar.gz",
+    "sha256": "63441ed8360aaf94e25fb0cebe956ce31e342753cdf66f9d1f1b347de2583bd6",
+    "library_file_id": "libfile_d074cce6af188191bfa513b905cc1b5e",
+    "source_commit": "0d09d50af1687aa235ad0fd10a85fdc1b31c6934",
+    "runner_commit": "f473582ba4869eea3bccad4ac719e64a9947522e",
+    "binary_sha256": "3bc0e9811c983fe6784025b379c74be3e05ea14b10934462b861cb19c2d8310f",
+    "native_build": "PASS_NATIVE_BUILD_CPU_AND_STARTUP_TESTS_GPU_NOT_RUN",
+    "got": {
+      "elapsed_seconds": 84.962,
+      "exit_code": -11,
+      "exit_reason": "GPU_CONTEXT_LOST",
+      "owned_child_terminated": true,
+      "gpu_failure": "Failed to wait for master semaphore: ErrorDeviceLost\u001b[m"
+    },
+    "gow": "NOT_RUN_AFTER_GOT_GPU_FAILURE",
+    "free_vram_at_launch": 20630171648,
+    "usage_samples": 69,
+    "last_usage": [
+      {
+        "elapsed_seconds": 78.385,
+        "gpus": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 24,
+            "mem_busy_percent": 1,
+            "mem_info_vram_used": 10140311552
+          }
+        ]
+      },
+      {
+        "elapsed_seconds": 79.588,
+        "gpus": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 26,
+            "mem_busy_percent": 1,
+            "mem_info_vram_used": 10140495872
+          }
+        ]
+      },
+      {
+        "elapsed_seconds": 81.868,
+        "gpus": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 40,
+            "mem_busy_percent": 1,
+            "mem_info_vram_used": 9947516928
+          }
+        ]
+      },
+      {
+        "elapsed_seconds": 83.071,
+        "gpus": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 45,
+            "mem_busy_percent": 1,
+            "mem_info_vram_used": 24639049728
+          }
+        ]
+      },
+      {
+        "elapsed_seconds": 84.274,
+        "gpus": [
+          {
+            "card": "card0",
+            "gpu_busy_percent": 2,
+            "mem_busy_percent": 0,
+            "mem_info_vram_used": 24581898240
+          }
+        ]
+      }
+    ],
+    "visual_80s": "Loading-game overlay with 0:08 elapsed and 30 FPS; not gameplay or verified graphics progress.",
+    "driver_stderr": "radv/amdgpu: Not enough memory for command submission.",
+    "ollama_restore": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS",
+    "attribution": "Aggregate GPU usage jumps from 9947516928 to 24639049728 bytes between 81.868 and 83.071 seconds. No per-client GPU memory or during-run model list was captured. The allocating process and PR180 causality are unproven."
+  },
+  "changes": [
+    "Capture owned DRM client fields with per-device/client deduplication alongside global VRAM/GTT counters and a common monotonic clock. Keep units and resident/total/shared distinctions verbatim; do not sum shared allocations.",
+    "Observe local Ollama /api/ps on a background thread with short request timeouts. This is read-only and does not attribute the previous spike to Ollama.",
+    "Stop only the owned emulator process group when observed selected-GPU free VRAM falls below 8 GiB; mark the trial failed and end the remaining batch even if the process exits 0. Existing 118/120-second limits remain.",
+    "Reuse the exact native source and binary already built; run GoW first, then GoT. Preserve existing unload/restore leases, checksum/profile guards, diary and screenshots."
+  ],
+  "validation": {
+    "passed": [
+      "DRM_CLIENT_DEDUP_PER_DEVICE_AND_RAW_COUNTERS",
+      "UNUSED_GPU_LOW_MEMORY_DOES_NOT_STOP_SELECTED_GPUS",
+      "EIGHT_GIB_BOUNDARY",
+      "MISSING_CLIENT_METADATA_FALLS_BACK_TO_PREFLIGHT_CARD",
+      "EXITED_PROCESS_AND_MISSING_FDINFO_REMAIN_EXPLICIT",
+      "LOCAL_API_RELOAD_OBSERVED_WITH_ONLY_READ_REQUESTS",
+      "REAL_OWNED_CHILD_STOP_WITH_ZERO_EXIT_STILL_FAILS_MEMORY_TRIAL"
+    ],
+    "emulator_or_games_launched": false,
+    "handoff": "PASS existing-build dispatch with checksum success/failure and download failure; external boundaries substituted",
+    "python_syntax": "PASS",
+    "bash_syntax": "PASS",
+    "diff_check": "PASS",
+    "unchanged_release_build": "PASS ninja: no work to do; all 1060 src files match the build checkout",
+    "host_binary_sha256": "16346e579dd4537520170f38cda7065f1899480c03afe47907117b0dd0af3c4e",
+    "native_validation_of_new_runner": "PENDING"
+  },
+  "limits": [
+    "Sampling cannot prevent an allocation burst between observations.",
+    "Kernel fdinfo and model API visibility may be incomplete; errors and missing fields remain explicit.",
+    "The previous failure cannot establish either an emulator allocation regression or an external model reload.",
+    "GoT fill and native FPS improvement remain unverified."
+  ],
+  "policy": {
+    "new_emulation_behavior": false,
+    "emulator_source_changed": false,
+    "main_changed": false,
+    "runtime_upstream_checks": false,
+    "raw_guest_code_or_memory_published": false,
+    "services_restarted": false,
+    "automatic_game_input": false
+  },
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=0d09d50af1687aa235ad0fd10a85fdc1b31c6934\nRUNNER=d43d3ec6ad736d55b88ff9551eee16fce20b4cd3\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/native-memory.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n efecff6f0b356f2c27484a0b54ffc4ce471ca31603bc90b290febfdf1268e0bb \\\n \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 \\\nSHADPS4_TEST_CAPTURE_FIRST_SHADERS=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA34384 \\\n bash \"$run_dir/run.sh\" \"$SOURCE\" existing \"$RUNNER\"\nSHADPS4_TEST\n"
+}

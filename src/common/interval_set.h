@@ -69,6 +69,11 @@ public:
 
         auto [first, last] = OverlapRun(value.start, value.end);
         if (first != last) {
+            if constexpr (std::same_as<IV, Interval>) {
+                if (first->start <= value.start && first->end >= value.end) {
+                    return;
+                }
+            }
             if (first->start < value.start) {
                 out[m++] = first->SubRange(first->start, value.start);
             }

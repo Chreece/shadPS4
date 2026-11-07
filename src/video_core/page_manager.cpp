@@ -9,11 +9,13 @@
 #include "common/div_ceil.h"
 #include "common/error.h"
 #include "common/multi_level_page_table.h"
+#include "common/performance_diagnostics.h"
 #include "common/signal_context.h"
 #include "common/thread.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "core/signals.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/page_manager.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -40,11 +42,11 @@ namespace VideoCore {
 struct PageManager::Impl {
     struct PageState {
         u8 num_write_watchers;
-        u8 num_read_watchers;
+        u32 num_read_watchers;
 
         Core::MemoryPermission WritePerm() const noexcept {
-            return num_write_watchers == 0 ? Core::MemoryPermission::Write
-                                           : Core::MemoryPermission::None;
+            return num_write_watchers == 0 && num_read_watchers == 0 ? Core::MemoryPermission::Write
+                                                                     : Core::MemoryPermission::None;
         }
 
         Core::MemoryPermission ReadPerm() const noexcept {
@@ -57,7 +59,7 @@ struct PageManager::Impl {
         }
 
         template <bool is_read>
-        u8 GetPage() const {
+        u32 GetPage() const {
             if constexpr (is_read) {
                 return num_read_watchers;
             } else {
@@ -70,7 +72,8 @@ struct PageManager::Impl {
                                                 bool update_read = false) {
             if (update_read) {
                 if (read_op == PageOp::Track) {
-                    ASSERT_MSG(num_read_watchers == 0, "Too many watchers");
+                    ASSERT_MSG(num_read_watchers < std::numeric_limits<u32>::max(),
+                               "Too many watchers");
                 } else if (read_op == PageOp::Untrack) {
                     ASSERT_MSG(num_read_watchers > 0, "Not enough watchers");
                 }
@@ -107,6 +110,22 @@ struct PageManager::Impl {
 
     virtual void Protect(VAddr address, size_t size, Core::MemoryPermission perms) = 0;
 
+    void ProtectRange(VAddr address, u64 size, Core::MemoryPermission perms, bool buffer,
+                      PageOp write_op, PageOp read_op) {
+        using GraphicsDiagnostics::Event;
+        auto event = buffer ? Event::BufferProtectNone : Event::ImageProtectNone;
+        if (True(perms & Core::MemoryPermission::Write)) {
+            event = buffer ? Event::BufferProtectWrite : Event::ImageProtectWrite;
+        } else if (True(perms & Core::MemoryPermission::Read)) {
+            event = buffer ? Event::BufferProtectRead : Event::ImageProtectRead;
+        }
+        GraphicsDiagnostics::Emit(event, "address=%#llx bytes=%llu write-op=%d read-op=%d",
+                                  static_cast<unsigned long long>(address),
+                                  static_cast<unsigned long long>(size), static_cast<int>(write_op),
+                                  static_cast<int>(read_op));
+        Protect(address, size, perms);
+    }
+
     void EnsurePages(VAddr begin, VAddr end) {
         end = std::min(end, VAddr{1} << ADDRESS_BITS) - 1;
         const size_t start_page = begin >> PM_PAGE_BITS;
@@ -115,7 +134,7 @@ struct PageManager::Impl {
         locks.reserve(start_page, end_page);
     }
 
-    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) {
+    void UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op, PageOp read_op) {
         const u64 page_start = addr >> PM_PAGE_BITS;
         const u64 page_end = Common::DivCeil(addr + size, PM_PAGE_SIZE);
 
@@ -126,7 +145,8 @@ struct PageManager::Impl {
 
         const auto release_pending = [&] {
             if (range_pages > 0) {
-                Protect(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms);
+                ProtectRange(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms,
+                             false, write_op, read_op);
                 range_pages = 0;
                 potential_pages = 0;
             }
@@ -156,7 +176,8 @@ struct PageManager::Impl {
             }
 
             // Apply the change to the page state
-            const auto new_perms = state->Update(write_op);
+            const auto new_perms =
+                state->Update(write_op, write_op != PageOp::None, read_op, read_op != PageOp::None);
             if (new_perms != perms) [[unlikely]] {
                 // If the protection changed add pending (un)protect action
                 release_pending();
@@ -201,7 +222,8 @@ struct PageManager::Impl {
 
         const auto release_pending = [&] {
             if (range_pages > 0) {
-                Protect(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms);
+                ProtectRange(range_begin << PM_PAGE_BITS, range_pages << PM_PAGE_BITS, perms, true,
+                             write_op, read_op);
                 range_pages = 0;
                 potential_pages = 0;
             }
@@ -423,6 +445,8 @@ struct SignalImpl : public PageManager::Impl {
     }
 
     void Protect(VAddr address, size_t size, Core::MemoryPermission perms) override {
+        Common::PerformanceDiagnostics::Scope perf{
+            Common::PerformanceDiagnostics::Region::PageProtect, size};
         RENDERER_TRACE;
         auto* memory = Core::Memory::Instance();
         auto& impl = memory->GetAddressSpace();
@@ -448,13 +472,8 @@ struct SignalImpl : public PageManager::Impl {
 PageManager::PageManager(Vulkan::Rasterizer* rasterizer_) {
 #ifdef __linux__
     if (EmulatorSettings.IsUserfaultfdTracking()) {
-        try {
-            impl = std::make_unique<UffdImpl>(rasterizer_);
-            LOG_INFO(Config, "Memory tracking method: userfaultfd");
-            return;
-        } catch (const std::runtime_error& e) {
-            // if uffd is unsupported, falls back to SignalImpl
-        }
+        LOG_INFO(Config, "Automatic GPU coherence requires read-fault tracking; "
+                         "write-only userfaultfd tracking is insufficient");
     }
     LOG_INFO(Config, "Memory tracking method: signals");
 #endif
@@ -471,8 +490,8 @@ void PageManager::OnGpuUnmap(VAddr address, size_t size) {
     impl->OnUnmap(address, size);
 }
 
-void PageManager::UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op) const {
-    impl->UpdatePageWatchers(addr, size, write_op);
+void PageManager::UpdatePageWatchers(VAddr addr, u64 size, PageOp write_op, PageOp read_op) const {
+    impl->UpdatePageWatchers(addr, size, write_op, read_op);
 }
 
 void PageManager::UpdatePageWatchersForRegion(VAddr base_addr, const Bounds& bounds,

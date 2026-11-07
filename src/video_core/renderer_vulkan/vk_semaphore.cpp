@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2020 yuzu Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
-#include <limits>
+#include <chrono>
+#include "video_core/gpu_work_diagnostics.h"
+#include "video_core/graphics_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 
@@ -9,7 +11,7 @@
 
 namespace Vulkan {
 
-constexpr u64 WAIT_TIMEOUT = std::numeric_limits<u64>::max();
+constexpr u64 WAIT_TIMEOUT = 1'000'000'000;
 
 Semaphore::Semaphore(const Instance& instance_) : instance{instance_} {
     const vk::StructureChain semaphore_chain = {
@@ -62,7 +64,42 @@ void Semaphore::Wait(u64 tick) {
         .pValues = &tick,
     };
 
-    while (instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT) != vk::Result::eSuccess) {
+    const auto began = std::chrono::steady_clock::now();
+    unsigned long long timeouts = 0;
+    for (;;) {
+        const auto result = instance.GetDevice().waitSemaphores(&wait_info, WAIT_TIMEOUT);
+        if (result != vk::Result::eSuccess && result != vk::Result::eTimeout) {
+            if (wait_diagnostic) {
+                wait_diagnostic(tick);
+            }
+            VideoCore::GpuWorkDiagnostics::Dump("wait-error", this, KnownGpuTick(), tick);
+            UNREACHABLE_MSG("Failed to wait for master semaphore: {}", vk::to_string(result));
+        }
+        const auto elapsed =
+            static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                std::chrono::steady_clock::now() - began)
+                                                .count());
+        if (result == vk::Result::eTimeout) {
+            Refresh();
+            ++timeouts;
+            if (timeouts == 1) {
+                if (wait_diagnostic) {
+                    wait_diagnostic(tick);
+                }
+                VideoCore::GpuWorkDiagnostics::Dump("wait-timeout", this, KnownGpuTick(), tick);
+            }
+        }
+        if (result == vk::Result::eTimeout || elapsed >= 1000) {
+            VideoCore::GraphicsDiagnostics::Emit(
+                VideoCore::GraphicsDiagnostics::Event::GpuWait,
+                "semaphore=%p requested=%llu known=%llu elapsed_ms=%llu timeouts=%llu complete=%d",
+                static_cast<void*>(this), static_cast<unsigned long long>(tick),
+                static_cast<unsigned long long>(KnownGpuTick()), elapsed, timeouts,
+                result == vk::Result::eSuccess);
+        }
+        if (result == vk::Result::eSuccess) {
+            break;
+        }
     }
     Refresh();
 }

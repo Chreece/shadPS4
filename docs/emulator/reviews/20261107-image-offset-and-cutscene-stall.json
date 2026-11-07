@@ -1,0 +1,669 @@
+{
+  "timestamp_utc": "2026-11-07T13:51:36.380549+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "pr": 195,
+  "archive": "universal-two-games-20261107T131129Z-3837812.tar.gz",
+  "archive_sha256": "138a999f00bbefc92112c533a52c8eb0974702f88b82be76a25cb09154609e9f",
+  "games": {
+    "GoW": {
+      "result": "KERNEL_GPU_TIMEOUT_DURING_CAPTURE",
+      "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+      "runner_commit": "95c999a885a7f295df8811cf194bfdbf6a42300d",
+      "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+      "vram_free_at_launch": 20579532800,
+      "kernel_gpu_failures": [
+        {
+          "kind": "RING_TIMEOUT",
+          "count": 2,
+          "first_monotonic": 511601.943774,
+          "last_monotonic": 511612.179651,
+          "first": "[511601.943774] homeserver kernel: amdgpu 0000:03:00.0: amdgpu: ring gfx_0.0.0 timeout, but soft recovered",
+          "last": "[511612.179651] homeserver kernel: amdgpu 0000:03:00.0: amdgpu: ring gfx_0.0.0 timeout, but soft recovered"
+        }
+      ],
+      "stop_remaining_tests": true,
+      "native": {
+        "elapsed_seconds": 120.831,
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "trigger_reason": "TEST_118S_DURATION_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        },
+        "full_console_bytes": 16839519,
+        "gpu_work_entries": 16384,
+        "gpu_work_bytes": 2314079,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 9104583,
+        "validation_layer_active": false
+      },
+      "warning_error_groups": {
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=5 is not fully supported (vk_format=R32G32B32Sint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 5,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx",
+            "Unable to read SCE Library Version segment of module libSceNpToolkit2.prx"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 185,
+          "examples": [
+            "Linker: Stub resolved tZ2yplY8MBY as sceKernelGetPageTableStats (lib: libkernel, mod: libkernel)",
+            "Linker: Stub resolved R9lA82OraNs as sceAppContentInitialize (lib: dlcldr, mod: dlcldr)",
+            "Linker: Stub resolved +YX0z-GUSNw as sceCoredumpAttachMemoryRegion (lib: libSceCoredump, mod: libkernel)",
+            "Linker: Stub resolved lOLgyPyECpM as Unknown !!! (lib: dlcldr, mod: dlcldr)"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Warning memory.cpp sceKernelSetPrtAperture": {
+          "count": 1,
+          "examples": [
+            "PRT aperture id = 0, address = 0x1000000000, size = 0x7600000000 is set but not used"
+          ]
+        },
+        "Warning memory.cpp sceKernelGetDirectMemoryType": {
+          "count": 22,
+          "examples": [
+            "called, direct memory addr = 0x400000",
+            "called, direct memory addr = 0xad988000",
+            "called, direct memory addr = 0xb7240000",
+            "called, direct memory addr = 0xc4704000"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 4,
+          "examples": [
+            "Stub: sceKernelGetPageTableStats (nid: tZ2yplY8MBY) called, returning zero to 0x48306f",
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0x4858cc",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0x4858e9",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0x4858fa"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0x483ad0, stack_size = 0x10000, common = 0x0"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error np_tus.cpp sceNpTusSetThreadParam": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning np_manager.cpp sceNpGetNpId": {
+          "count": 1,
+          "examples": [
+            "sceNpGetNpId: SIGNED_OUT (user_id=1000 shadnet_enabled=false signed_in=false)"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error file_system.cpp open": {
+          "count": 11,
+          "examples": [
+            "Opening path /app0/exec/wad/orbis_le/sys_files.texpack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/sys_files.lodpack.toc failed, file does not exist",
+            "Opening path /app0/exec/sound/orbis_le/sys_files.audiopack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/mid_chase100_intro.wypsm failed, file does not exist"
+          ]
+        },
+        "Warning liverpool.cpp ProcessCompute": {
+          "count": 1764,
+          "examples": [
+            "Encountered compute SetQueueReg: vqid = 4, reg_offset = 0xb"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 224,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning vk_pipeline_cache.cpp CompileModule": {
+          "count": 11,
+          "examples": [
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x4158, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x41d4, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preflight: static site=0x4158, control=0x1300, count=1 (execution remains gated)",
+            "Ordered GDS preflight: static site=0x41d4, control=0x300, count=2 (execution remains gated)"
+          ]
+        },
+        "Warning vk_rasterizer.cpp DispatchOriginalGcnOrderedCaptureImpl": {
+          "count": 3944,
+          "examples": [
+            "PR117 original guest GCN GPU first pass completed: epoch=1, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=2, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=3, waves=11, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=4, waves=11, sites=2; captured phase ready for ordered resolution"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum.",
+            "Coercing copy source layers 4 and destination layers 5 to minimum."
+          ]
+        }
+      },
+      "screenshots": {
+        "80": "Kratos visible on snow path, low FPS",
+        "110": "Screenshot missing; process snapshot exists"
+      },
+      "timeout_interpretation": "Two in-interval graphics-ring timeouts, soft recovered by kernel. No recorded emulator assertion or native crash signal. Owned process eventually stopped at the test timer. The old completed-submission counter was not refreshed after its wait, so it does not identify the first stalled submission.",
+      "trace_windows": [
+        {
+          "reported_completed_stale": 30634,
+          "requested": 30637,
+          "first_recorded_tick": 30635
+        },
+        {
+          "reported_completed_stale": 30671,
+          "requested": 30674
+        }
+      ],
+      "ordered_gds_attribution": "Neither blamed nor exonerated. Shader dbaa6ae4 appears near the readback wait; the trace records submission, not GPU completion. An earlier claim that the stall precedes ordered-GDS was too strong and has been corrected."
+    },
+    "GoT": {
+      "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "source_commit": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+      "runner_commit": "95c999a885a7f295df8811cf194bfdbf6a42300d",
+      "binary_sha256": "fbbc4d43773b2c9fb12834c12f4cb50a7dbb2e4f54746f90b37d962f03da6d93",
+      "vram_free_at_launch": 20591624192,
+      "kernel_gpu_failures": [],
+      "stop_remaining_tests": false,
+      "native": {
+        "elapsed_seconds": 119.308,
+        "exit_code": 0,
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "trigger_reason": "TEST_118S_DURATION_LIMIT",
+        "owned_child_terminated": true,
+        "gpu_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        },
+        "full_console_bytes": 7756055,
+        "gpu_work_entries": 16384,
+        "gpu_work_bytes": 2179672,
+        "gpu_work_truncated": false,
+        "gpu_work_overwritten": 5608550,
+        "validation_layer_active": false
+      },
+      "warning_error_groups": {
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=5 is not fully supported (vk_format=R32G32B32Sint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 4,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx",
+            "Unable to read SCE Library Version segment of module libSceNpToolkit2.prx"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 315,
+          "examples": [
+            "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved ueega6v3GUw as sceRtcSetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved M1TvFst-jrM as sceRtcConvertUtcToLocalTime (lib: libSceRtc, mod: libSceRtc)"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Error file_system.cpp sceKernelStat": {
+          "count": 1,
+          "examples": [
+            "error = 2"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceParamGetString": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Error gamelivestreaming.cpp sceGameLiveStreamingInitialize": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 9,
+          "examples": [
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0xc95520",
+            "Stub: sceNpGameIntentInitialize (nid: m87BHxt-H60) called, returning zero to 0xc9655e"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error netctl.cpp sceNetCtlInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 2,
+          "examples": [
+            "(DUMMY) called poolSize = 262144",
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Error np_manager.cpp sceNpRegisterStateCallbackForToolkit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error gnmdriver.cpp sceGnmSetWaveLimitMultipliers": {
+          "count": 3125,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error audioout.cpp sceAudioOutMasteringInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error http2.cpp sceHttp2Init": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Error http.cpp sceHttpsLoadCert": {
+          "count": 1,
+          "examples": [
+            "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+          ]
+        },
+        "Error np_manager.cpp sceNpSetContentRestriction": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error audioout.cpp sceAudioOutMasteringSetParam": {
+          "count": 5,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning videodec2.cpp sceVideodec2AllocateComputeQueue": {
+          "count": 1,
+          "examples": [
+            "called"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 600,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning emit_spirv_image.cpp AddOffset": {
+          "count": 3,
+          "examples": [
+            "Runtime offset provided to unsupported image sample instruction"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 8,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum.",
+            "Coercing copy source layers 4 and destination layers 5 to minimum."
+          ]
+        },
+        "Warning lower_buffer_format_to_raw.cpp LowerBufferFormatInst": {
+          "count": 1,
+          "examples": [
+            "Skipping lowering for null buffer sharp"
+          ]
+        },
+        "Warning vk_rasterizer.cpp BindTextures": {
+          "count": 6,
+          "examples": [
+            "Indexed sampler table: shader=0xb5c898c7 slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0",
+            "Indexed sampler table: shader=0x7eaf40ad slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0"
+          ]
+        },
+        "Warning vk_resource_pool.cpp Commit": {
+          "count": 4,
+          "examples": [
+            "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+            "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024",
+            "Descriptor pool underprovisioned: type=SampledImage required=251161 pool=251146",
+            "Descriptor pool underprovisioned: type=Sampler required=111627 pool=111620"
+          ]
+        },
+        "Warning vk_graphics_pipeline.cpp GraphicsPipeline": {
+          "count": 23,
+          "examples": [
+            "Unimplemented scaled min/max blend: attachment=5 format=0 color-op=4 color-src=6 color-dst=1 alpha-op=4 alpha-src=6 alpha-dst=1"
+          ]
+        }
+      },
+      "screenshots": {
+        "8": "Loading",
+        "25": "PlayStation introduction",
+        "80": "Dark/incomplete gameplay with upper-left artifact",
+        "110": "Dark/incomplete gameplay with upper-left artifact; no visual recovery"
+      },
+      "menu_captured": false,
+      "sampling_offset_shaders": [
+        "fs 18c40c0e",
+        "fs 7901b9d8",
+        "cs cfd30fa8"
+      ],
+      "maintenance8_enabled_in_native_log": true,
+      "corner_interpretation": "Changing upper-left patch remains a clue, not proof that missing world geometry is compressed there. Small render-pass records mostly describe 32x32 atlas tiles in 2048x2048 surfaces. The top-right FPS overlay is separate."
+    }
+  },
+  "native_result": "GOT_VISUAL_FAILURE_AND_GOW_KERNEL_GFX_TIMEOUT",
+  "graphics_verified": false,
+  "menu_restored": false,
+  "cutscene_fixed": false,
+  "performance_improvement_verified": false,
+  "all_bugs_fixed": false,
+  "candidate_source_commit": "e23b58daa11915a7be14136e6cb641f5de228c36",
+  "candidate_runner_commit": "e23b58daa11915a7be14136e6cb641f5de228c36",
+  "upstream_commit": "2bd672ea5c188b99d1080029a57ba0926273381c",
+  "upstream_rebase": "Already up to date before changes; resolved twice during preparation.",
+  "preserved_fixes": "All ancestors of PR192 retained, including buffer fault handoff, stencil ownership, image subresource mapping, CPU/SRT/descriptor fixes and native memory/termination guards. No rollback or game/shader/vendor exception.",
+  "source_corrections": [
+    "Preserve non-constant sample offsets when enabled maintenance8, shaderImageGatherExtended and min/max texel offset cover signed six-bit GCN offsets.",
+    "Emit ImageGatherExtended capability; keep constant offsets, explicit LOD, derivatives and coordinate handling. Unsupported hosts retain the existing warning/limitation.",
+    "Increment compiled shader binary version 32 to 33; old dropped-offset shaders cannot be reused.",
+    "Refresh semaphore completion after timeout before reporting the first wait; old values could misidentify the stalled submission."
+  ],
+  "diagnostics": {
+    "activation": "SHADPS4_GPU_PROGRESS=1, graphics diagnostics on, performance profiling off; host query reset and timestamp-capable graphics queue required.",
+    "markers": "ALL_COMMANDS timestamps before recorded GPU work and at session ends, including ordered-GDS dispatch. Shader/texture metadata records do not get timestamps.",
+    "interpretation": "before-completed-seq is the greatest available before-command marker; first-unavailable-seq is the next unavailable marker after it. The command at the completed marker can still be the stalled command. Sequence range can contain multiple commands; timestamps perturb scheduling and do not prove a shader is faulty.",
+    "bounds": "Eight pools of 4096 queries; only completed pools from earlier submission ticks can be reset. If full, skip markers and report count; never skip guest work. Query results use availability without WAIT.",
+    "shader_capture": "Prefer shaders bound around observed GPU progress range, then validation/sample-offset shaders, before legacy provenance/first-wait lists. Preserve capped evidence limits.",
+    "screenshots_seconds": [
+      8,
+      25,
+      45,
+      60,
+      80,
+      95,
+      110
+    ],
+    "fps": "Diagnostic mode perturbs GPU scheduling; do not use it as a performance benchmark."
+  },
+  "validation": {
+    "full_gcc14_release_build": "PASS",
+    "pinned_build_sha256": "0ffc853abf69d1d6444e041a2d73d494214acdfb9101287e49b99481796711b3",
+    "pinned_build_environment": "GCC14, CMake4.4.4, Ninja1.13.2, rootless local dependencies including libuuid; no source dependency changes.",
+    "production_shader_translation": {
+      "production_frontend_and_spirv": {
+        "feature_off": {
+          "samples": 1,
+          "offsets": 0,
+          "capability": 0
+        },
+        "feature_on": {
+          "samples": 1,
+          "offsets": 1,
+          "capability": 1
+        }
+      },
+      "spirv_validation_feature_off": "PASS",
+      "spirv_validation_feature_on": "PASS",
+      "spirv_validation_missing_feature": "REJECTED_AS_EXPECTED_10213",
+      "probe_shader_sha256": "6da6342d0f17e59c0d3d7498bae4a128f8e36bbaf5ee22c27a67ca8c10157c07",
+      "physical_PS4": "NOT_RUN",
+      "native_games": "NOT_RUN"
+    },
+    "production_progress_mock_vulkan": {
+      "production_extracted": true,
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ],
+      "pool_capacity": 32768,
+      "safe_reuse": true,
+      "no_wait_result_flag": true,
+      "requested_tick_filter": true,
+      "out_of_order_availability": true,
+      "device_errors": true,
+      "feature_disabled": true
+    },
+    "production_semaphore_mock_vulkan": {
+      "old_stale_counter_reproduced": true,
+      "live_counter_refresh": "PASS",
+      "sanitizers": [
+        "ASan",
+        "UBSan"
+      ]
+    },
+    "shader_collection": {
+      "checks": 7,
+      "result": "PASS",
+      "first_recorded_wait_tick": 30635
+    },
+    "retained_ctests": 31,
+    "retained_renderer_contracts": 7,
+    "production_srt_checks": 10418,
+    "universal_cpu_regressions": "PASS",
+    "bash_python_diff_checks": "PASS",
+    "openorbis_probe": "Original runtime IMAGE_SAMPLE_L_O homebrew, seven offset cases including signed six-bit extrema. Strict C11 syntax and actual emulator GCN/SPIR-V translation pass. SDK link and physical PS4 execution NOT RUN.",
+    "native_games_run_here": false,
+    "vulkan_icd_available_here": false,
+    "sanitizer_limit": "ASan/UBSan pass; LeakSanitizer unavailable under this host ptrace, detect_leaks=0."
+  },
+  "remaining": [
+    "GoT menu restoration, changing upper-left gameplay patch and missing scene surfaces remain unverified.",
+    "GoW exact stalled GPU operation and cutscene completion remain unresolved.",
+    "Low FPS remains unresolved; no performance improvement is claimed.",
+    "Scaled MIN/MAX blending warnings on active GoT attachment 5 remain unresolved, not dismissed as unused.",
+    "Descriptor provenance, queue-register/service implementation gaps, missing dumped resources and retained depth/stencil limitations remain open; full warning/error groups above are retained.",
+    "The previous archive had a separate memory-headroom failure; this latest GoW failure has ring timeouts and no VRAM guard trigger. Do not conflate them."
+  ],
+  "next_run": "Build the changed emulator source. GoT first: manually reach the menu and stay there for the capture. GoW second: manually reach the failing cutscene. Maximum 120 seconds per game. No automatic input. One sudo authentication, then noninteractive privileged reads only. Sunshine and installed emulator untouched; retain 8 GiB headroom and exact Ollama lease guards.",
+  "runner_sha256": "3cb7848a439bf9d2146dfa39c65889ccf342220f3725d82312f475ef05785c05",
+  "graphics_runner_sha256": "80f3dcd7ec56fbaaf36603259b9a3c6a3fcecd29f41fb662f7a9dea77785a0c8",
+  "observer_sha256": "c2a8708c327b96ab7b6641f19f6a10ef891bfc7475ff1eae68bd8810af32f87b",
+  "references": [
+    "https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_maintenance8.html",
+    "https://docs.vulkan.org/refpages/latest/refpages/source/RuntimeSpirv.html",
+    "https://docs.vulkan.org/refpages/latest/refpages/source/vkCmdWriteTimestamp2.html"
+  ],
+  "next_command": "(\n  set -euo pipefail\n  P=e23b58daa11915a7be14136e6cb641f5de228c36\n  S=\"$HOME/projects/shadps4/scripts/shadps4-universal-two-game-check.sh\"\n  mkdir -p \"$(dirname \"$S\")\"\n  T=\"$S.download.$$\"\n  trap 'rm -f -- \"$T\"' EXIT\n  curl --ipv4 --fail --location --retry 3 \\\n    \"https://raw.githubusercontent.com/Chreece/shadPS4/$P/scripts/shadps4-universal-two-game-check.sh\" -o \"$T\"\n  printf '%s  %s\\n' \\\n    3cb7848a439bf9d2146dfa39c65889ccf342220f3725d82312f475ef05785c05 \"$T\" | sha256sum --check -\n  mv -- \"$T\" \"$S\"\n  SHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  SHADPS4_TEST_GPU_TRACE=1 \\\n  SHADPS4_GPU_PROGRESS=1 \\\n  SHADPS4_KERNEL_JOURNAL_SUDO=1 \\\n    bash \"$S\" \"$P\" build\n)\n"
+}

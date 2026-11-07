@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <functional>
 #include <thread>
 #include <queue>
 #include "common/types.h"
@@ -46,11 +47,16 @@ public:
     /// Waits for a tick to be hit on the GPU
     void Wait(u64 tick);
 
+    void SetWaitDiagnostic(std::function<void(u64)> diagnostic) {
+        wait_diagnostic = std::move(diagnostic);
+    }
+
 protected:
     const Instance& instance;
     vk::UniqueSemaphore semaphore;    ///< Timeline semaphore.
     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
     std::atomic<u64> current_tick{1}; ///< Current logical tick.
+    std::function<void(u64)> wait_diagnostic;
 };
 
 } // namespace Vulkan

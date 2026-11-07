@@ -1,0 +1,59 @@
+{
+  "schema_version": 2,
+  "record_id": "gow-proven-reference-20261028T185515Z-496786-reviewed",
+  "recorded_at": "2026-10-28",
+  "scope": "Shared emulator experiment records; reference-discovery tooling, no emulator semantic change",
+  "archive": "gow-proven-reference-20261028T185515Z-496786.tar.gz",
+  "archive_sha256": "ff6fe1f4aa176e729215a8ad26e26c5bcc42128ee773d3248f9e8b7e0447feb0",
+  "game_id": "CUSA34384",
+  "tested_games": [],
+  "game_launched": false,
+  "gameplay": "NOT_RUN",
+  "stage": "PREFLIGHT",
+  "exit_code": 1,
+  "expected_reference_sha256": "23203faed6bcfbc17e3129c489e16face8fa64266a94275e730e559ca518cb8e",
+  "recorded_reference_path_state": "missing",
+  "search_result": {
+    "status": "SEARCH_INCOMPLETE_NO_VERIFIED_MATCH",
+    "selected_path": null,
+    "entries": 512,
+    "not_x86_64_elf": 385,
+    "different_elf_binary": 125,
+    "unreadable_entries": 2,
+    "distinct_hashed_contents": 106,
+    "hash_bytes": 10453939104,
+    "directories": 12718,
+    "directory_errors": 0,
+    "elapsed_seconds": 17.099,
+    "limits_hit": ["candidate_limit"]
+  },
+  "finding": "The previous resolver counted every inspected filename against MAX_CANDIDATES=512, including 385 non-ELF files. Its directory test lowercased names against a set containing mixed-case CMakeFiles, so that exclusion did not work. Build stamp files, CMake text and icons exhausted the candidate budget. The ELF test also admitted shared libraries. The scan ended during GhostOfTsushima traversal; the complete declared project scope was not searched.",
+  "interpretation_limit": "No exact reference was located in the examined entries. This is not proof that the executable is absent from the remaining project locations or backups. An absent old pathname is not proof that identical bytes were deleted everywhere.",
+  "original_source_unchanged": true,
+  "protected_hashes_unchanged": {
+    "historical_protected_gameplay_8de2106a": true,
+    "pr94_65fafc43": true,
+    "pr91_46195c52": true,
+    "readconst_candidate_730b87e6": true
+  },
+  "correction": {
+    "runner_commit": "b8f6849d51516a4190e97370b1d2959490d691cf",
+    "runner_path": "scripts/gow_reference_elf_resume_20261028.py",
+    "runner_blob": "1967cb8183cc79c9cdfb4020a3f993e43dbfc560",
+    "runner_sha256": "99fe0f1858951c47ea4dc5ecdacc3654cb04115c10eb7baa75f4556dcb27dc2d",
+    "branch": "fix/reference-checksum-discovery-20261028",
+    "behavior": "Reject non-program files using complete ELF64 header and executable load-segment checks before consuming program/hash budgets. Casefold all directory exclusions. Consider renamed loose backups regardless of filename. Prioritize backup/preserved directories, deduplicate unchanged hardlink identities, use descriptor-relative no-follow reads, and refuse files changing during hashing. Keep explicit time/bytes/directory/file/program limits and distinguish incomplete scans from no match within the declared loose-file scope.",
+    "scope_limit": "Still project-only, with explicit data/build-dependency exclusions; no compressed archive extraction, symlink traversal, chmod or replacement of files. Exact checksum is unchanged. A matching file without execute permission is reported but not modified or launched.",
+    "retained_launcher": "Hash-pinned original reference runner and previous hook retain shared locks, protected-file checks, private profile, 118-second game observation plus cleanup, no automated inputs, conditional Ollama policy and shared local diary. Only a runnable exact checksum match reaches the inherited reference launch. No fallback to a different executable."
+  },
+  "local_validation": {
+    "result": "24 tests PASS",
+    "actual_cutoff_regression": "Ran the original resolver against a real temporary filesystem containing 700 misleading filenames and a later actual ELF executable. Old resolver stopped at exactly 512 entries without a match. Corrected resolver ignored the non-program files, hashed one actual program and found the expected checksum.",
+    "file_checks": "Renamed backup discovery; case-insensitive CMakeFiles pruning; wrong digest refusal; file/directory symlink refusal; shared library and relocatable-object rejection; malformed program-header rejection; hardlink deduplication; no mutation of non-executable exact bytes; byte/time/program/directory/file limits; changed-during-hash refusal; explicit private-data exclusions; empty/FIFO handling; unchanged protected bytes/mode.",
+    "hook_checks": "The actual previous install_resolution hook was exercised with a modeled parent launch recorder: an exact match passed to the launch gate; a wrong match never reached it. No game or GPU execution was performed by these tests.",
+    "pin_checks": "Original parent and prior resolver SHA256 values are unchanged; historical expected checksum unchanged; published Git blob equals locally tested bytes.",
+    "native_host_search": "PENDING",
+    "gameplay": "NOT_RUN"
+  },
+  "decision": "REJECT_INCOMPLETE_SEARCH_AS_PROOF_OF_ABSENCE; FIX_TOOLING_WITHOUT_NEW_RENDERER_PATCH; DO_NOT_SUBSTITUTE_ANOTHER_EXECUTABLE_OR_CLAIM_GAMEPLAY_PROGRESS"
+}

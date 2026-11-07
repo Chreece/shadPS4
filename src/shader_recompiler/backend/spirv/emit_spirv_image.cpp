@@ -108,13 +108,18 @@ struct ImageOperands {
         }
 
         if (op_mask != spv::ImageOperandsMask::ConstOffset) {
-            if (!can_use_runtime_offsets) {
+            if (!can_use_runtime_offsets && !ctx.profile.supports_image_sample_runtime_offset) {
                 LOG_WARNING(Render_Vulkan,
                             "Runtime offset provided to unsupported image sample instruction");
                 return;
             }
             op_mask = spv::ImageOperandsMask::Offset;
             value = ctx.Def(offset);
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
+            if (!can_use_runtime_offsets) {
+                LOG_INFO(Render_Vulkan, "Emitting runtime image sample offset: shader={:#x}",
+                         ctx.info.pgm_hash);
+            }
         }
 
         value = PadImageOperand<false>(ctx, value, image_type);
@@ -158,6 +163,232 @@ Id EmitImageSampleImplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id c
     const Id sample = ctx.OpImageSampleImplicitLod(result_type, sampled_image, fixed_coords,
                                                    operands.mask, operands.operands);
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+
+static Id LoadIndexedGuestSampler(EmitContext& ctx, u32 handle, Id bounded, u32 expected_count,
+                                  bool is_integer) {
+    const u32 sampler_index =
+        is_integer ? ctx.info.samplers[handle >> 16].integer_binding : handle >> 16;
+    ASSERT(sampler_index < ctx.samplers.size());
+    const u32 sampler_count = ctx.sampler_array_sizes[sampler_index];
+    if (sampler_count == 1u) {
+        return ctx.OpLoad(ctx.sampler_type, ctx.samplers[sampler_index]);
+    }
+    ASSERT(ctx.profile.supports_sampler_array_nonuniform_indexing);
+    ASSERT(sampler_count == expected_count);
+    const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant, ctx.sampler_type);
+    const Id pointer =
+        ctx.OpAccessChain(pointer_type, ctx.samplers[sampler_index], std::array{bounded});
+    ctx.Decorate(pointer, spv::Decoration::NonUniform);
+    const Id value = ctx.OpLoad(ctx.sampler_type, pointer);
+    ctx.Decorate(value, spv::Decoration::NonUniform);
+    return value;
+}
+
+static Id ConvertIndexedSample(EmitContext& ctx, Id raw, Id metadata) {
+    const Id conversion = ctx.OpBitwiseAnd(
+        ctx.U32[1],
+        ctx.OpShiftRightLogical(ctx.U32[1], metadata,
+                                ctx.ConstU32(IndexedImageMetadata::ConversionShift)),
+        ctx.ConstU32(IndexedImageMetadata::ConversionMask));
+    std::array<Id, 4> channels;
+    for (u32 i = 0; i < channels.size(); ++i) {
+        const Id bit = ctx.ConstU32(1u << (IndexedImageMetadata::ComponentShift + i));
+        channels[i] = ctx.OpINotEqual(ctx.U1[1], ctx.OpBitwiseAnd(ctx.U32[1], metadata, bit),
+                                      ctx.ConstU32(0u));
+    }
+    const Id real_channels = ctx.OpCompositeConstruct(ctx.U1[4], channels);
+    const auto constant = [&](float value) {
+        const Id scalar = ctx.ConstF32(value);
+        return ctx.ConstantComposite(ctx.F32[4], scalar, scalar, scalar, scalar);
+    };
+    std::array<Id, 8> labels;
+    std::array<Sirit::Literal, 8> literals;
+    for (u32 i = 0; i < labels.size(); ++i) {
+        labels[i] = ctx.OpLabel();
+        literals[i] = i;
+    }
+    const Id merge = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpSwitch(conversion, labels[0], literals, labels);
+    std::array<Id, 16> incoming;
+    for (u32 i = 0; i < labels.size(); ++i) {
+        ctx.AddLabel(labels[i]);
+        Id result = raw;
+        Id defaults = raw;
+        switch (AmdGpu::NumberConversion(i)) {
+        case AmdGpu::NumberConversion::None:
+            break;
+        case AmdGpu::NumberConversion::UintToUscaled:
+            result = ctx.OpConvertUToF(ctx.F32[4], ctx.OpBitcast(ctx.U32[4], raw));
+            defaults = result;
+            break;
+        case AmdGpu::NumberConversion::SintToSscaled:
+            result = ctx.OpConvertSToF(ctx.F32[4], ctx.OpBitcast(ctx.S32[4], raw));
+            defaults = result;
+            break;
+        case AmdGpu::NumberConversion::UnormToUbnorm:
+            result =
+                ctx.OpFSub(ctx.F32[4], ctx.OpFMul(ctx.F32[4], raw, constant(2.f)), constant(1.f));
+            break;
+        case AmdGpu::NumberConversion::Sint8ToSnormNz:
+        case AmdGpu::NumberConversion::Sint16ToSnormNz:
+            defaults = ctx.OpConvertSToF(ctx.F32[4], ctx.OpBitcast(ctx.S32[4], raw));
+            result = ctx.OpFDiv(
+                ctx.F32[4],
+                ctx.OpFAdd(ctx.F32[4], ctx.OpFMul(ctx.F32[4], defaults, constant(2.f)),
+                           constant(1.f)),
+                constant(i == u32(AmdGpu::NumberConversion::Sint8ToSnormNz) ? 255.f : 65535.f));
+            break;
+        case AmdGpu::NumberConversion::Uint32ToUnorm:
+            defaults = ctx.OpConvertUToF(ctx.F32[4], ctx.OpBitcast(ctx.U32[4], raw));
+            result = ctx.OpFDiv(ctx.F32[4], defaults, constant(float(UINT32_MAX)));
+            break;
+        case AmdGpu::NumberConversion::SrgbToNorm: {
+            const Id upper =
+                ctx.OpPow(ctx.F32[4],
+                          ctx.OpFMul(ctx.F32[4], ctx.OpFAdd(ctx.F32[4], raw, constant(0.055f)),
+                                     constant(1.f / 1.055f)),
+                          constant(2.4f));
+            const Id lower = ctx.OpFMul(ctx.F32[4], raw, constant(1.f / 12.92f));
+            result =
+                ctx.OpSelect(ctx.F32[4], ctx.OpFOrdGreaterThan(ctx.U1[4], raw, constant(0.04045f)),
+                             upper, lower);
+            break;
+        }
+        }
+        result = ctx.OpSelect(ctx.F32[4], real_channels, result, defaults);
+        incoming[i * 2] = result;
+        incoming[i * 2 + 1] = labels[i];
+        ctx.OpBranch(merge);
+    }
+    ctx.AddLabel(merge);
+    return ctx.OpPhi(ctx.F32[4], incoming);
+}
+
+static Id SampleIndexedImage(EmitContext& ctx, u32 handle, Id gpu_texture_id, Id dimension,
+                             const std::array<Id, 3>& coords, const std::array<Id, 3>& dx,
+                             const std::array<Id, 3>& dy, const IR::Value& offset) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    ASSERT(texture.is_guest_indexed && texture.image_array_size >= 2u);
+    const Id valid =
+        ctx.OpULessThan(ctx.U1[1], gpu_texture_id, ctx.ConstU32(texture.image_array_size - 1u));
+    const Id bounded = ctx.OpSelect(ctx.U32[1], valid, gpu_texture_id,
+                                    ctx.ConstU32(texture.image_array_size - 1u));
+    ctx.Decorate(bounded, spv::Decoration::NonUniform);
+    const Id metadata_pointer =
+        ctx.OpAccessChain(texture.indexed_metadata_pointer_type, texture.indexed_metadata,
+                          std::array{ctx.ConstU32(0u), bounded});
+    const Id metadata = ctx.OpLoad(ctx.U32[1], metadata_pointer);
+    const Id numeric =
+        ctx.OpBitwiseAnd(ctx.U32[1], metadata, ctx.ConstU32(IndexedImageMetadata::ClassMask));
+    const u32 dimensions = texture.is_guest_mixed_indexed ? 3u : 1u;
+    const u32 variants = dimensions * 3u;
+    const Id selected = ctx.OpIAdd(ctx.U32[1], dimension,
+                                   ctx.OpIMul(ctx.U32[1], numeric, ctx.ConstU32(dimensions)));
+    boost::container::small_vector<Id, 9> labels;
+    boost::container::small_vector<Sirit::Literal, 9> literals;
+    for (u32 i = 0; i < variants; ++i) {
+        labels.push_back(ctx.OpLabel());
+        literals.push_back(i);
+    }
+    const Id merge = ctx.OpLabel();
+    ctx.OpSelectionMerge(merge, spv::SelectionControlMask::MaskNone);
+    ctx.OpSwitch(selected, labels[0], literals, labels);
+    boost::container::small_vector<Id, 18> incoming;
+    for (u32 i = 0; i < variants; ++i) {
+        ctx.AddLabel(labels[i]);
+        const u32 dim = i % dimensions;
+        const u32 number = i / dimensions;
+        const Id image_type = texture.indexed_types[i];
+        const Id pointer_type = ctx.TypePointer(spv::StorageClass::UniformConstant, image_type);
+        const Id pointer =
+            ctx.OpAccessChain(pointer_type, texture.indexed_ids[i], std::array{bounded});
+        ctx.Decorate(pointer, spv::Decoration::NonUniform);
+        const Id image = ctx.OpLoad(image_type, pointer);
+        ctx.Decorate(image, spv::Decoration::NonUniform);
+        const Id sampler =
+            LoadIndexedGuestSampler(ctx, handle, bounded, texture.image_array_size, number != 0);
+        const Id sampled = ctx.OpSampledImage(ctx.TypeSampledImage(image_type), image, sampler);
+        ctx.Decorate(sampled, spv::Decoration::NonUniform);
+        const auto view = dim == 0   ? AmdGpu::ImageType::Color2D
+                          : dim == 1 ? AmdGpu::ImageType::Color3D
+                                     : AmdGpu::ImageType::Cube;
+        const Id fixed_coords = FixImageCoords<true>(ctx, coords[dim], view);
+        ImageOperands operands;
+        if (Sirit::ValidId(dx[dim])) {
+            operands.AddDerivatives(ctx, view, dx[dim], dy[dim]);
+        } else {
+            operands.Add(spv::ImageOperandsMask::Lod, ctx.ConstF32(0.f));
+        }
+        operands.AddOffset(ctx, view, offset);
+        const Id result_type = number == 0 ? ctx.F32[4] : number == 1 ? ctx.S32[4] : ctx.U32[4];
+        const Id raw = ctx.OpImageSampleExplicitLod(result_type, sampled, fixed_coords,
+                                                    operands.mask, operands.operands);
+        const Id result = number == 0 ? raw : ctx.OpBitcast(ctx.F32[4], raw);
+        incoming.push_back(result);
+        incoming.push_back(labels[i]);
+        ctx.OpBranch(merge);
+    }
+    ctx.AddLabel(merge);
+    return ConvertIndexedSample(ctx, ctx.OpPhi(ctx.F32[4], incoming), metadata);
+}
+
+Id EmitImageSampleImplicitLodIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                                     Id bias, const IR::Value& offset, Id gpu_texture_id) {
+    const auto& texture = ctx.images[handle & 0xffffu];
+    std::array<Id, 3> positions{coords};
+    std::array<Id, 3> dx{};
+    std::array<Id, 3> dy{};
+    Id dimension = ctx.ConstU32(0u);
+    Id is_1d{};
+    if (texture.is_guest_mixed_indexed) {
+        const Id word3 = ctx.OpBitcast(ctx.U32[1], ctx.OpCompositeExtract(ctx.F32[1], coords, 3u));
+        const Id type = ctx.OpShiftRightLogical(ctx.U32[1], word3, ctx.ConstU32(28u));
+        const Id is_3d =
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color3D)));
+        const Id is_cube =
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Cube)));
+        is_1d = ctx.OpLogicalOr(
+            ctx.U1[1], ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1D))),
+            ctx.OpIEqual(ctx.U1[1], type, ctx.ConstU32(u32(AmdGpu::ImageType::Color1DArray))));
+        dimension = ctx.OpSelect(ctx.U32[1], is_3d, ctx.ConstU32(1u),
+                                 ctx.OpSelect(ctx.U32[1], is_cube, ctx.ConstU32(2u), dimension));
+        positions[0] = ctx.OpVectorShuffle(ctx.F32[2], coords, coords, 0u, 1u);
+        positions[1] = ctx.OpVectorShuffle(ctx.F32[3], coords, coords, 0u, 1u, 2u);
+        positions[2] = positions[1];
+    }
+    // Evaluate derivatives before the nonuniform numeric/dimension dispatch.
+    if (ctx.info.hw_stage == HwStage::Fragment) {
+        const Id scale = Sirit::ValidId(bias) ? ctx.OpExp2(ctx.F32[1], bias) : ctx.ConstF32(1.f);
+        const u32 dimensions = texture.is_guest_mixed_indexed ? 3u : 1u;
+        for (u32 i = 0; i < dimensions; ++i) {
+            const u32 components = i == 1 ? 3u : 2u;
+            const Id position = i == 2 ? positions[0] : positions[i];
+            const Id scale_vector = components == 2
+                                        ? ctx.OpCompositeConstruct(ctx.F32[2], scale, scale)
+                                        : ctx.OpCompositeConstruct(ctx.F32[3], scale, scale, scale);
+            dx[i] = ctx.OpFMul(ctx.F32[components], ctx.OpDPdx(ctx.F32[components], position),
+                               scale_vector);
+            dy[i] = ctx.OpFMul(ctx.F32[components], ctx.OpDPdy(ctx.F32[components], position),
+                               scale_vector);
+        }
+    }
+    if (texture.is_guest_mixed_indexed) {
+        const Id x = ctx.OpCompositeExtract(ctx.F32[1], positions[0], 0u);
+        positions[0] =
+            ctx.OpSelect(ctx.F32[2], is_1d,
+                         ctx.OpCompositeConstruct(ctx.F32[2], x, ctx.ConstF32(0.5f)), positions[0]);
+        for (auto* gradient : {&dx[0], &dy[0]}) {
+            if (Sirit::ValidId(*gradient)) {
+                const Id x_grad = ctx.OpCompositeExtract(ctx.F32[1], *gradient, 0u);
+                *gradient = ctx.OpSelect(
+                    ctx.F32[2], is_1d,
+                    ctx.OpCompositeConstruct(ctx.F32[2], x_grad, ctx.ConstF32(0.f)), *gradient);
+            }
+        }
+    }
+    return SampleIndexedImage(ctx, handle, gpu_texture_id, dimension, positions, dx, dy, offset);
 }
 
 Id EmitImageSampleExplicitLod(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod,
@@ -299,6 +530,14 @@ Id EmitImageGradient(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id
     const Id sample = ctx.OpImageSampleExplicitLod(result_type, sampled_image, fixed_coords,
                                                    operands.mask, operands.operands);
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
+}
+
+Id EmitImageGradientIndexed(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords,
+                            Id derivatives_dx, Id derivatives_dy, const IR::Value& offset,
+                            Id gpu_texture_id) {
+    ASSERT(!ctx.images[handle & 0xffffu].is_guest_mixed_indexed);
+    return SampleIndexedImage(ctx, handle, gpu_texture_id, ctx.ConstU32(0u), {coords},
+                              {derivatives_dx}, {derivatives_dy}, offset);
 }
 
 Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms) {

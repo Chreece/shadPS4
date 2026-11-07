@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "recorded_utc": "2026-11-06T16:19:46.682189+00:00",
+  "source_commit": "5098e32bd46986650f275d603f0f9ed8fb2e88f2",
+  "runner_commit": "f473582ba4869eea3bccad4ac719e64a9947522e",
+  "upstream_commit": "34a1d4dd92a1c853b4045ac264a9927a96b1c830",
+  "native_capture": {
+    "archive": "universal-two-games-20261106T154004Z-3681937.tar.gz",
+    "sha256": "2e3313c6be1a1a735f2e4f47de2ecf045b699a377716477d4624f664bf372ed9",
+    "library_file_id": "libfile_885c97ac17ac819199e390204ab80f45",
+    "source_commit": "d4b3e763fa4b566d048901a5b2315d2ad3edd5ab",
+    "runner_commit": "f473582ba4869eea3bccad4ac719e64a9947522e",
+    "binary_sha256": "0f178cb2ee3a60af4db26593e83da7019eb8df735ba7533923a697dc90cc4a0a",
+    "build_cpu_startup": "PASS"
+  },
+  "got": {
+    "exit_code": 0,
+    "elapsed_seconds": 118.567,
+    "exit_reason": "TEST_118S_DURATION_LIMIT",
+    "owned_child_terminated": true,
+    "gpu_failure": null,
+    "prior_phi_and_mip_assertions": "ABSENT",
+    "visual_110s": "In-game night scene with characters and fire, dark/missing fill; overlay 3 FPS / 387.8 ms. Control and sustained performance are not established.",
+    "missing_fill_resolved": false,
+    "guest_buffer_residency_fault_reports": 79,
+    "errors": "3152 wave-limit stub calls account for most error lines; these are not crash reports.",
+    "sharp_unflattened_warnings": 723,
+    "minmax_blend_warnings": 23,
+    "page_protect": {
+      "calls": 899888,
+      "self_seconds": 2.103284964
+    },
+    "buffer_readback": {
+      "calls": 13704,
+      "bytes": 3243324800
+    },
+    "shader_compile": {
+      "calls": 1615,
+      "self_seconds": 11.726477055,
+      "last_seconds": 117.89875995
+    },
+    "conclusion": "Native capture supports the tiny-mip fix and shows progression beyond the prior crash. Missing fill and usable frame rate remain unresolved."
+  },
+  "gow": {
+    "exit_code": null,
+    "elapsed_seconds": 120.0,
+    "owned_child_terminated": false,
+    "exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+    "gpu_failure": null,
+    "screenshot_80s": "Gameplay, 8 FPS / 126.1 ms",
+    "shutdown_thread": "SDLAudioP43, D state, dma_fence_wait_any_timeout; main zombie",
+    "shutdown_interpretation": "Process was not gone within the capture deadline; permanent hang or an Audio3D cause is not established.",
+    "page_protect": {
+      "calls": 8278823,
+      "self_seconds": 20.686090445,
+      "requested_bytes": 699427565568
+    },
+    "buffer_readback": {
+      "calls": 15697,
+      "bytes": 3725621696
+    },
+    "gpu_wait": {
+      "calls": 29917,
+      "self_seconds": 29.147011636,
+      "max_seconds": 10.102846159
+    },
+    "image_readback_scope_calls": 23148015,
+    "image_readback_scope_note": "Demand checks, not 23 million actual image downloads.",
+    "ollama_restore": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS",
+    "performance_improved": false
+  },
+  "integration": {
+    "upstream_change": "Upstream PR5134: deferred V_MOVREL lowering with SSA bounds analysis; avoids frontend full register-range unrolling. Native impact is unverified.",
+    "retained_commits": 52,
+    "integration_head": "221387fba57b7fc3e5bd3a233ea9e4d4fcee06bc",
+    "tree_checks": "All 52 published trees equal local rebased trees.",
+    "conflicts": "One CMake conflict resolved by retaining both new lower_movrel_pass and ordered_gds_continuation_pass source entries.",
+    "other_conflicts": false
+  },
+  "diagnostic_change": {
+    "files": [
+      "src/video_core/graphics_diagnostics.h",
+      "src/video_core/page_manager.cpp"
+    ],
+    "purpose": "Distinguish buffer/image tracking and none/read/read-write permission transitions. Existing aggregation did not identify the source of 8.28 million protection calls.",
+    "sampling": "First eight and powers of two; six event buckets. Exact aggregate event counts are dumped at normal process exit. Forced termination may leave only sampled lower bounds.",
+    "forwarding": "Original address, size, permissions and one backend Protect call are preserved, in the same locked positions. No batching, coherence semantics or syscall policy change.",
+    "when_disabled": "No trace or diagnostic counter updates.",
+    "no_performance_fix_claim": true
+  },
+  "validation": {
+    "build": {
+      "build": "PASS GCC14 Release",
+      "binary_sha256": "20b4770e9b06e7219202884faa97ceaf7bfab718d0e38f489c03da76be1b9659",
+      "startup": [
+        {
+          "args": [
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "args": [
+            "--show-fps",
+            "--help"
+          ],
+          "exit": 0
+        },
+        {
+          "args": [
+            "--fullscreen",
+            "true",
+            "--help"
+          ],
+          "exit": 0
+        }
+      ],
+      "ctests": 31
+    },
+    "diagnostic_forwarding": {
+      "0": {
+        "returncode": 0,
+        "stdout": "PROTECTION_FORWARDING_PASS calls=6150 diagnostics=0",
+        "stderr_lines": 0,
+        "totals": []
+      },
+      "1": {
+        "returncode": 0,
+        "stdout": "PROTECTION_FORWARDING_PASS calls=6150 diagnostics=1",
+        "stderr_lines": 96,
+        "totals": [
+          [
+            "buffer-protect-none",
+            "1025"
+          ],
+          [
+            "buffer-protect-read",
+            "1025"
+          ],
+          [
+            "buffer-protect-write",
+            "1025"
+          ],
+          [
+            "image-protect-none",
+            "1025"
+          ],
+          [
+            "image-protect-read",
+            "1025"
+          ],
+          [
+            "image-protect-write",
+            "1025"
+          ]
+        ]
+      }
+    },
+    "cpu_suite": "PASS 31 CTests, 7 renderer contracts, production SRT and sparse tests, descriptor, VMA and guest ABI checks",
+    "retained_shader_regression": "Four original 320-access kernels, Vulkan 1.3 SPIR-V validation, 16 interpreter cases / 8704 output word checks pass with current upstream recompiler objects.",
+    "handoff": "Three substituted-boundary cases: success, bad checksum, download failure.",
+    "source_bytes": "All src files match the successful full build checkout.",
+    "native_candidate_run": false
+  },
+  "policy": {
+    "game_or_shader_specific_emulation": false,
+    "forced_counters": false,
+    "coherence_bypass": false,
+    "automatic_input": false,
+    "runtime_upstream_freshness_checks": false,
+    "raw_guest_data_published": false,
+    "main_changed": false,
+    "audio_pr5492_applied": false
+  },
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=5098e32bd46986650f275d603f0f9ed8fb2e88f2\nRUNNER=f473582ba4869eea3bccad4ac719e64a9947522e\nrun_dir=$(mktemp -d \"${TMPDIR:-/tmp}/shadps4-test.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --fail --location --retry 3 \\\n \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n 34f2f79331c006cdf6e66a75c02a480e64f3cfd9128b4171bd8597917dde39e5 \\\n \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=1 \\\nSHADPS4_TEST_CAPTURE_FIRST_SHADERS=1 \\\nSHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n bash \"$run_dir/run.sh\" \"$SOURCE\" build \"$RUNNER\"\nSHADPS4_TEST\n",
+  "pending": [
+    "GoT fill/lighting and playable performance",
+    "Native compiler-update impact",
+    "Identify source and direction of protection churn",
+    "GoW frame cost and shutdown completion"
+  ]
+}

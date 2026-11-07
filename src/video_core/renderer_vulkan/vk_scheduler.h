@@ -13,6 +13,7 @@
 #include "common/unique_function.h"
 #include "video_core/amdgpu/regs_color.h"
 #include "video_core/amdgpu/regs_primitive.h"
+#include "video_core/gpu_work_diagnostics.h"
 #include "video_core/renderer_vulkan/vk_resource_pool.h"
 #include "video_core/renderer_vulkan/vk_semaphore.h"
 #include "vulkan/vulkan.hpp"
@@ -411,6 +412,15 @@ public:
     }
 
     /// Returns the current command buffer tick.
+    template <typename... Args>
+    void RecordWork(const char* format, Args... args) const {
+        const auto sequence =
+            VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, CurrentTick(), format, args...);
+        if (sequence) {
+            RecordGpuProgress(sequence, format);
+        }
+    }
+
     [[nodiscard]] u64 CurrentTick() const noexcept {
         return work_semaphore.CurrentTick();
     }
@@ -450,6 +460,8 @@ public:
     static std::mutex submit_mutex;
 
 private:
+    void RecordGpuProgress(u64 sequence, const char* format) const;
+
     void EndSession();
 
     void SubmitExecution(SubmitInfo& info);
@@ -460,12 +472,15 @@ private:
     const Instance& instance;
     Semaphore work_semaphore;
     CommandPool command_pool;
+    struct GpuProgress;
+    std::unique_ptr<GpuProgress> gpu_progress;
     DynamicState dynamic_state;
     SessionFunc on_session{};
     SubmitFunc on_submit{};
     struct Session {
         vk::CommandBuffer upload{};
         vk::CommandBuffer primary{};
+        u64 tick{};
     };
     std::vector<Session> sessions;
     std::condition_variable_any event_cv;

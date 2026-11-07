@@ -1,0 +1,393 @@
+{
+  "schema_version": 2,
+  "timestamp_utc": "2026-11-06T20:17:25.875447+00:00",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/184",
+  "archive": "universal-two-games-20261106T194704Z-1088799.tar.gz",
+  "archive_sha256": "5e4e0d40153a6362e7a58dd0f12bd829d1baf826ed746607b17786092f4e1df8",
+  "library_file_id": "libfile_2eb2e5cf73bc8191a08f4d7823c7a0e7",
+  "source_commit": "c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94",
+  "tested_runner_commit": "d43d3ec6ad736d55b88ff9551eee16fce20b4cd3",
+  "next_runner_commit": "110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b",
+  "upstream_commit": "ff1b7a2e87eef8f301377e0cabbbeeeb73cc3b49",
+  "upstream_preparation_check": "Unchanged at current check; no rebase or new emulator candidate needed.",
+  "batch_exit_code": 1,
+  "native_build": "PASS native Release build, CPU and startup tests",
+  "native_binary_sha256": "b6dadbaa9fad8036671556035b2b6af73ca7350ad20ac728571423541521f711",
+  "native_acceptance": "FAILED_RENDERING_AND_GOW_STOP_UNCONFIRMED",
+  "games": {
+    "got": {
+      "elapsed_seconds": 118.571,
+      "exit_code": 0,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "trigger_reason": null,
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "gpu_memory_headroom_failure": null,
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png",
+        "frame-080s.png",
+        "frame-110s.png"
+      ],
+      "warning_lines": 984,
+      "error_lines": 3163,
+      "binary_sha256": "b6dadbaa9fad8036671556035b2b6af73ca7350ad20ac728571423541521f711",
+      "vram_free_at_launch": 20595564544,
+      "global_vram_max_bytes": 11358543872,
+      "final_gpu_samples": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 34,
+          "mem_busy_percent": 1,
+          "mem_info_vram_used": 11358281728,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 456609792
+        }
+      ],
+      "final_owned_drm": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "3894",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "6053888 KiB",
+            "drm-memory-gtt": "408452 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "18563717164 ns"
+          }
+        }
+      ],
+      "ollama_samples": 235,
+      "nonempty_ollama_samples": 0,
+      "ollama_restore_statuses": [
+        "RESTORED"
+      ],
+      "performance_regions_whole_run": {
+        "draw": {
+          "calls": 734030,
+          "inclusive_ns": 37210374031,
+          "self_ns": 16563513351,
+          "max_ns": 578457294,
+          "bytes": 0,
+          "last_ns": 118000908220
+        },
+        "dispatch": {
+          "calls": 293563,
+          "inclusive_ns": 26164213605,
+          "self_ns": 7548281767,
+          "max_ns": 128372722,
+          "bytes": 0,
+          "last_ns": 118000583789
+        },
+        "ordered-ds": {
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        },
+        "bind-buffers": {
+          "calls": 1762153,
+          "inclusive_ns": 4411370780,
+          "self_ns": 2659204364,
+          "max_ns": 26029429,
+          "bytes": 0,
+          "last_ns": 118000892857
+        },
+        "bind-textures": {
+          "calls": 1762153,
+          "inclusive_ns": 10266736446,
+          "self_ns": 9773086262,
+          "max_ns": 554030967,
+          "bytes": 0,
+          "last_ns": 118000893313
+        },
+        "shader-compile": {
+          "calls": 1530,
+          "inclusive_ns": 10101411168,
+          "self_ns": 10070432887,
+          "max_ns": 65589719,
+          "bytes": 0,
+          "last_ns": 117994257490
+        },
+        "pipeline-lookup": {
+          "calls": 1027593,
+          "inclusive_ns": 23839757907,
+          "self_ns": 1907924932,
+          "max_ns": 67849605,
+          "bytes": 0,
+          "last_ns": 118000868354
+        },
+        "image-readback": {
+          "calls": 8023281,
+          "inclusive_ns": 2428989305,
+          "self_ns": 1015874576,
+          "max_ns": 26006409,
+          "bytes": 1907559569346,
+          "last_ns": 118000913503
+        },
+        "buffer-readback": {
+          "calls": 14392,
+          "inclusive_ns": 17716827266,
+          "self_ns": 300284296,
+          "max_ns": 205482283,
+          "bytes": 3559398080,
+          "last_ns": 118000701281
+        },
+        "page-protect": {
+          "calls": 602825,
+          "inclusive_ns": 1670387549,
+          "self_ns": 1670387549,
+          "max_ns": 4534977,
+          "bytes": 32763039744,
+          "last_ns": 118000700983
+        },
+        "submit": {
+          "calls": 21122,
+          "inclusive_ns": 261606204,
+          "self_ns": 261606204,
+          "max_ns": 35704720,
+          "bytes": 0,
+          "last_ns": 118004764024
+        },
+        "gpu-wait": {
+          "calls": 15508,
+          "inclusive_ns": 18836326795,
+          "self_ns": 18697775950,
+          "max_ns": 205410799,
+          "bytes": 0,
+          "last_ns": 118000693847
+        },
+        "buffer-clamp": {
+          "calls": 0,
+          "inclusive_ns": 0,
+          "self_ns": 0,
+          "max_ns": 0,
+          "bytes": 0,
+          "last_ns": 0
+        }
+      },
+      "visual_110s": "Night battle with riders/fire, dark or missing fill, small bright upper-left patch. Overlay 3 FPS / 354.4 ms. Viewport-slot correction did not resolve the visual defect.",
+      "viewport_evidence": "Sampled zero-scale mask is consistently 0xfffe; viewport zero takes plausible full-size and reduced rendering dimensions. This does not prove the upper-left artifact is a viewport fault.",
+      "blend_evidence": {
+        "warnings": 23,
+        "attachment": 5,
+        "number_format": "UNORM (0)",
+        "color_op": "MAX (4)",
+        "source_factor": "SRC_ALPHA (6)",
+        "destination_factor": "ONE (1)",
+        "alpha_equation": "same observed values",
+        "status": "Unsupported scaled min/max semantics remain unresolved; no causal claim for missing fill."
+      }
+    },
+    "gow": {
+      "elapsed_seconds": 120.0,
+      "exit_code": null,
+      "exit_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+      "trigger_reason": "OWNED_PROCESS_STOP_UNCONFIRMED",
+      "owned_child_terminated": false,
+      "gpu_failure": null,
+      "gpu_memory_headroom_failure": null,
+      "screenshots": [
+        "frame-008s.png",
+        "frame-025s.png",
+        "frame-080s.png",
+        "frame-110s.png"
+      ],
+      "warning_lines": 6303,
+      "error_lines": 24,
+      "binary_sha256": "b6dadbaa9fad8036671556035b2b6af73ca7350ad20ac728571423541521f711",
+      "vram_free_at_launch": 20583448576,
+      "global_vram_max_bytes": 10773843968,
+      "final_gpu_samples": [
+        {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "gpu_busy_percent": 100,
+          "mem_busy_percent": 0,
+          "mem_info_vram_used": 10773843968,
+          "mem_info_vram_total": 25753026560,
+          "mem_info_gtt_used": 573788160
+        }
+      ],
+      "final_owned_drm": [
+        {
+          "fd": "20",
+          "fields": {
+            "drm-driver": "amdgpu",
+            "drm-client-id": "3917",
+            "drm-pdev": "0000:03:00.0",
+            "drm-memory-vram": "5481100 KiB",
+            "drm-memory-gtt": "522884 KiB",
+            "drm-memory-cpu": "0 KiB",
+            "drm-shared-vram": "40960 KiB",
+            "drm-shared-gtt": "0 KiB",
+            "drm-shared-cpu": "0 KiB",
+            "drm-engine-gfx": "70083522921 ns"
+          }
+        }
+      ],
+      "ollama_samples": 239,
+      "nonempty_ollama_samples": 0,
+      "ollama_restore_statuses": [
+        "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+      ],
+      "performance_regions_whole_run": {
+        "draw": {
+          "calls": 1468990,
+          "inclusive_ns": 27044718496,
+          "self_ns": 10357534862,
+          "max_ns": 26598104,
+          "bytes": 0,
+          "last_ns": 113013705806
+        },
+        "dispatch": {
+          "calls": 365936,
+          "inclusive_ns": 57736364563,
+          "self_ns": 9161905154,
+          "max_ns": 10144840768,
+          "bytes": 0,
+          "last_ns": 113015032080
+        },
+        "ordered-ds": {
+          "calls": 2022,
+          "inclusive_ns": 30870234261,
+          "self_ns": 4856414972,
+          "max_ns": 10143195958,
+          "bytes": 0,
+          "last_ns": 112909646085
+        },
+        "bind-buffers": {
+          "calls": 3127108,
+          "inclusive_ns": 16776668915,
+          "self_ns": 7751366413,
+          "max_ns": 399650523,
+          "bytes": 0,
+          "last_ns": 113016080053
+        },
+        "bind-textures": {
+          "calls": 3127108,
+          "inclusive_ns": 3730289420,
+          "self_ns": 3662037139,
+          "max_ns": 112852111,
+          "bytes": 0,
+          "last_ns": 113016085946
+        },
+        "shader-compile": {
+          "calls": 1713,
+          "inclusive_ns": 5351336742,
+          "self_ns": 5351119185,
+          "max_ns": 2943100641,
+          "bytes": 0,
+          "last_ns": 112917380150
+        },
+        "pipeline-lookup": {
+          "calls": 1835889,
+          "inclusive_ns": 12721938737,
+          "self_ns": 3208512408,
+          "max_ns": 2947011819,
+          "bytes": 0,
+          "last_ns": 113016004654
+        },
+        "image-readback": {
+          "calls": 19261742,
+          "inclusive_ns": 8873167898,
+          "self_ns": 2517673965,
+          "max_ns": 92677817,
+          "bytes": 86672127024638,
+          "last_ns": 113016075806
+        },
+        "buffer-readback": {
+          "calls": 15211,
+          "inclusive_ns": 7864416087,
+          "self_ns": 260017949,
+          "max_ns": 23564713,
+          "bytes": 3630154560,
+          "last_ns": 112962110875
+        },
+        "page-protect": {
+          "calls": 4277763,
+          "inclusive_ns": 12554418846,
+          "self_ns": 12554418846,
+          "max_ns": 3144631,
+          "bytes": 675118514176,
+          "last_ns": 113018209410
+        },
+        "submit": {
+          "calls": 33262,
+          "inclusive_ns": 212412788,
+          "self_ns": 212412788,
+          "max_ns": 765198,
+          "bytes": 0,
+          "last_ns": 113029815475
+        },
+        "gpu-wait": {
+          "calls": 28859,
+          "inclusive_ns": 39207642605,
+          "self_ns": 39032894627,
+          "max_ns": 10140641958,
+          "bytes": 0,
+          "last_ns": 112976038989
+        },
+        "buffer-clamp": {
+          "calls": 91611,
+          "inclusive_ns": 2202124,
+          "self_ns": 2202124,
+          "max_ns": 3615,
+          "bytes": 0,
+          "last_ns": 113009977086
+        }
+      },
+      "visual_80s": "Santa Monica Studios logo, 13 FPS / 77.2 ms; this is not gameplay FPS.",
+      "visual_110s": "Kratos and wolf in snowy gameplay, large black block artifacts, overlay 9 FPS / 106.7 ms.",
+      "wait_evidence": "Repeated roughly ten-second GPU completion waits. At 110 seconds the GPU command thread waits in drm_syncobj_array_wait_timeout while AudioOut sleeps in futex_wait_queue. Final GPU sample is 100% busy.",
+      "stop_evidence": {
+        "leader_state": "Z",
+        "remaining_thread_name": "SDLAudioP35",
+        "remaining_thread_state": "D",
+        "remaining_thread_wait_channel": "dma_fence_wait_any_timeout",
+        "interpretation": "A kernel GPU-fence wait survives the bounded stop. The thread name does not establish an audio mixing bug. No kernel journal was captured, so reset/fault cause remains unknown."
+      }
+    }
+  },
+  "comparison": {
+    "previous_archive": "universal-two-games-20261106T180742Z-478828.tar.gz",
+    "got_page_protect": {
+      "previous_calls": 1081531,
+      "current_calls": 602825,
+      "previous_seconds": 2.522576046,
+      "current_seconds": 1.670387549
+    },
+    "gow_page_protect": {
+      "previous_calls": 7782228,
+      "current_calls": 4277763,
+      "previous_seconds": 19.531257705,
+      "current_seconds": 12.554418846
+    },
+    "scope": "Whole-run totals over different scene/input/compile histories and intervals. Lower page-protection work does not prove same-scene FPS improvement; new large GoW blocks fail visual acceptance."
+  },
+  "audio_pr_5492_assessment": "Not included. Current evidence points to GPU completion and a kernel GPU-fence wait, not an established audio feeder deadlock.",
+  "fix": "Collect bounded host/kernel diagnostics after every launched run and when preflight finds a live/unreadable prior emulator. Previous collection required explicit device-lost text and missed this failure. Wrapper downloads explicitly use IPv4.",
+  "validation": {
+    "python_syntax": "PASS",
+    "shell_syntax": "PASS",
+    "diff_check": "PASS",
+    "production_post_run_conditions": "PASS clean launch, unconfirmed stop without device-lost text, explicit GPU failure, preflight without launch, diagnostic exception",
+    "production_preflight": "PASS idle, live-thread rejection, diagnostic error; existing thread evidence and one journal record retained",
+    "bounded_host_health": "PASS two journal commands each bounded to five seconds/600 entries, failed-command stderr retained, no X query",
+    "one_paste": "PASS existing-build dispatch, correct source/runner/validation settings, checksum rejection, download failure and cleanup; external/native boundaries substituted",
+    "emulator_source_changed": false,
+    "rebuild_required": false
+  },
+  "main_changed": false,
+  "guest_emulation_changed": false,
+  "next_run": "Reuse the checksum-verified existing binary with Vulkan core/synchronization validation, GoW then GoT; first validation failure can end a run early. Validation timings are not performance results. Preserve owned-process 118/120-second stop, live-process guard, VRAM/model checks, manual input, Sunshine and SSH. No upstream/fork freshness checks.",
+  "model_status": "GoT model restored. GoW restoration deferred because a live kernel-blocked thread remained; this is recorded, not a confirmed restore.",
+  "one_paste": "bash <<'SHADPS4_TEST'\nset -Eeuo pipefail\nSOURCE=c9fe5ba8c8ee05bcb97169e5ae98e0eec9f63e94\nRUNNER=110526e9f6ecfd605a0d2fe43bf3809afcaa0e9b\nmkdir -p \"$HOME/projects/shadps4/scripts\"\nrun_dir=$(mktemp -d \"$HOME/projects/shadps4/scripts/gpu-validation.XXXXXX\")\ntrap 'rm -rf -- \"$run_dir\"' EXIT\ncurl --ipv4 --fail --location --retry 3 \\\n  \"https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER/scripts/shadps4-universal-two-game-check.sh\" \\\n  -o \"$run_dir/run.sh\"\nprintf '%s  %s\\n' \\\n  c3cd560d1e4a974d38615366cdc589163004fe32c33ebfc6816e96c7970f5bc6 \\\n  \"$run_dir/run.sh\" | sha256sum --check -\nunset SHADPS4_PR117_CAPTURE_ONCE\nSHADPS4_TEST_PERFORMANCE=0 \\\nSHADPS4_TEST_FIRST_GAME=CUSA34384 \\\n  bash \"$run_dir/run.sh\" \"$SOURCE\" existing \"$RUNNER\"\nSHADPS4_TEST\n"
+}

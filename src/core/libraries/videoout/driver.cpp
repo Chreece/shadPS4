@@ -9,6 +9,7 @@
 #include "core/libraries/kernel/time.h"
 #include "core/libraries/videoout/driver.h"
 #include "core/libraries/videoout/videoout_error.h"
+#include "core/startup_progress.h"
 #include "imgui/renderer/imgui_core.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/renderer_vulkan/vk_presenter.h"
@@ -279,13 +280,17 @@ void VideoOutDriver::Flip(const Request& req) {
 
 void VideoOutDriver::DrawBlankFrame() {
     const auto empty_frame = presenter->PrepareBlankFrame(true);
-    presenter->Present(empty_frame, false, false);
+    if (empty_frame != nullptr) {
+        presenter->Present(empty_frame, false, false);
+    }
 }
 
 void VideoOutDriver::DrawLastFrame() {
     const auto frame = presenter->PrepareLastFrame();
     if (frame != nullptr) {
-        presenter->Present(frame, true);
+        presenter->Present(frame, false, false);
+    } else if (Core::Startup::progress.IsActive()) {
+        DrawBlankFrame();
     }
 }
 
@@ -372,7 +377,8 @@ void VideoOutDriver::PresentThread(std::stop_token token) {
                 if (timer.GetTotalWait().count() < 0) { // Dont draw too fast
                     if (!main_port.is_open) {
                         DrawBlankFrame();
-                    } else if (ImGui::Core::MustKeepDrawing()) {
+                    } else if (Core::Startup::progress.IsActive() ||
+                               ImGui::Core::MustKeepDrawing()) {
                         DrawLastFrame();
                     }
                 }

@@ -356,6 +356,7 @@ struct GcnInst {
     bool IsUnconditionalBranch() const;
     bool IsConditionalBranch() const;
     bool IsFork() const;
+    bool WritesScalarMask() const;
     bool IsCmpx() const;
 };
 

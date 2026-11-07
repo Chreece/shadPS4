@@ -268,6 +268,9 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *pl_layout, 0, set_writes);
 
     const auto dim_x = (info.guest_size / (info.num_bits / 8)) / 64;
+    scheduler.RecordWork("kind=detile address=%llx bytes=%u groups=%u bpp=%u",
+                         static_cast<unsigned long long>(info.guest_address), info.guest_size,
+                         dim_x, info.num_bits);
     cmdbuf.dispatch(dim_x, 1, 1);
 
     runtime.AccessBuffer(staging.buffer, staging.offset, info.guest_size,
@@ -278,8 +281,9 @@ std::pair<const Buffer*, u64> TileManager::DetileImage(const VideoCore::Buffer* 
 }
 
 void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buffer_copies,
-                            const VideoCore::Buffer* out_buffer, u64 out_offset) {
-    const auto& info = in_image.info;
+                            const VideoCore::Buffer* out_buffer, u64 out_offset,
+                            const ImageInfo* plane) {
+    const auto& info = plane ? *plane : in_image.info;
     if (!info.props.is_tiled) {
         for (auto& copy : buffer_copies) {
             copy.bufferOffset += out_offset;
@@ -360,6 +364,9 @@ void TileManager::TileImage(Image& in_image, std::span<vk::BufferImageCopy> buff
     cmdbuf.pushDescriptorSetKHR(vk::PipelineBindPoint::eCompute, *pl_layout, 0, set_writes);
 
     const auto dim_x = (info.guest_size / (info.num_bits / 8)) / 64;
+    scheduler.RecordWork("kind=tile address=%llx bytes=%u groups=%u bpp=%u",
+                         static_cast<unsigned long long>(info.guest_address), info.guest_size,
+                         dim_x, info.num_bits);
     cmdbuf.dispatch(dim_x, 1, 1);
 
     runtime.AccessBuffer(staging.buffer, staging.offset, info.guest_size,

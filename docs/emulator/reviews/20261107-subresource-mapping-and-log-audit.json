@@ -1,0 +1,749 @@
+{
+  "timestamp_utc": "2026-11-07T12:12:56.191623+00:00",
+  "archive": "universal-two-games-20261107T110214Z-2993339.tar.gz",
+  "archive_sha256": "4dd43793af11cb4af0246265429435b9ee86b1f4d405ba1370f8b12c6d12022b",
+  "native_acceptance": "REJECTED_BOTH_GAMES",
+  "startup_through_shutdown_audit": {
+    "got": {
+      "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "source_commit": "09c24731040ecc8447cd1f894ed5e44fa1396565",
+      "native_binary_sha256": "7008ea0e5bb3be620eb37fc8fa389e7fb35eedb021ca7d6561d0a1e4e696b176",
+      "exit_code": 0,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "elapsed_seconds": 118.569,
+      "owned_child_terminated": true,
+      "vram_free_at_launch": 20583383040,
+      "full_console_reviewed_bytes": 5844918,
+      "console_tail_complete": true,
+      "warning_error_groups": {
+        "emulator.cpp:261 ExtractTrophies": {
+          "module": "Loader",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "emulator.cpp:681 Run": {
+          "module": "Loader",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "vk_instance.cpp:253 lambda": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "vk_instance.cpp:801 CollectImageFormatInfo": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "module.cpp:308 LoadModuleToMemory": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 4,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx"
+          ]
+        },
+        "module.cpp:540 LoadDynamicInfo": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "linker.cpp:448 Resolve": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 315,
+          "examples": [
+            "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved ueega6v3GUw as sceRtcSetTick (lib: libSceRtc, mod: libSceRtc)"
+          ]
+        },
+        "kernel.cpp:350 __sys_regmgr_call": {
+          "module": "Lib.Kernel",
+          "severity": "Error",
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "thread_atexit.cpp:22 _sceKernelSetThreadAtexitCount": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "thread_atexit.cpp:32 _sceKernelSetThreadAtexitReport": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "file_system.cpp:1199 sceKernelStat": {
+          "module": "Kernel.Fs",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "error = 2"
+          ]
+        },
+        "app_content.cpp:508 sceAppContentInitialize": {
+          "module": "Lib.AppContent",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "systemservice.cpp:2157 sceSystemServiceParamGetString": {
+          "module": "Lib.SystemService",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "userservice.cpp:1182 sceUserServiceInitialize": {
+          "module": "Lib.UserService",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "gamelivestreaming.cpp:90 sceGameLiveStreamingInitialize": {
+          "module": "Lib.GameLiveStreaming",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "stubs.cpp:34 CommonStub": {
+          "module": "Core",
+          "severity": "Error",
+          "count": 9,
+          "examples": [
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0xc95520"
+          ]
+        },
+        "coredump.cpp:20 sceCoredumpRegisterCoredumpHandler": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+          ]
+        },
+        "systemservice.cpp:1886 sceSystemServiceGetHdrToneMapLuminance": {
+          "module": "Lib.SystemService",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "netctl.cpp:372 sceNetCtlInit": {
+          "module": "Lib.NetCtl",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "np_trophy.cpp:1028 sceNpTrophyRegisterContext": {
+          "module": "Lib.NpTrophy",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "np_trophy.cpp:956 sceNpTrophyGetTrophyUnlockState": {
+          "module": "Lib.NpTrophy",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "ssl2.cpp:230 sceSslInit": {
+          "module": "Lib.Ssl2",
+          "severity": "Error",
+          "count": 2,
+          "examples": [
+            "(DUMMY) called poolSize = 262144",
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "np_manager.cpp:1051 sceNpRegisterStateCallbackForToolkit": {
+          "module": "Lib.NpManager",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "gnmdriver.cpp:2065 sceGnmSetWaveLimitMultipliers": {
+          "module": "Lib.GnmDriver",
+          "severity": "Error",
+          "count": 3412,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "pad.cpp:263 scePadInit": {
+          "module": "Lib.Pad",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "audioout.cpp:957 sceAudioOutMasteringInit": {
+          "module": "Lib.AudioOut",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "http2.cpp:201 sceHttp2Init": {
+          "module": "Lib.Http2",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "http.cpp:2005 sceHttpsLoadCert": {
+          "module": "Lib.Http",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+          ]
+        },
+        "np_manager.cpp:749 sceNpSetContentRestriction": {
+          "module": "Lib.NpManager",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "audioout.cpp:965 sceAudioOutMasteringSetParam": {
+          "module": "Lib.AudioOut",
+          "severity": "Error",
+          "count": 5,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "videodec2.cpp:75 sceVideodec2AllocateComputeQueue": {
+          "module": "Lib.Vdec2",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "called"
+          ]
+        },
+        "resource_patching_pass.cpp:210 SharpLocationFromSource": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 609,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "emit_spirv_image.cpp:112 AddOffset": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 3,
+          "examples": [
+            "Runtime offset provided to unsupported image sample instruction"
+          ]
+        },
+        "vk_runtime.cpp:75 SanitizeCopyLayers": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 12,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum."
+          ]
+        },
+        "lower_buffer_format_to_raw.cpp:216 LowerBufferFormatInst": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Skipping lowering for null buffer sharp"
+          ]
+        },
+        "vk_rasterizer.cpp:2425 BindTextures": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 6,
+          "examples": [
+            "Indexed sampler table: shader=0xb5c898c7 slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0",
+            "Indexed sampler table: shader=0x7eaf40ad slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0"
+          ]
+        },
+        "vk_resource_pool.cpp:203 Commit": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 4,
+          "examples": [
+            "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+            "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024",
+            "Descriptor pool underprovisioned: type=SampledImage required=251161 pool=251146"
+          ]
+        },
+        "vk_graphics_pipeline.cpp:381 GraphicsPipeline": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 23,
+          "examples": [
+            "Unimplemented scaled min/max blend: attachment=5 format=0 color-op=4 color-src=6 color-dst=1 alpha-op=4 alpha-src=6 alpha-dst=1"
+          ]
+        }
+      },
+      "oodle_usage_warnings": 0
+    },
+    "gow": {
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "source_commit": "09c24731040ecc8447cd1f894ed5e44fa1396565",
+      "native_binary_sha256": "7008ea0e5bb3be620eb37fc8fa389e7fb35eedb021ca7d6561d0a1e4e696b176",
+      "exit_code": -11,
+      "exit_reason": "GPU_CONTEXT_LOST",
+      "elapsed_seconds": 121.592,
+      "owned_child_terminated": true,
+      "vram_free_at_launch": 20583444480,
+      "full_console_reviewed_bytes": 14754138,
+      "console_tail_complete": true,
+      "warning_error_groups": {
+        "emulator.cpp:261 ExtractTrophies": {
+          "module": "Loader",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "emulator.cpp:681 Run": {
+          "module": "Loader",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "vk_instance.cpp:253 lambda": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "vk_instance.cpp:801 CollectImageFormatInfo": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "module.cpp:308 LoadModuleToMemory": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 5,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx"
+          ]
+        },
+        "module.cpp:540 LoadDynamicInfo": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "linker.cpp:448 Resolve": {
+          "module": "Core.Linker",
+          "severity": "Warning",
+          "count": 185,
+          "examples": [
+            "Linker: Stub resolved tZ2yplY8MBY as sceKernelGetPageTableStats (lib: libkernel, mod: libkernel)",
+            "Linker: Stub resolved R9lA82OraNs as sceAppContentInitialize (lib: dlcldr, mod: dlcldr)",
+            "Linker: Stub resolved +YX0z-GUSNw as sceCoredumpAttachMemoryRegion (lib: libSceCoredump, mod: libkernel)"
+          ]
+        },
+        "kernel.cpp:350 __sys_regmgr_call": {
+          "module": "Lib.Kernel",
+          "severity": "Error",
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "thread_atexit.cpp:22 _sceKernelSetThreadAtexitCount": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "thread_atexit.cpp:32 _sceKernelSetThreadAtexitReport": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "app_content.cpp:508 sceAppContentInitialize": {
+          "module": "Lib.AppContent",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "memory.cpp:966 sceKernelSetPrtAperture": {
+          "module": "Kernel.Vmm",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "PRT aperture id = 0, address = 0x1000000000, size = 0x7600000000 is set but not used"
+          ]
+        },
+        "memory.cpp:476 sceKernelGetDirectMemoryType": {
+          "module": "Kernel.Vmm",
+          "severity": "Warning",
+          "count": 22,
+          "examples": [
+            "called, direct memory addr = 0x400000",
+            "called, direct memory addr = 0xad988000",
+            "called, direct memory addr = 0xb7240000"
+          ]
+        },
+        "stubs.cpp:34 CommonStub": {
+          "module": "Core",
+          "severity": "Error",
+          "count": 4,
+          "examples": [
+            "Stub: sceKernelGetPageTableStats (nid: tZ2yplY8MBY) called, returning zero to 0x48306f",
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0x4858cc",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0x4858e9"
+          ]
+        },
+        "coredump.cpp:20 sceCoredumpRegisterCoredumpHandler": {
+          "module": "Lib.Kernel",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0x483ad0, stack_size = 0x10000, common = 0x0"
+          ]
+        },
+        "ssl2.cpp:230 sceSslInit": {
+          "module": "Lib.Ssl2",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "userservice.cpp:1182 sceUserServiceInitialize": {
+          "module": "Lib.UserService",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "np_trophy.cpp:1028 sceNpTrophyRegisterContext": {
+          "module": "Lib.NpTrophy",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "np_trophy.cpp:956 sceNpTrophyGetTrophyUnlockState": {
+          "module": "Lib.NpTrophy",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "np_tus.cpp:5021 sceNpTusSetThreadParam": {
+          "module": "Lib.NpTus",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "np_manager.cpp:606 sceNpGetNpId": {
+          "module": "Lib.NpManager",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "sceNpGetNpId: SIGNED_OUT (user_id=1000 shadnet_enabled=false signed_in=false)"
+          ]
+        },
+        "systemservice.cpp:1886 sceSystemServiceGetHdrToneMapLuminance": {
+          "module": "Lib.SystemService",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "pad.cpp:263 scePadInit": {
+          "module": "Lib.Pad",
+          "severity": "Error",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "file_system.cpp:300 open": {
+          "module": "Kernel.Fs",
+          "severity": "Error",
+          "count": 11,
+          "examples": [
+            "Opening path /app0/exec/wad/orbis_le/sys_files.texpack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/sys_files.lodpack.toc failed, file does not exist",
+            "Opening path /app0/exec/sound/orbis_le/sys_files.audiopack.toc failed, file does not exist"
+          ]
+        },
+        "liverpool.cpp:1156 ProcessCompute": {
+          "module": "Render",
+          "severity": "Warning",
+          "count": 1802,
+          "examples": [
+            "Encountered compute SetQueueReg: vqid = 4, reg_offset = 0xb"
+          ]
+        },
+        "resource_patching_pass.cpp:210 SharpLocationFromSource": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 224,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "vk_pipeline_cache.cpp:763 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 2,
+          "examples": [
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x4158, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x41d4, copies=1, register_records=192; checkpoint coverage complete"
+          ]
+        },
+        "vk_pipeline_cache.cpp:821 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 2,
+          "examples": [
+            "Ordered GDS preflight: static site=0x4158, control=0x1300, count=1 (execution remains gated)",
+            "Ordered GDS preflight: static site=0x41d4, control=0x300, count=2 (execution remains gated)"
+          ]
+        },
+        "vk_pipeline_cache.cpp:846 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Ordered GDS decoded-ISA CFG: topology=exclusive-paths, sites=2, site0-to-site1=false, site1-to-site0=false, may_bypass_all=true, unknown_control=false; this does not reveal runtime wave paths or actual guest wave creation order"
+          ]
+        },
+        "vk_pipeline_cache.cpp:859 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 2,
+          "examples": [
+            "Ordered GDS guest ISA: site=0x4158 VDST=v7 control=0x1300 (checkpoint and continuation site)",
+            "Ordered GDS guest ISA: site=0x41d4 VDST=v7 control=0x300 (checkpoint and continuation site)"
+          ]
+        },
+        "vk_pipeline_cache.cpp:864 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Ordered GDS static guest sites=2 (per-wave site selection requires capture; not one full wave batch per site)"
+          ]
+        },
+        "vk_pipeline_cache.cpp:869 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Ordered GDS guest checkpoint prerequisites: allocated_vgprs=52, shared_lds_bytes=1536, continuation_words_per_invocation=207"
+          ]
+        },
+        "vk_pipeline_cache.cpp:883 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Ordered GDS GPU packet ABI: guest_wave_slots=7, capture_bytes=448, resume_bytes=448"
+          ]
+        },
+        "vk_pipeline_cache.cpp:887 CompileModule": {
+          "module": "Render.Recompiler",
+          "severity": "Warning",
+          "count": 1,
+          "examples": [
+            "Ordered GDS compute preflight (CS-register snapshot): groups=(7,1,1), local=(64,1,1), guest_wave64_slots=7, waves_per_group=1; these are logical capture slots NOT guest creation order, indirect dispatch may differ"
+          ]
+        },
+        "vk_rasterizer.cpp:970 DispatchOriginalGcnOrderedCaptureImpl": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 4122,
+          "examples": [
+            "PR117 original guest GCN GPU first pass completed: epoch=<counter>, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=<counter>, waves=11, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=<counter>, waves=13, sites=2; captured phase ready for ordered resolution"
+          ]
+        },
+        "vk_runtime.cpp:75 SanitizeCopyLayers": {
+          "module": "Render.Vulkan",
+          "severity": "Warning",
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum."
+          ]
+        },
+        "vk_semaphore.cpp:73 Wait": {
+          "module": "Debug",
+          "severity": "Critical",
+          "count": 1,
+          "examples": [
+            "Unreachable code!"
+          ]
+        }
+      },
+      "oodle_usage_warnings": 6270
+    }
+  },
+  "observations": {
+    "got": "The top-left patch contains rendered imagery at about 16x16 pixels; the user reports it changing. The 110s screenshot shows incomplete dark geometry, figures and fire at 3 FPS / 334.4 ms. The FPS overlay is at the upper right. The captures do not establish that all missing graphics are compressed into the patch.",
+    "gow": "GPU is busy at 100% during the late stall; driver reports insufficient memory for submission followed by ErrorDeviceLost. Whole-device VRAM use is about 10.7GB at 107s out of 25.75GB. Device memory exhaustion is not established. Root kernel captures contain only 600 repeated errors around the end and cannot establish the first cause.",
+    "performance": "GoT: 916208 draw calls, 322393 dispatch calls, 21.72s inclusive GPU waits and 11.20s self texture binding across the run. GoW live snapshot at about 117s: 4.35 million page-protect calls / 12.82s, 41.72s inclusive GPU waits and 31.75s inclusive ordered-DS work (nested costs, not additive). These are host region costs, not per-frame GPU timing."
+  },
+  "source_pin": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+  "upstream_base": "2bd672ea5c188b99d1080029a57ba0926273381c",
+  "pull_request": "https://github.com/Chreece/shadPS4/pull/191",
+  "changes": [
+    "Compute mip/layer offsets from the final backing rather than the last examined overlap; preserve the requested relative view and undo prior backing offsets during rebinding.",
+    "Use one-layer byte stride to calculate a subarray base layer; reject underflow, zero strides and ranges extending beyond the mip.",
+    "Copy valid GPU contents before retiring an overlapping bound target/texture, mark required rebinds, and keep fresh backing contents when the old image is CPU dirty.",
+    "Bounded unique small-render-pass logs expose addresses, dimensions, view, viewport, scissor and pipeline stages; sparse subresource mapping events show resolved views.",
+    "GPU work ring grows from 2048 to 16384 entries with an 8MiB output cap. Kernel collection uses the native start time and preserves both beginning and end up to 8MiB, with truncation metadata. Console retention grows to 64MiB.",
+    "Original OpenOrbis subarray probe supplied under tools/hardware/subresource-alias; two paired cases compare relative array-layer aliasing."
+  ],
+  "validation": {
+    "production_cache_methods": {
+      "before": {
+        "exit_code": 1,
+        "stdout": "checks=572 failures=179\n",
+        "stderr": ""
+      },
+      "after": {
+        "exit_code": 0,
+        "stdout": "checks=572 failures=0\n",
+        "stderr": ""
+      }
+    },
+    "fixture_scope": "Production FindImage, ResolveOverlap, MipOf and SliceOf are extracted unchanged; Vulkan operations and backing storage are substituted. These are host checks, not native rendering validation.",
+    "stencil_ownership": {
+      "production_cases": 22,
+      "address_sanitizer": "PASS",
+      "undefined_sanitizer": "PASS",
+      "leak_sanitizer": "unavailable under host ptrace",
+      "gpu_execution": false
+    },
+    "native_build": "PASS GCC14 Release full link after explicit reconfigure at pinned source",
+    "host_binary_sha256": "ee956219cf997e37e21e2bc970b94b5e3ac994967ba18c1ef85c6fdaa8105153",
+    "retained_cpu_suite": "PASS: 31 CTests; renderer, SRT, sparse arena, descriptors, contiguous VMA, unexpected Vulkan error and guest/HLE ABI checks",
+    "native_startup": "PASS 3 actual-binary CLI/user-directory scenarios",
+    "hardware_probe": "Strict host C11 syntax passes; SDK linking and physical GPU execution not performed. Probe covers relative array views, not mip-chain overlap order. No new guest ISA/kernel behavior is implemented by the host cache correction.",
+    "runner": "PASS interval arguments, noninteractive sudo-only collection, head/tail retention, truncation flags, Bash/Python syntax, observer/runner/wrapper checksums",
+    "tests_added_to_repository": false
+  },
+  "open_issues": [
+    "Native corner cause and full scene lighting/geometry remain unverified.",
+    "GoW cutscene GPU loss and low FPS remain unresolved; earliest kernel failure was absent in the supplied tail.",
+    "Three runtime sample-offset warnings in GoT still represent an unimplemented path. No offsets are fabricated by this patch.",
+    "Unflattened SHARP warnings (GoT 609, GoW 224) require descriptor provenance/capture; warnings alone do not prove the runtime fallback failed.",
+    "GoT scaled min/max blend warnings remain; format=0 in this log is the numeric format value, not proof an attachment is absent.",
+    "Descriptor pool growth messages are handled by the existing allocator; the new capture has no descriptor-allocation crash.",
+    "Layer-count coercion messages and active depth/stencil readback limitations remain under review.",
+    "Missing dumped fonts/trophy resources and GoW wypsm file-open failures are recorded; optional versus required file status is unverified. No guest files are fabricated.",
+    "Unimplemented service stubs, compute queue register 0xb, wave-limit hints and Oodle usage warnings are audited but not claimed implemented or causal."
+  ],
+  "next_test": {
+    "source_and_runner": "0d82e3ff401f2a5fafc7543f8afb9ab004be30f8",
+    "wrapper_sha256": "63c8c3f2dcb8cf2e8894278571284672ab01dc2a3d482effdad01f4e25a1594d",
+    "gpu_trace": true,
+    "vulkan_validation": false,
+    "performance_sampling": false,
+    "game_order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "input": "manual only",
+    "limit_seconds_per_game": 120,
+    "sudo": "one interactive sudo -v after build/reuse, journal commands sudo -n",
+    "preserve": [
+      "installed ES-DE binary",
+      "Sunshine",
+      "SSH session"
+    ],
+    "warning": "Command tracing changes diagnostic overhead; do not claim an FPS gain from cross-mode comparison."
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "timestamp_utc": "2026-11-07T10:50:38.309084+00:00",
+  "archive": "universal-two-games-20261107T100443Z-2640501.tar.gz",
+  "archive_sha256": "b356bc96d71ad051872a32b7edd2ef98ad589f41c296ceb16e8434e6545836bf",
+  "library_file_id": "libfile_66c3a7bb98b4819192e4bf9c41e37884",
+  "tested_source": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+  "tested_runner": "d395e460740c04944be70fbbe886d147c73fa1eb",
+  "native_binary_sha256": "2e71fab6d42f8e35573dbe54d25f2540697b8e48785da4cd3bc2f84d9b0469be",
+  "native_acceptance": "FAILED_BOTH_GAMES",
+  "new_candidate_native_acceptance": "UNVERIFIED",
+  "upstream": "2bd672ea5c188b99d1080029a57ba0926273381c",
+  "integration_commit": "ae40271e3ffa4c55a6d9a282379eff3dc8f71faf",
+  "got": {
+    "elapsed_seconds": 118.571,
+    "owned_child_terminated": true,
+    "kernel_gpu_timeout": false,
+    "visual_80s": "4 FPS overlay, mostly dark scene geometry, small white artifact at upper left.",
+    "visual_110s": "3 FPS overlay, incomplete dark figures/geometry and fire; not acceptable.",
+    "corner_claim": "The supplied 80/110 second frames show a small bright upper-left artifact and the upper-right FPS overlay; they do not establish that the missing scene is compressed into that corner.",
+    "runner_result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED is capture completion, not graphics acceptance."
+  },
+  "gow": {
+    "elapsed_seconds": 120,
+    "owned_child_terminated": false,
+    "kernel_gpu_timeout": true,
+    "kernel_event": "amdgpu ring gfx_0.0.0 timeout, but soft recovered",
+    "first_wait": {
+      "completed_tick": 31189,
+      "requested_tick": 31192,
+      "recorded_commands": 9140570,
+      "overwritten_commands": 9138522
+    },
+    "visual_110s": "Cutscene frame with 9 FPS overlay; overlay does not prove GPU forward progress.",
+    "ollama_restore": "DEFERRED_GPU_FAILURE_OR_LIVE_PROCESS"
+  },
+  "changes": [
+    "Move sparse residency acquisition out of locked scheduler completion callbacks, accumulating/coalescing completed fault ranges and resolving them before graphics/compute work. Drain completions created during residency too.",
+    "Upload the separate single-sample guest stencil plane with its own 8-bit layout and layer count; preserve pending depth dirty state on stencil-only upload.",
+    "Preserve GPU-owned stencil data in the buffer cache before reassociation or image retirement; preserve newer guest dirty data and distinguish unchanged neighboring-page writes.",
+    "Honor requested depth/stencil copy aspects. For a stencil copy between guest planes sharing one host image, use the guest buffer-backed transfer instead of overlapping Vulkan image self-copy; preserve untouched array layers.",
+    "Add sparse stencil upload/save/copy counters for native verification.",
+    "Authenticate sudo once after either native build or verified build reuse; all journal collectors remain noninteractive."
+  ],
+  "source_reference": "https://github.com/shadps4-emu/shadPS4/pull/5601",
+  "reference_scope": "Independent adaptation of the separate stencil-plane upload proposal, with existing aspect-aware footprint arithmetic and additional dirty-state, ownership and copy handling.",
+  "causal_limits": [
+    "The locking defect is reproduced from production callback code; a native stack trace has not tied it conclusively to the prior frozen black GoT builds.",
+    "No native game was run here. Missing graphics, cutscene stability and FPS must be verified on the user GPU.",
+    "Single-sample guest stencil transfers only. Multisampled shared-image stencil copies fail explicitly rather than issuing an invalid self-copy.",
+    "The pre-existing general CPU/buffer readback limitations for active depth/stencil attachments are not claimed resolved by this patch.",
+    "No shader hash, title identifier or vendor-specific behavior controls the emulator changes."
+  ],
+  "validation": {
+    "fault_handoff": {
+      "before": {
+        "deadlocked": true
+      },
+      "after": {
+        "exit": 0,
+        "deadlocked": false
+      }
+    },
+    "stencil_ownership": {
+      "production_cases": 22,
+      "address_sanitizer": "PASS",
+      "undefined_sanitizer": "PASS",
+      "leak_sanitizer": "unavailable under host ptrace",
+      "gpu_execution": false
+    },
+    "retained_cpu_regressions": "PASS: 31 CTests, 7 renderer contracts, 10418 production SRT checks, sparse host limits, descriptor heap, contiguous VMA, unexpected Vulkan error and guest/HLE ABI checks.",
+    "new_diagnostics_existing_tests": "2/2 PASS enabled/disabled",
+    "build": "PASS GCC14 Release full link",
+    "host_configuration": "GCC14 Release; SDL_UNIX_CONSOLE_BUILD=ON and LIBUSB_ENABLE_UDEV=OFF for local development-library availability; native user build options unchanged.",
+    "hardware_execution": "NOT RUN; host Vulkan cache/scheduling correction, no new guest ISA or kernel semantics.",
+    "initial_validation_failures": [
+      "Missing host desktop/udev/UUID headers, resolved locally without changing project dependency rules.",
+      "Fixture initially lacked Vulkan-Hpp aggregate configuration; corrected.",
+      "LeakSanitizer unavailable under host ptrace; ASan/UBSan run with leak checking disabled.",
+      "Fixture replacement-token collision corrected."
+    ],
+    "published_tree_matches_local_staged_tree": true,
+    "startup": "PASS 3 native CLI/user-directory scenarios; GPU not run",
+    "retained_renderer_contracts_after_final_edits": "7/7 PASS",
+    "image_transfer_after_final_edits": "4/4 PASS",
+    "binary_sha256": "a13b40d6360edcafa3ecb58d6429af9e6e51a481510c6c5c03b62096c4f991d0",
+    "pinned_build": "PASS full link with HEAD 09c24731040ecc8447cd1f894ed5e44fa1396565",
+    "repository_source_unchanged_after_build": true
+  },
+  "candidate_source": "09c24731040ecc8447cd1f894ed5e44fa1396565",
+  "candidate_tree": "1d05c85bd775f646e99ab200862b1ed99452e437",
+  "next_runner_commit": "09c24731040ecc8447cd1f894ed5e44fa1396565",
+  "next_capture": {
+    "first_game": "GoT",
+    "seconds_per_game": 120,
+    "mode": "performance",
+    "gpu_command_trace": false,
+    "vulkan_validation": false,
+    "shader_dump": false,
+    "sudo": "one post-build/reuse authentication; journal collection sudo -n",
+    "installed_binary_changed": false
+  }
+}
