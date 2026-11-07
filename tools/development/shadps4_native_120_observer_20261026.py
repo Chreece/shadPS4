@@ -1138,7 +1138,7 @@ def main():
                                 capture_gpu_clients(report, f'{second:03d}s', snapshot_budget)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
-                        if second in (80, 110) and live_symbols is not None:
+                        if second in (80, 110, 140, 180) and live_symbols is not None:
                             capture_owned_live_memory(child.pid, report, second, live_symbols)
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
