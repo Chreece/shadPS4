@@ -7,6 +7,10 @@ it actually unloaded after the ES-DE AppImage terminates.
 
 ## Install / integration
 
+Evidence from the 2026-11-07 Sunshine system journal shows that Sunshine directly executes
+`~/apps/es/extracted/squashfs-root/usr/bin/es-de`. The previous wrapper at
+`~/apps/es/ES-DE_x64.AppImage` was bypassed and therefore did not run.
+
 Install `scripts/esde-ollama-vram-guard.py` at:
 `~/projects/shadps4/scripts/esde-ollama-vram-guard.py`.
 
@@ -17,9 +21,10 @@ python3 ~/projects/shadps4/scripts/esde-ollama-vram-guard.py install
 python3 ~/projects/shadps4/scripts/esde-ollama-vram-guard.py status
 ```
 
-The installer expects the real executable at `~/apps/es/ES-DE_x64.AppImage`.
+The installer now expects the real executable at
+`~/apps/es/extracted/squashfs-root/usr/bin/es-de`.
 It **retains the original ELF unmodified** at
-`~/apps/es/ES-DE_x64.AppImage.real` and installs a tiny shell wrapper at
+`~/apps/es/extracted/squashfs-root/usr/bin/es-de.real` and installs a tiny shell wrapper at
 the original path. Existing launchers continue using their existing command
 line; all arguments are forwarded unchanged. It does not touch the installed
 shadPS4 core, `~/.local/bin/shadps4-esde`, Sunshine, or the Ollama service.
@@ -47,11 +52,16 @@ This restores the original ES-DE AppImage filename.
    with their prior long-lived keep-alive where possible.
 5. Write per-session JSONL events to `~/projects/shadps4/logs/esde-vram-*.jsonl`.
 
-If GPU VRAM cannot be measured or Ollama is inaccessible, the launcher
-**fails open** (starts ES-DE and logs the problem). Other GPU consumers may
-prevent the 8-GiB target from being reached even after Ollama is unloaded:
-the guard records `target_reached=false` but still starts ES-DE.
-This is a **startup** reservation, not a continuous memory monitor.
+If VRAM cannot be measured, or it remains below 8 GiB after trying Ollama,
+the launcher **blocks ES-DE before starting the GPU workload** (exit 75),
+records `BLOCKED_ESDE_TO_PROTECT_SUNSHINE`, and restores models this session
+unloaded. Other GPU consumers may prevent the threshold being reached.
+Sunshine remains running; this is a deliberate fail-closed safeguard.
+During the session, the guard samples GPU free VRAM and Sunshine's read-only
+file descriptor count/limits every five seconds in `SESSION_RESOURCE_SAMPLE`.
+This adds evidence for `VK_ERROR_OUT_OF_DEVICE_MEMORY` and `Too many open files`
+without touching Sunshine's process, services, audio, or configuration.
+This is a **startup** reservation, not continuous memory policing.
 Normal exits and handled termination signals trigger restoration; forced
 SIGKILL, system power loss, or an unavailable Ollama server cannot guarantee
 restoration.
@@ -62,7 +72,7 @@ Optional environment overrides:
 
 - `ESDE_GUARD_MIN_FREE_GIB` — default `8`.
 - `ESDE_GUARD_OLLAMA_API` — default IPv4 `http://127.0.0.1:11434`.
-- `ESDE_GUARD_APPIMAGE` — default `~/apps/es/ES-DE_x64.AppImage`.
+- `ESDE_GUARD_APPIMAGE` — default `~/apps/es/extracted/squashfs-root/usr/bin/es-de`.
 - `ESDE_GUARD_PROJECT` — default `~/projects/shadps4`.
 - `ESDE_GUARD_DRM_ROOT` — default `/sys/class/drm`, also used for offline testing.
 
