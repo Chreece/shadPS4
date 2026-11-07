@@ -52,7 +52,7 @@ trap finish EXIT
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' 24e05d430bdccbb94df2a5b9b65a7d5f39f026357281427d5ab0517f0ca06abf "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' bea04d5a896959c154173844c25ebbf6a029c79f9b06b331310bc1d8068747df "$OUT/graphics.py" | sha256sum --check -
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"

@@ -1,0 +1,228 @@
+{
+  "timestamp_utc": "2026-11-07T09:54:52.994824+00:00",
+  "result": "PR188_NATIVE_REJECTED_REGRESSION_BASELINE_REPLAY_PENDING",
+  "archive": {
+    "filename": "universal-two-games-20261107T091600Z-2317317.tar(1).gz",
+    "sha256": "4a2def08d4fe3171cc1707c32c8887d2711a629115b7b04b6f39901dac42d390",
+    "url": "https://chatgpt.com/library?file_id=libfile_720a9c3a92048191ac9f04f7c16e625c&account_id=personal"
+  },
+  "native": {
+    "CUSA34384": {
+      "source_commit": "4b8d2b34a50a783bffbbd9084199910f45a17c36",
+      "binary_sha256": "f1b0c1f0207a2431665f9155eb3883d35b1a857a0433b1c094ebfd46cbfeb9c6",
+      "result": "GAME_OR_OBSERVER_FAILED",
+      "vram_free_at_launch": 20581310464,
+      "kernel_gpu_timeouts": [],
+      "exit_code": 1,
+      "native": {
+        "exit_reason": "GPU_MEMORY_HEADROOM_EXHAUSTED",
+        "exit_code": 0,
+        "elapsed_seconds": 60.486,
+        "owned_child_terminated": true,
+        "gpu_memory_headroom_failure": {
+          "card": "card0",
+          "device": "0000:03:00.0",
+          "free_bytes": 355348480,
+          "minimum_free_bytes": 8589934592,
+          "elapsed_seconds": 60.016
+        },
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png"
+        ],
+        "gpu_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "launch_vram_gib": 19.16783905029297,
+      "last_memory": {
+        "gpu_total_used": 25397678080,
+        "gpu_total_bytes": 25753026560,
+        "emulator_drm": [
+          {
+            "fd": "20",
+            "fields": {
+              "drm-driver": "amdgpu",
+              "drm-client-id": "4140",
+              "drm-pdev": "0000:03:00.0",
+              "drm-memory-vram": "4543388 KiB",
+              "drm-memory-gtt": "452116 KiB",
+              "drm-memory-cpu": "0 KiB",
+              "drm-shared-vram": "10240 KiB",
+              "drm-shared-gtt": "30720 KiB",
+              "drm-shared-cpu": "0 KiB",
+              "drm-engine-gfx": "12225786809 ns"
+            }
+          }
+        ],
+        "elapsed_seconds": 60.016
+      },
+      "ollama_samples": 122,
+      "ollama_nonempty_samples": 0,
+      "model_restoration": [
+        "RESTORED"
+      ]
+    },
+    "CUSA11456": {
+      "source_commit": "4b8d2b34a50a783bffbbd9084199910f45a17c36",
+      "binary_sha256": "f1b0c1f0207a2431665f9155eb3883d35b1a857a0433b1c094ebfd46cbfeb9c6",
+      "result": "CAPTURE_COMPLETE_VISUAL_REVIEW_REQUIRED",
+      "vram_free_at_launch": 19562430464,
+      "kernel_gpu_timeouts": [],
+      "exit_code": 0,
+      "native": {
+        "exit_reason": "TEST_118S_DURATION_LIMIT",
+        "exit_code": 0,
+        "elapsed_seconds": 118.418,
+        "owned_child_terminated": true,
+        "gpu_memory_headroom_failure": null,
+        "screenshots": [
+          "frame-008s.png",
+          "frame-025s.png",
+          "frame-080s.png",
+          "frame-110s.png"
+        ],
+        "gpu_failure": null,
+        "native_fault": {
+          "fault_mapping": "NO_UNHANDLED_ACCESS_REPORTED"
+        }
+      },
+      "launch_vram_gib": 18.21893310546875,
+      "last_memory": {
+        "gpu_total_used": 9307746304,
+        "gpu_total_bytes": 25753026560,
+        "emulator_drm": [
+          {
+            "fd": "20",
+            "fields": {
+              "drm-driver": "amdgpu",
+              "drm-client-id": "4109",
+              "drm-pdev": "0000:03:00.0",
+              "drm-memory-vram": "4049380 KiB",
+              "drm-memory-gtt": "500484 KiB",
+              "drm-memory-cpu": "0 KiB",
+              "drm-shared-vram": "40960 KiB",
+              "drm-shared-gtt": "0 KiB",
+              "drm-shared-cpu": "0 KiB",
+              "drm-engine-gfx": "5338447506 ns"
+            }
+          }
+        ],
+        "elapsed_seconds": 117.891
+      },
+      "ollama_samples": 235,
+      "ollama_nonempty_samples": 0,
+      "model_restoration": [
+        "RESTORED"
+      ]
+    }
+  },
+  "visual_review": {
+    "CUSA11456": "80s and 110s black except 30 FPS overlay; no gameplay acceptance",
+    "CUSA34384": "25s studio text; no 80s or 110s image because VRAM guard stopped the run"
+  },
+  "got_stall": {
+    "last_recorded_gpu_work_ms": 62513,
+    "cpu_ticks_80s_110s": {
+      "Game:Main": [
+        2546,
+        2546
+      ],
+      "shadPS4:GpuComm": [
+        1415,
+        1415
+      ],
+      "shadPS4:Present": [
+        40,
+        40
+      ]
+    },
+    "conclusion": "Host/guest progress stalls despite overlay. Futex samples do not identify the lock owner or prove the root cause."
+  },
+  "gow_memory": {
+    "board_used_gib": 23.653430938720703,
+    "emulator_fdinfo_vram_gib": 4.332912445068359,
+    "board_free_gib": 0.3309440612792969,
+    "conclusion": "Large unattributed device allocation. Empty Ollama model lists do not prove which process owns it. No spontaneous native crash or in-run ring timeout captured in this run."
+  },
+  "regression_boundary": {
+    "last_scene_visible_source": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+    "last_scene_visible_binary_sha256": "2e71fab6d42f8e35573dbe54d25f2540697b8e48785da4cd3bc2f84d9b0469be",
+    "first_black_frozen_source": "47a0c8400509d7cfa89d02fd0f38c1a06f193dfe",
+    "latest_failed_source": "4b8d2b34a50a783bffbbd9084199910f45a17c36",
+    "prior_review": "20261106-host-idle-ownership-restoration.json",
+    "qualification": "Last scene-visible is not a known-good renderer. Missing fill, low FPS and GoW cutscene GPU waits existed before PR187. Repeated runs are not a matched A/B proof of copy-footprint causality."
+  },
+  "decision": {
+    "promote_pr187": false,
+    "promote_pr188": false,
+    "main_changed": false,
+    "installed_binary_changed": false,
+    "new_emulator_candidate": false,
+    "new_emulator_build": "NOT_NEEDED; reuse recorded native PR185 binary",
+    "next": "Replay pre-regression binary with latest host guards and new memory-owner snapshots before adding more renderer changes",
+    "upstream_resolved_for_information": "2bd672ea5c188b99d1080029a57ba0926273381c",
+    "upstream_policy": "Historical binary replay; no rebase or moving-ref gate. No new emulation candidate offered."
+  },
+  "runner": {
+    "commit": "d395e460740c04944be70fbbe886d147c73fa1eb",
+    "entry": "scripts/shadps4-regression-baseline-20261107.sh",
+    "source_commit": "4caaea20e0bcfd68aaf0a1d7e6bb21f9bdcf98b1",
+    "mode": "existing",
+    "checksum": "bb0ca2c89451a9a4f07eb240d105a7c6e4cd427b30f9f4a2ce4e739684d0c69b",
+    "gpu_client_capture": "Readable /proc DRM fdinfo before launch, 25s, low VRAM and after stop; 0.25s collection budget and 0.6s subprocess bound, shortened near termination; PID/comm/UID and DRM data only",
+    "visibility_limit": "Unreadable descriptors and truncation explicitly recorded. Shared-client holders are retained; do not add their memory values. Not all device allocations need be attributed. No privileged process reads or process/service changes.",
+    "protections": [
+      "118s TERM +2s KILL only owned game",
+      ">=8 GiB free VRAM",
+      "exact source and known native binary hash",
+      "isolated config/saves",
+      "conditional Ollama restoration",
+      "manual game input",
+      "Sunshine/X11/SSH and installed binary untouched"
+    ],
+    "command": "(\n  set -euo pipefail\n  R=d395e460740c04944be70fbbe886d147c73fa1eb\n  S=\"$HOME/projects/shadps4/scripts/shadps4-regression-baseline-20261107.sh\"\n  mkdir -p \"$(dirname \"$S\")\"\n  T=\"$S.download.$$\"\n  trap 'rm -f -- \"$T\"' EXIT\n  curl --ipv4 --fail --location --retry 3 \\\n    \"https://raw.githubusercontent.com/Chreece/shadPS4/$R/scripts/shadps4-regression-baseline-20261107.sh\" -o \"$T\"\n  printf '%s  %s\\n' bb0ca2c89451a9a4f07eb240d105a7c6e4cd427b30f9f4a2ce4e739684d0c69b \"$T\" | sha256sum --check -\n  mv -- \"$T\" \"$S\"\n  bash \"$S\" \"$R\"\n)\n"
+  },
+  "validation": {
+    "checks": 28,
+    "passed": [
+      "duplicates within a process deduplicated",
+      "shared client holders across processes retained",
+      "separate gpu client preserved",
+      "non DRM descriptors excluded",
+      "unreadable/exited processes counted",
+      "memory fields preserved",
+      "process limit reported",
+      "descriptor limit reported",
+      "zero time budget reported",
+      "missing proc root reported",
+      "real bounded subprocess writes record",
+      "timeout cannot interrupt cleanup",
+      "os cannot interrupt cleanup",
+      "badjson preserved as error",
+      "failed preserved as error",
+      "observer checksum chain",
+      "graphics checksum chain",
+      "wrapper checksum chain",
+      "handoff success",
+      "exact baseline existing mode",
+      "trace and GoT first",
+      "temporary wrapper cleaned",
+      "download failure stops before native",
+      "sudo failure stops before native",
+      "native failure propagated",
+      "changed source rejected",
+      "changed binary rejected",
+      "missing baseline rejected without rebuild"
+    ],
+    "native_game_execution": "NOT_RUN",
+    "boundaries": "Git/network/sudo/native handoff mocked; /proc collector run on real host"
+  },
+  "limits": [
+    "Native replay not run here; user homeserver required.",
+    "No recovery or FPS improvement claimed.",
+    "Vulkan validation disabled in trace mode; cannot certify validation clearance.",
+    "No new repository tests or PS4 semantic changes."
+  ]
+}
