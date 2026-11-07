@@ -863,6 +863,82 @@ def gpu_memory_headroom_failure(usage):
     return None
 
 
+def collect_gpu_clients(proc=Path('/proc'), max_seconds=0.25,
+                        max_processes=4096, max_descriptors=16384):
+    began = time.monotonic()
+    record = {'monotonic_seconds': began, 'clients': [], 'processes_scanned': 0,
+              'descriptors_scanned': 0, 'unreadable_processes': 0,
+              'unreadable_descriptors': 0, 'truncated': False,
+              'scope': 'readable DRM fdinfo; shared clients may have multiple holders; '
+                       'not a complete allocation census'}
+    try:
+        for process in proc.iterdir():
+            if not process.name.isdecimal():
+                continue
+            if (time.monotonic() - began >= max_seconds or
+                    record['processes_scanned'] >= max_processes):
+                record['truncated'] = True
+                break
+            record['processes_scanned'] += 1
+            try:
+                uid = process.stat().st_uid
+                with (process / 'comm').open() as stream:
+                    name = stream.read(256).strip()
+                seen = set()
+                for descriptor in (process / 'fdinfo').iterdir():
+                    if (time.monotonic() - began >= max_seconds or
+                            record['descriptors_scanned'] >= max_descriptors):
+                        record['truncated'] = True
+                        break
+                    record['descriptors_scanned'] += 1
+                    try:
+                        with descriptor.open() as stream:
+                            data = stream.read(16384)
+                    except OSError:
+                        record['unreadable_descriptors'] += 1
+                        continue
+                    fields = {}
+                    for line in data.splitlines():
+                        key, separator, value = line.partition(':')
+                        if separator and key.startswith('drm-'):
+                            fields[key] = value.strip()
+                    if 'drm-driver' not in fields:
+                        continue
+                    identity = (fields.get('drm-pdev'), fields['drm-driver'],
+                                fields.get('drm-client-id'))
+                    if identity[2] is not None and identity in seen:
+                        continue
+                    seen.add(identity)
+                    record['clients'].append({'pid': int(process.name), 'uid': uid,
+                                              'name': name, 'fd': descriptor.name,
+                                              'fields': fields})
+                    if len(record['clients']) >= 128:
+                        record['truncated'] = True
+                        break
+            except OSError:
+                record['unreadable_processes'] += 1
+            if record['truncated']:
+                break
+    except OSError as error:
+        record['error'] = str(error)
+    record['elapsed_seconds'] = round(time.monotonic() - began, 6)
+    return record
+
+
+def capture_gpu_clients(out, label, timeout=0.6):
+    try:
+        captured = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), '--gpu-client-snapshot'],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+        if captured.returncode:
+            record = {'error': 'GPU_CLIENT_SNAPSHOT_FAILED', 'exit_code': captured.returncode}
+        else:
+            record = json.loads(captured.stdout)
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        record = {'error': type(error).__name__}
+    save(out / f'gpu-clients-{label}.json', record)
+
+
 def classify_native_fault(console, out, binary):
     # A fault RIP in a PIE binary must be corrected by the mapping file
     # offset; don't mistake a generic SIGABRT for the true preceding SIGSEGV.
@@ -922,6 +998,7 @@ def main():
         p.error('An emulator is already running; refuse another: '+str(busy))
     report=args.report
     report.mkdir(parents=True,exist_ok=False)
+    capture_gpu_clients(report, 'before-launch')
     env=os.environ.copy()
     for key in tuple(env):
         if key.startswith(('SHADPS4_GOW_','SHADPS4_GOT_','SHADPS4_CPU_ID_')):
@@ -975,6 +1052,9 @@ def main():
                 if memory_failure:
                     result['gpu_memory_headroom_failure']=memory_failure
                     result['exit_reason']='GPU_MEMORY_HEADROOM_EXHAUSTED'
+                    snapshot_budget = min(0.6, 118 - (time.monotonic() - began))
+                    if snapshot_budget > 0.05:
+                        capture_gpu_clients(report, 'headroom-failure', snapshot_budget)
                     break
                 with console.open('rb') as monitor:
                     monitor.seek(console_offset)
@@ -1000,6 +1080,10 @@ def main():
                 for second in due:
                     if elapsed>=second and second not in taken:
                         taken.add(second)
+                        if second == 25:
+                            snapshot_budget = min(0.6, 118 - (time.monotonic() - began))
+                            if snapshot_budget > 0.05:
+                                capture_gpu_clients(report, '025s', snapshot_budget)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
                         if second in (80, 110) and live_symbols is not None:
@@ -1033,6 +1117,7 @@ def main():
             if not result['owned_child_terminated']:
                 result['exit_reason']='OWNED_PROCESS_STOP_UNCONFIRMED'
         result['elapsed_seconds']=round(time.monotonic()-began,3)
+        capture_gpu_clients(report, 'after-stop')
         if console.is_file():
             try:
                 result.update(summarize(console,report))
@@ -1074,4 +1159,7 @@ def main():
 
 
 if __name__=='__main__':
+    if sys.argv[1:] == ['--gpu-client-snapshot']:
+        print(json.dumps(collect_gpu_clients()))
+        raise SystemExit(0)
     raise SystemExit(main())
