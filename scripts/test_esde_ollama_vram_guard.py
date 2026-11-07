@@ -97,6 +97,7 @@ class GuardTests(unittest.TestCase):
         self.assertFalse(self.guard.REAL.exists())
 
     def test_launch_restores_on_normal_nonzero_exit(self):
+        self.used.write_text(str(15 * GIB))  # 9 GiB free, no Ollama action required
         app = self.root / 'mock-esde.sh'
         app.write_text('#!/bin/sh\nexit 7\n')
         app.chmod(0o755)
@@ -112,6 +113,7 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(seen, [('loaded:before', 300)])
 
     def test_unexpected_preflight_error_still_restores_incremental_state(self):
+        self.used.write_text(str(15 * GIB))
         app = self.root / 'mock-esde.sh'
         app.write_text('#!/bin/sh\nexit 0\n')
         app.chmod(0o755)
@@ -140,6 +142,29 @@ class GuardTests(unittest.TestCase):
         self.assertIn('CUSTOM_ARG=hello', result.stdout)
         self.assertIn('ENOUGH_VRAM', result.stdout)
         self.assertEqual(self.guard.REAL.read_bytes()[:4], b'\x7fELF')
+
+    def test_insufficient_vram_blocks_launch_without_ollama(self):
+        self.used.write_text(str(20 * GIB))  # 4 GiB free; protect Sunshine
+        app = self.root / 'must-not-execute.sh'
+        marker = self.root / 'unexpected-launch'
+        app.write_text('#!/bin/sh\\nprintf \"launched\\n\" > ' + str(marker) + '\\n')
+        app.chmod(0o755)
+        with mock.patch.object(self.guard, 'loaded_models', side_effect=RuntimeError('Ollama API down')):
+            self.assertEqual(self.guard.run(app, []), 75)
+        self.assertFalse(marker.exists())
+        self.assertIn('BLOCKED_ESDE_TO_PROTECT_SUNSHINE', self.log_text())
+
+    def test_missing_vram_blocks_launch(self):
+        self.total.unlink()
+        app = self.root / 'must-not-execute.sh'
+        marker = self.root / 'unexpected-launch'
+        app.write_text('#!/bin/sh\\ntouch ' + str(marker) + '\\n')
+        app.chmod(0o755)
+        self.assertEqual(self.guard.run(app, []), 75)
+        self.assertFalse(marker.exists())
+
+    def log_text(self):
+        return '\\n'.join(p.read_text() for p in self.guard.LOGS.glob('esde-vram-*.jsonl'))
 
     def test_multiple_gpu_cards_prefers_largest_vram(self):
         intel = self.guard.SYSFS / 'card1/device'
