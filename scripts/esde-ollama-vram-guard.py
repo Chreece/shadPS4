@@ -29,7 +29,7 @@ REAL = APPIMAGE.with_name(APPIMAGE.name + '.real')
 SCRIPT = PROJECT / 'scripts/esde-ollama-vram-guard.py'
 LOGS = PROJECT / 'logs'
 SYSFS = Path(os.environ.get('ESDE_GUARD_DRM_ROOT', '/sys/class/drm'))
-API = os.environ.get('ESDE_GUARD_OLLAMA_API', 'http://127.0.0.1:11434').rstrip('/')
+API = os.environ.get('ESDE_GUARD_OLLAMA_API', 'http://127.0.0.1:7869').rstrip('/')
 REQUIRED = int(float(os.environ.get('ESDE_GUARD_MIN_FREE_GIB', '8')) * 1024 ** 3)
 MARKER = '# CHREECE_ESDE_OLLAMA_VRAM_GUARD_V1'
 
@@ -146,7 +146,7 @@ def unload_for_vram(log: Path, unloaded: list[tuple[str, int]]) -> None:
         except (OSError, ValueError, RuntimeError) as exc:
             emit(log, 'UNLOAD_FAILED', model=name, error=str(exc))
             continue
-        for _ in range(10):
+        for _ in range(40):
             if (free_bytes() or 0) >= REQUIRED:
                 break
             time.sleep(0.25)
@@ -345,10 +345,20 @@ def main() -> int:
         usage = vram()
         print('ESDE_WRAPPED=' + str(is_wrapper()))
         print('REAL_APPIMAGE=' + str(REAL) + ' exists=' + str(REAL.is_file()))
+        print('OLLAMA_BACKEND=' + API)
         if usage is None:
             print('VRAM_STATUS=UNAVAILABLE')
         else:
             print('VRAM_FREE_GIB=%.2f' % ((usage[0] - usage[1]) / 1024 ** 3))
+        try:
+            models = loaded_models()  # Read-only /api/ps
+            print('OLLAMA_BACKEND_STATUS=VERIFIED')
+            print('OLLAMA_LOADED_MODELS=' + str(len(models)))
+            for model in models:
+                print('OLLAMA_RESIDENT_MODEL=' + model['name'] +
+                      ' GPU_GIB=%.2f' % (int(model.get('size_vram') or 0) / 1024 ** 3))
+        except (OSError, ValueError, RuntimeError) as exc:
+            print('OLLAMA_BACKEND_STATUS=UNAVAILABLE ' + str(exc))
         return 0
     if command == 'run' and len(sys.argv) >= 4 and sys.argv[2] == '--':
         return run(Path(sys.argv[3]), sys.argv[4:])
