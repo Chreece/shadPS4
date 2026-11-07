@@ -1,0 +1,1674 @@
+{
+  "schema_version": 1,
+  "timestamp_utc": "2026-11-07T17:00:40.566485+00:00",
+  "scope": "UNIVERSAL_SHADPS4",
+  "result": "CUTSCENE_PROGRESS_REPORTED_RENDERING_PARTIAL_CPU_GPU_COST_CAPTURE_PENDING",
+  "source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+  "runner_commit": "05fe9702134c6ac39cba9ec450b1e5b20b7ee482",
+  "emulator_code_changed": false,
+  "upstream_commit": "33e73127119f672f9f08b8a5a7f71600263f61d9",
+  "native_archive": "universal-two-games-20261107T162307Z-1013992.tar.gz",
+  "native_archive_sha256": "0fc5cb9761105c2df56d168ef0fbd58f2dd1180d30806546a686854104044d43",
+  "graphics_verified": false,
+  "fps_improvement_verified": false,
+  "games": {
+    "got": {
+      "native_binary_sha256": "388236531c94d1183754e135746c3247ca904c4aa5e175c5fa83d200ad272947",
+      "native_source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+      "native_runner_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+      "elapsed_seconds": 185.738,
+      "exit_reason": "TEST_185S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "gpu_memory_fault_reports": 0,
+      "performance_diagnostics_requested": false,
+      "performance_records": 0,
+      "gpu_progress_requested": false,
+      "gpu_command_trace_requested": true,
+      "ollama_isolation": "NO_MODEL_CONTAINERS_FOUND_GUARD_ACTIVE",
+      "graphics_event_sampled_max_counts": {
+        "enabled": 1,
+        "buffer-protect-none": 32768,
+        "buffer-protect-read": 131072,
+        "image-protect-read": 16384,
+        "viewport-layout": 131072,
+        "stencil-upload": 3,
+        "buffer-protect-write": 131072,
+        "buffer-readback": 16384,
+        "image-protect-write": 2048,
+        "image-protect-none": 1024,
+        "image-readback": 4096,
+        "image-read-demand": 2048,
+        "conditional-exec": 512,
+        "image-buffer-write": 512,
+        "draw-preparation-flush": 512,
+        "copy-layers": 32,
+        "subresource-view": 65536
+      },
+      "usage_windows": [
+        {
+          "requested_seconds": [
+            20,
+            60
+          ],
+          "actual_seconds": [
+            19.805,
+            59.949
+          ],
+          "process_cpu_core_equivalents": 1.833393,
+          "owned_gfx_engine_percent": 19.374497,
+          "gpu_client_ids": [
+            "7310"
+          ]
+        },
+        {
+          "requested_seconds": [
+            80,
+            110
+          ],
+          "actual_seconds": [
+            79.832,
+            110.046
+          ],
+          "process_cpu_core_equivalents": 1.413246,
+          "owned_gfx_engine_percent": 68.876276,
+          "gpu_client_ids": [
+            "7310"
+          ]
+        },
+        {
+          "requested_seconds": [
+            140,
+            180
+          ],
+          "actual_seconds": [
+            139.833,
+            180.15
+          ],
+          "process_cpu_core_equivalents": 1.209686,
+          "owned_gfx_engine_percent": 78.68522,
+          "gpu_client_ids": [
+            "7310"
+          ]
+        }
+      ],
+      "top_thread_cpu_deltas": [
+        {
+          "tid": 1211657,
+          "name": "shadPS4:GpuComm",
+          "cpu_seconds_140_to_180": 8.287266,
+          "wchan_at_180": "drm_syncobj_array_wait_timeout.constprop.0",
+          "syscall_at_180": "16 0x17 0xc03064ca 0x7f78277fa110 0x0 0x1dcb44dc12d69 0x3 0x7f78277fa080 0x7f7a4eaeb65b\n"
+        },
+        {
+          "tid": 1212430,
+          "name": "JobWorker1",
+          "cpu_seconds_140_to_180": 6.162964,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095df48 0x0 0x0 0x0 0x0 0x3f80000000000000 0x7efa93dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212434,
+          "name": "JobWorker5",
+          "cpu_seconds_140_to_180": 5.722804,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x800960da8 0x0 0x0 0x0 0x0 0x100284dfe0 0x7ef9d3dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212432,
+          "name": "JobWorker3",
+          "cpu_seconds_140_to_180": 5.56582,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095f678 0x0 0x0 0x0 0x0 0x3f80000000000000 0x7efa33dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212431,
+          "name": "JobWorker2",
+          "cpu_seconds_140_to_180": 5.44721,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095eae0 0x0 0x0 0x0 0x0 0x1cf874c 0x7efa63dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212433,
+          "name": "JobWorker4",
+          "cpu_seconds_140_to_180": 4.467456,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x7f77a000fcec 0x0 0x0 0x0 0x0 0x18 0x7f77a000fca8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212374,
+          "name": "Game:Main",
+          "cpu_seconds_140_to_180": 4.061261,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x7f77e0309cec 0x0 0x0 0x0 0x0 0x18 0x7f77e0309ca8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212425,
+          "name": "JobWorkerLow1",
+          "cpu_seconds_140_to_180": 1.174705,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095a550 0x0 0x0 0x0 0x0 0x43c8000043c80000 0x7efb83dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212446,
+          "name": "AK::EventManage",
+          "cpu_seconds_140_to_180": 1.134989,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x7ef7d3f10 0x189 0x0 0x0 0x0 0xffffffff 0x7ef7d3d68 0x7f7a4ea7972e\n"
+        },
+        {
+          "tid": 1212426,
+          "name": "JobWorkerLow2",
+          "cpu_seconds_140_to_180": 1.126768,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095b0e8 0x0 0x0 0x0 0x0 0x43c8000043c80000 0x7efb53dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212427,
+          "name": "JobWorkerLow3",
+          "cpu_seconds_140_to_180": 1.06433,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095bc80 0x0 0x0 0x0 0x0 0x43c8000043c80000 0x7efb23dc8 0x7f7a4eaed4f9\n"
+        },
+        {
+          "tid": 1212428,
+          "name": "JobWorkerLow4",
+          "cpu_seconds_140_to_180": 1.055011,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x80095c818 0x0 0x0 0x0 0x7f77bc000030 0x43c8000043c80000 0x7efaf3dc8 0x7f7a4eaed4f9\n"
+        }
+      ],
+      "warning_error_groups": [
+        {
+          "component": "Lib.GnmDriver",
+          "severity": "Error",
+          "location": "gnmdriver.cpp:2065 sceGnmSetWaveLimitMultipliers",
+          "count": 1689,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "linker.cpp:448 Resolve",
+          "count": 315,
+          "examples": [
+            "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "resource_patching_pass.cpp:210 SharpLocationFromSource",
+          "count": 271,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_rasterizer.cpp:2428 BindTextures",
+          "count": 12,
+          "examples": [
+            "Indexed sampler table: shader=0x33a001dc slots=16 available=9 valid=9 bytes=3456 record_stride=384",
+            "Indexed sampler table: shader=0x83c06d36 slots=16 available=9 valid=9 bytes=3456 record_stride=384"
+          ]
+        },
+        {
+          "component": "Core",
+          "severity": "Error",
+          "location": "stubs.cpp:34 CommonStub",
+          "count": 9,
+          "examples": [
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f"
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "module.cpp:540 LoadDynamicInfo",
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_instance.cpp:801 CollectImageFormatInfo",
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_runtime.cpp:75 SanitizeCopyLayers",
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum."
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "module.cpp:308 LoadModuleToMemory",
+          "count": 4,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_resource_pool.cpp:203 Commit",
+          "count": 4,
+          "examples": [
+            "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+            "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024"
+          ]
+        },
+        {
+          "component": "Lib.AudioOut",
+          "severity": "Error",
+          "location": "audioout.cpp:965 sceAudioOutMasteringSetParam",
+          "count": 3,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Error",
+          "location": "kernel.cpp:350 __sys_regmgr_call",
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        {
+          "component": "Lib.Ssl2",
+          "severity": "Error",
+          "location": "ssl2.cpp:230 sceSslInit",
+          "count": 2,
+          "examples": [
+            "(DUMMY) called poolSize = 262144",
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        {
+          "component": "Loader",
+          "severity": "Error",
+          "location": "emulator.cpp:261 ExtractTrophies",
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        {
+          "component": "Loader",
+          "severity": "Warning",
+          "location": "emulator.cpp:681 Run",
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_instance.cpp:253 lambda",
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "thread_atexit.cpp:22 _sceKernelSetThreadAtexitCount",
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "thread_atexit.cpp:32 _sceKernelSetThreadAtexitReport",
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        {
+          "component": "Kernel.Fs",
+          "severity": "Error",
+          "location": "file_system.cpp:1199 sceKernelStat",
+          "count": 1,
+          "examples": [
+            "error = 2"
+          ]
+        },
+        {
+          "component": "Lib.AppContent",
+          "severity": "Warning",
+          "location": "app_content.cpp:508 sceAppContentInitialize",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        {
+          "component": "Lib.SystemService",
+          "severity": "Error",
+          "location": "systemservice.cpp:2157 sceSystemServiceParamGetString",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.UserService",
+          "severity": "Warning",
+          "location": "userservice.cpp:1182 sceUserServiceInitialize",
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        {
+          "component": "Lib.GameLiveStreaming",
+          "severity": "Error",
+          "location": "gamelivestreaming.cpp:90 sceGameLiveStreamingInitialize",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "coredump.cpp:20 sceCoredumpRegisterCoredumpHandler",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+          ]
+        },
+        {
+          "component": "Lib.SystemService",
+          "severity": "Error",
+          "location": "systemservice.cpp:1886 sceSystemServiceGetHdrToneMapLuminance",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.NetCtl",
+          "severity": "Error",
+          "location": "netctl.cpp:372 sceNetCtlInit",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.NpTrophy",
+          "severity": "Error",
+          "location": "np_trophy.cpp:1028 sceNpTrophyRegisterContext",
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        {
+          "component": "Lib.NpTrophy",
+          "severity": "Error",
+          "location": "np_trophy.cpp:956 sceNpTrophyGetTrophyUnlockState",
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        {
+          "component": "Lib.NpManager",
+          "severity": "Error",
+          "location": "np_manager.cpp:1051 sceNpRegisterStateCallbackForToolkit",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Pad",
+          "severity": "Error",
+          "location": "pad.cpp:263 scePadInit",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.AudioOut",
+          "severity": "Error",
+          "location": "audioout.cpp:957 sceAudioOutMasteringInit",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Http2",
+          "severity": "Error",
+          "location": "http2.cpp:201 sceHttp2Init",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        {
+          "component": "Lib.Http",
+          "severity": "Error",
+          "location": "http.cpp:2005 sceHttpsLoadCert",
+          "count": 1,
+          "examples": [
+            "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+          ]
+        },
+        {
+          "component": "Lib.NpManager",
+          "severity": "Error",
+          "location": "np_manager.cpp:749 sceNpSetContentRestriction",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Vdec2",
+          "severity": "Warning",
+          "location": "videodec2.cpp:75 sceVideodec2AllocateComputeQueue",
+          "count": 1,
+          "examples": [
+            "called"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "lower_buffer_format_to_raw.cpp:216 LowerBufferFormatInst",
+          "count": 1,
+          "examples": [
+            "Skipping lowering for null buffer sharp"
+          ]
+        }
+      ],
+      "command_marker_intervals": {
+        "span_ms": 1972,
+        "event_elapsed_ms": {
+          "buffer-copy": 13,
+          "dispatch": 24,
+          "texture-bind-finish": 82,
+          "dispatch-indirect": 3,
+          "buffer-fill": 3,
+          "shader": 1,
+          "draw": 221,
+          "session-end": 0,
+          "submit": 1607,
+          "draw-indirect": 18,
+          "detile": 0,
+          "image-upload": 0,
+          "image-download": 0,
+          "tile": 0
+        },
+        "largest_intervals": [
+          [
+            65,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            62,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            59,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            51,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            47,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            44,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            41,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            41,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            41,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            41,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            41,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            40,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            40,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            40,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            26,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            24,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            20,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            18,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            17,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            16,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            16,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            16,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            16,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            16,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            15,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            15,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=b5c898c7 images=251146 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            15,
+            "draw",
+            " indexed=0 vertices=3 instances=1",
+            "texture-bind-finish",
+            " shader=7eaf40ad images=251151 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ],
+          [
+            14,
+            "submit",
+            " command-buffers=1 waits=0",
+            "texture-bind-finish",
+            " shader=836253ca images=1755 uploads=0"
+          ]
+        ]
+      },
+      "ordered_dispatches": 0,
+      "ordered_capture_phase_completions": 0,
+      "command_trace_entries_total": 2144020,
+      "screenshot_180s": {
+        "file": "capture/frame-180s.png",
+        "sha256": "8030949a9edda00dc50fd723d7a53dc7a1d17548642110641fc77e9eaa9f868c",
+        "fps_overlay": 4,
+        "frame_time_ms_overlay": 260.6
+      },
+      "kernel_gpu_timeouts": [],
+      "kernel_gpu_failures": [],
+      "kernel_evidence_sha256": {
+        "kernel-journal.json": "5bd0f62b2f79d9bcd0471bc091223c9a514f1016e0540a4b0d53ca3669c6a6d1",
+        "kernel-gpu-journal-root.json": "4377b2e3f818ff194513457979bfbf3c85cc6d5b021c7150986abecf9fa3d759",
+        "kernel-journal-root.json": "de97e8d6f9b0536e9db0555799aeb16cebf2eb3f1a78ce204608d2be61568ca7",
+        "kernel-gpu-journal.json": "dde240e036bf5d2a25d0be0345a90855a83bda2624c7f2b954db0bddfea79a3f"
+      }
+    },
+    "gow": {
+      "native_binary_sha256": "388236531c94d1183754e135746c3247ca904c4aa5e175c5fa83d200ad272947",
+      "native_source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+      "native_runner_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+      "elapsed_seconds": 186.624,
+      "exit_reason": "TEST_185S_DURATION_LIMIT",
+      "owned_child_terminated": true,
+      "gpu_failure": null,
+      "gpu_memory_fault_reports": 0,
+      "performance_diagnostics_requested": false,
+      "performance_records": 0,
+      "gpu_progress_requested": false,
+      "gpu_command_trace_requested": true,
+      "ollama_isolation": "NO_MODEL_CONTAINERS_FOUND_GUARD_ACTIVE",
+      "graphics_event_sampled_max_counts": {
+        "enabled": 1,
+        "buffer-protect-none": 32768,
+        "image-protect-read": 16384,
+        "buffer-protect-read": 1048576,
+        "image-protect-none": 8192,
+        "viewport-layout": 2097152,
+        "image-buffer-write": 131072,
+        "buffer-protect-write": 4194304,
+        "buffer-readback": 16384,
+        "image-protect-write": 8192,
+        "stencil-upload": 2048,
+        "image-readback": 8192,
+        "image-read-demand": 8192,
+        "copy-layers": 5,
+        "draw-preparation-flush": 1024,
+        "depth-stencil-access": 8192
+      },
+      "usage_windows": [
+        {
+          "requested_seconds": [
+            20,
+            60
+          ],
+          "actual_seconds": [
+            19.812,
+            60.105
+          ],
+          "process_cpu_core_equivalents": 1.647466,
+          "owned_gfx_engine_percent": 25.797525,
+          "gpu_client_ids": [
+            "7312"
+          ]
+        },
+        {
+          "requested_seconds": [
+            80,
+            110
+          ],
+          "actual_seconds": [
+            79.947,
+            110.194
+          ],
+          "process_cpu_core_equivalents": 1.795191,
+          "owned_gfx_engine_percent": 24.021657,
+          "gpu_client_ids": [
+            "7312"
+          ]
+        },
+        {
+          "requested_seconds": [
+            140,
+            180
+          ],
+          "actual_seconds": [
+            140.084,
+            180.173
+          ],
+          "process_cpu_core_equivalents": 1.752092,
+          "owned_gfx_engine_percent": 26.45395,
+          "gpu_client_ids": [
+            "7312"
+          ]
+        }
+      ],
+      "top_thread_cpu_deltas": [
+        {
+          "tid": 1247799,
+          "name": "shadPS4:GpuComm",
+          "cpu_seconds_140_to_180": 30.637301,
+          "wchan_at_180": "drm_syncobj_array_wait_timeout.constprop.0",
+          "syscall_at_180": "16 0x17 0xc03064ca 0x7f19765f9db0 0x0 0x1dce06c605025 0x3 0x7f19765f9d20 0x7f1b9d51865b\n"
+        },
+        {
+          "tid": 1248508,
+          "name": "Game:Main",
+          "cpu_seconds_140_to_180": 14.04329,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x55725287c280 0x189 0x746 0x0 0x0 0xffffffff 0x7efddb108 0x7f1b9d4a672e\n"
+        },
+        {
+          "tid": 1248869,
+          "name": "GpuCullMonitor",
+          "cpu_seconds_140_to_180": 4.347545,
+          "wchan_at_180": "0",
+          "syscall_at_180": "202 0x7f18c8012e88 0x89 0x0 0x7ef7c2bd0 0x0 0xffffffff 0x7ef7c2aa8 0x7f1b9d4a672e\n"
+        },
+        {
+          "tid": 1248546,
+          "name": "TaskManager04",
+          "cpu_seconds_140_to_180": 3.777442,
+          "wchan_at_180": "0",
+          "syscall_at_180": "202 0x7f190400fcec 0x0 0x0 0x0 0x0 0x18 0x7f190400fca8 0x7f1b9d51a4f9\n"
+        },
+        {
+          "tid": 1248545,
+          "name": "TaskManager03",
+          "cpu_seconds_140_to_180": 3.739996,
+          "wchan_at_180": "0",
+          "syscall_at_180": "running\n"
+        },
+        {
+          "tid": 1248544,
+          "name": "TaskManager02",
+          "cpu_seconds_140_to_180": 3.726396,
+          "wchan_at_180": "0",
+          "syscall_at_180": "running\n"
+        },
+        {
+          "tid": 1248542,
+          "name": "TaskManager00",
+          "cpu_seconds_140_to_180": 3.720871,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x7f191000fcec 0x0 0x0 0x0 0x0 0x18 0x7f191000fca8 0x7f1b9d51a4f9\n"
+        },
+        {
+          "tid": 1248543,
+          "name": "TaskManager01",
+          "cpu_seconds_140_to_180": 3.707859,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "running\n"
+        },
+        {
+          "tid": 1248702,
+          "name": "shadPS4:AjmWork",
+          "cpu_seconds_140_to_180": 0.831728,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x7f191c6ce790 0x189 0x1856 0x0 0x0 0xffffffff 0x7f18edff7238 0x7f1b9d4a672e\n"
+        },
+        {
+          "tid": 1247684,
+          "name": "shadPS4:Main",
+          "cpu_seconds_140_to_180": 0.472978,
+          "wchan_at_180": "do_sys_poll",
+          "syscall_at_180": "271 0x7ffdd61f5c28 0x1 0x7ffdd61f5bd0 0x0 0x8 0x0 0x7ffdd61f5b78 0x7f1b9d4a672e\n"
+        },
+        {
+          "tid": 1249186,
+          "name": "shadPS4:GpuComm",
+          "cpu_seconds_140_to_180": 0.312542,
+          "wchan_at_180": "futex_wait_queue",
+          "syscall_at_180": "202 0x557284bc8ad8 0x189 0xef1c 0x0 0x0 0xffffffff 0x7f18bcf54308 0x7f1b9d4a672e\n"
+        },
+        {
+          "tid": 1247694,
+          "name": "PulseMainloop",
+          "cpu_seconds_140_to_180": 0.220071,
+          "wchan_at_180": "do_sys_poll",
+          "syscall_at_180": "7 0x7f19780071a0 0x2 0xffffffffffffffff 0x0 0x0 0x0 0x7f1b99dfb178 0x7f1b9d4a672e\n"
+        }
+      ],
+      "warning_error_groups": [
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_rasterizer.cpp:973 DispatchOriginalGcnOrderedCaptureImpl",
+          "count": 8882,
+          "examples": [
+            "PR117 original guest GCN GPU first pass completed: epoch=1, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=2, waves=7, sites=2; captured phase ready for ordered resolution"
+          ]
+        },
+        {
+          "component": "Render",
+          "severity": "Warning",
+          "location": "liverpool.cpp:1156 ProcessCompute",
+          "count": 2667,
+          "examples": [
+            "Encountered compute SetQueueReg: vqid = 4, reg_offset = 0xb"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "resource_patching_pass.cpp:210 SharpLocationFromSource",
+          "count": 228,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "linker.cpp:448 Resolve",
+          "count": 185,
+          "examples": [
+            "Linker: Stub resolved tZ2yplY8MBY as sceKernelGetPageTableStats (lib: libkernel, mod: libkernel)",
+            "Linker: Stub resolved R9lA82OraNs as sceAppContentInitialize (lib: dlcldr, mod: dlcldr)"
+          ]
+        },
+        {
+          "component": "Kernel.Vmm",
+          "severity": "Warning",
+          "location": "memory.cpp:476 sceKernelGetDirectMemoryType",
+          "count": 22,
+          "examples": [
+            "called, direct memory addr = 0x400000",
+            "called, direct memory addr = 0xad988000"
+          ]
+        },
+        {
+          "component": "Kernel.Fs",
+          "severity": "Error",
+          "location": "file_system.cpp:300 open",
+          "count": 11,
+          "examples": [
+            "Opening path /app0/exec/wad/orbis_le/sys_files.texpack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/sys_files.lodpack.toc failed, file does not exist"
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "module.cpp:540 LoadDynamicInfo",
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_instance.cpp:801 CollectImageFormatInfo",
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })"
+          ]
+        },
+        {
+          "component": "Core.Linker",
+          "severity": "Warning",
+          "location": "module.cpp:308 LoadModuleToMemory",
+          "count": 5,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_runtime.cpp:75 SanitizeCopyLayers",
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum."
+          ]
+        },
+        {
+          "component": "Core",
+          "severity": "Error",
+          "location": "stubs.cpp:34 CommonStub",
+          "count": 4,
+          "examples": [
+            "Stub: sceKernelGetPageTableStats (nid: tZ2yplY8MBY) called, returning zero to 0x48306f",
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0x4858cc"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Error",
+          "location": "kernel.cpp:350 __sys_regmgr_call",
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:764 CompileModule",
+          "count": 2,
+          "examples": [
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x4158, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x41d4, copies=1, register_records=192; checkpoint coverage complete"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:822 CompileModule",
+          "count": 2,
+          "examples": [
+            "Ordered GDS preflight: static site=0x4158, control=0x1300, count=1 (execution remains gated)",
+            "Ordered GDS preflight: static site=0x41d4, control=0x300, count=2 (execution remains gated)"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:860 CompileModule",
+          "count": 2,
+          "examples": [
+            "Ordered GDS guest ISA: site=0x4158 VDST=v7 control=0x1300 (checkpoint and continuation site)",
+            "Ordered GDS guest ISA: site=0x41d4 VDST=v7 control=0x300 (checkpoint and continuation site)"
+          ]
+        },
+        {
+          "component": "Loader",
+          "severity": "Error",
+          "location": "emulator.cpp:261 ExtractTrophies",
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        {
+          "component": "Loader",
+          "severity": "Warning",
+          "location": "emulator.cpp:681 Run",
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        {
+          "component": "Render.Vulkan",
+          "severity": "Warning",
+          "location": "vk_instance.cpp:253 lambda",
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "thread_atexit.cpp:22 _sceKernelSetThreadAtexitCount",
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "thread_atexit.cpp:32 _sceKernelSetThreadAtexitReport",
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        {
+          "component": "Lib.AppContent",
+          "severity": "Warning",
+          "location": "app_content.cpp:508 sceAppContentInitialize",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        {
+          "component": "Kernel.Vmm",
+          "severity": "Warning",
+          "location": "memory.cpp:966 sceKernelSetPrtAperture",
+          "count": 1,
+          "examples": [
+            "PRT aperture id = 0, address = 0x1000000000, size = 0x7600000000 is set but not used"
+          ]
+        },
+        {
+          "component": "Lib.Kernel",
+          "severity": "Warning",
+          "location": "coredump.cpp:20 sceCoredumpRegisterCoredumpHandler",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0x483ad0, stack_size = 0x10000, common = 0x0"
+          ]
+        },
+        {
+          "component": "Lib.Ssl2",
+          "severity": "Error",
+          "location": "ssl2.cpp:230 sceSslInit",
+          "count": 1,
+          "examples": [
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        {
+          "component": "Lib.UserService",
+          "severity": "Warning",
+          "location": "userservice.cpp:1182 sceUserServiceInitialize",
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        {
+          "component": "Lib.NpTrophy",
+          "severity": "Error",
+          "location": "np_trophy.cpp:1028 sceNpTrophyRegisterContext",
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        {
+          "component": "Lib.NpTrophy",
+          "severity": "Error",
+          "location": "np_trophy.cpp:956 sceNpTrophyGetTrophyUnlockState",
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        {
+          "component": "Lib.NpTus",
+          "severity": "Error",
+          "location": "np_tus.cpp:5021 sceNpTusSetThreadParam",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.NpManager",
+          "severity": "Warning",
+          "location": "np_manager.cpp:606 sceNpGetNpId",
+          "count": 1,
+          "examples": [
+            "sceNpGetNpId: SIGNED_OUT (user_id=1000 shadnet_enabled=false signed_in=false)"
+          ]
+        },
+        {
+          "component": "Lib.SystemService",
+          "severity": "Error",
+          "location": "systemservice.cpp:1886 sceSystemServiceGetHdrToneMapLuminance",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Lib.Pad",
+          "severity": "Error",
+          "location": "pad.cpp:263 scePadInit",
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:847 CompileModule",
+          "count": 1,
+          "examples": [
+            "Ordered GDS decoded-ISA CFG: topology=exclusive-paths, sites=2, site0-to-site1=false, site1-to-site0=false, may_bypass_all=true, unknown_control=false; this does not reveal runtime wave paths or actual guest wave creation order"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:865 CompileModule",
+          "count": 1,
+          "examples": [
+            "Ordered GDS static guest sites=2 (per-wave site selection requires capture; not one full wave batch per site)"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:870 CompileModule",
+          "count": 1,
+          "examples": [
+            "Ordered GDS guest checkpoint prerequisites: allocated_vgprs=52, shared_lds_bytes=1536, continuation_words_per_invocation=207"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:884 CompileModule",
+          "count": 1,
+          "examples": [
+            "Ordered GDS GPU packet ABI: guest_wave_slots=7, capture_bytes=448, resume_bytes=448"
+          ]
+        },
+        {
+          "component": "Render.Recompiler",
+          "severity": "Warning",
+          "location": "vk_pipeline_cache.cpp:888 CompileModule",
+          "count": 1,
+          "examples": [
+            "Ordered GDS compute preflight (CS-register snapshot): groups=(7,1,1), local=(64,1,1), guest_wave64_slots=7, waves_per_group=1; these are logical capture slots NOT guest creation order, indirect dispatch may differ"
+          ]
+        }
+      ],
+      "command_marker_intervals": {
+        "span_ms": 186,
+        "event_elapsed_ms": {
+          "buffer-copy": 12,
+          "dispatch-indirect": 12,
+          "texture-bind-finish": 19,
+          "image-download": 0,
+          "tile": 0,
+          "session-end": 0,
+          "submit": 58,
+          "detile": 0,
+          "image-upload": 1,
+          "dispatch": 20,
+          "shader": 1,
+          "draw": 40,
+          "buffer-fill": 0,
+          "draw-indirect": 23,
+          "ordered-gds": 0
+        },
+        "largest_intervals": [
+          [
+            8,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            5,
+            "submit",
+            " command-buffers=1 waits=2",
+            "texture-bind-finish",
+            " shader=9a1583fb images=0 uploads=0"
+          ],
+          [
+            5,
+            "submit",
+            " command-buffers=1 waits=0",
+            "buffer-copy",
+            " src=0x7f192c00d2c0 dst=0x557285da1f80 src-offset=3395584 dst-offset=837935104 bytes=4096"
+          ],
+          [
+            5,
+            "submit",
+            " command-buffers=1 waits=0",
+            "buffer-copy",
+            " src=0x7f192c00d2c0 dst=0x557285da1f80 src-offset=11540800 dst-offset=837935104 bytes=4096"
+          ],
+          [
+            4,
+            "submit",
+            " command-buffers=1 waits=0",
+            "session-end",
+            ""
+          ],
+          [
+            3,
+            "submit",
+            " command-buffers=1 waits=0",
+            "buffer-copy",
+            " src=0x7f192c00d2c0 dst=0x557285da1f80 src-offset=2527232 dst-offset=449863680 bytes=4096"
+          ],
+          [
+            3,
+            "submit",
+            " command-buffers=1 waits=0",
+            "buffer-copy",
+            " src=0x7f185144d1b0 dst=0x557285da1f80 src-offset=0 dst-offset=193462272 bytes=262144"
+          ],
+          [
+            3,
+            "submit",
+            " command-buffers=1 waits=0",
+            "buffer-copy",
+            " src=0x7f185144d1b0 dst=0x557285da1f80 src-offset=0 dst-offset=189792256 bytes=1048576"
+          ],
+          [
+            3,
+            "draw-indirect",
+            " indexed=1 address=10352b9384 count-address=0 max-count=1 stride=20",
+            "buffer-copy",
+            " src=0x7f185144d1b0 dst=0x557285da1f80 src-offset=0 dst-offset=218570752 bytes=16384"
+          ],
+          [
+            3,
+            "draw",
+            " indexed=1 vertices=3732 instances=1",
+            "texture-bind-finish",
+            " shader=8733594 images=1 uploads=0"
+          ],
+          [
+            3,
+            "draw",
+            " indexed=1 vertices=294 instances=1",
+            "texture-bind-finish",
+            " shader=8733594 images=1 uploads=0"
+          ],
+          [
+            3,
+            "draw",
+            " indexed=1 vertices=2238 instances=1",
+            "texture-bind-finish",
+            " shader=8733594 images=1 uploads=0"
+          ]
+        ]
+      },
+      "ordered_dispatches": 4441,
+      "ordered_capture_phase_completions": 8882,
+      "command_trace_entries_total": 16685211,
+      "screenshot_180s": {
+        "file": "capture/frame-180s.png",
+        "sha256": "f6a6ef0ac1693f783491d65b36cb39a8948ba9bb9cf48cbe0b7e3b0c86e601d1",
+        "fps_overlay": 10,
+        "frame_time_ms_overlay": 97.2
+      },
+      "kernel_gpu_timeouts": [],
+      "kernel_gpu_failures": [],
+      "kernel_evidence_sha256": {
+        "kernel-journal.json": "bf54a0f66e31455da19de5658cc2b8d2948db6d74a65505750618a323cb49c63",
+        "kernel-gpu-journal-root.json": "95ed60a5f51251aa7526294395d3bb2684ae64527fa0d3ce68f4c8d1b4dd230d",
+        "kernel-journal-root.json": "a1ad4dc5a2264c55263caf21436840894a8177b49248a49a8f39ae973ee69dc2",
+        "kernel-gpu-journal.json": "cf9b4eb9491676668a516f0f206799a6e9945b42642dba3a8fddf02651fd6438"
+      }
+    }
+  },
+  "user_observations": {
+    "got": "Some fog/wind change in menu; infill/material details still missing.",
+    "gow": "User reports progression through cutscene; black/missing background details and low FPS remain."
+  },
+  "visual_review": {
+    "got": "180s screenshot contains fog streaks/particles, menu text, black sword/foreground. Menu restoration fails.",
+    "gow": "180s screenshot contains the two characters and dark/missing background surfaces. Cutscene progression is user-observed, not independently proven by this one frame."
+  },
+  "interpretation": {
+    "got": "Late engine time is high and command thread repeatedly waits. Texture-preparation intervals include GPU waits and may include driver work; not proven shader-only or CPU-binding-only cost.",
+    "gow": "Low owned GPU engine use plus a busy GPU command thread indicate substantial CPU/serialization overhead. Millions of page-protection changes and thousands of ordered compute readbacks are candidates pending timing attribution.",
+    "vram": "No model containers found; no attribution to Ollama or capacity exhaustion.",
+    "regression_claim": "4 vs prior 9 FPS GoT overlays are not a controlled before/after performance comparison. Newly rendered work, scenes and recording costs differ. No FPS gain or unique regression cause claimed."
+  },
+  "measurement_limits": [
+    "Engine occupancy is the delta of owned DRM client gfx nanoseconds divided by elapsed wall time, not global GPU busy and not shader execution time.",
+    "Process CPU uses Linux x86 USER_HZ=100; thread CPU uses schedstat nanoseconds directly. Thread snapshot windows are approximately 140 to 180 seconds.",
+    "GPU command ring stores CPU-side markers. Adjacent marker gaps cannot be assigned to a specific completed GPU draw or a pure CPU function.",
+    "Graphics diagnostic counts are exponentially sampled lower bounds, not exact total calls.",
+    "Timing counters and SIGPROF sampling were disabled in this capture. Prior build profiles cannot establish current costs after rendering-path changes.",
+    "Live counters are asynchronous snapshots; nested self time and sample distributions need to be interpreted alongside waits, not naively summed across threads."
+  ],
+  "remaining_rendering_blockers": [
+    "GoT seven rejected 536-byte material-record tables have zero guest num_records; preserve real extents, never invent bounds.",
+    "GoT dynamic descriptor provenance warnings remain alongside newly accepted indexed material paths.",
+    "GoT large typed descriptor arrays (including 1755 and roughly 27904 slots) and per-entry sampler lookups deserve timing evidence.",
+    "Unsupported numeric image formats and library stubs remain; no evidence that every warning is a rendering cause.",
+    "GoW black surfaces remain despite user-reported cutscene passage. Ordered GDS semantics, coherent readbacks and correct VCC behavior must be retained."
+  ],
+  "runner_change": {
+    "files": [
+      "tools/development/shadps4_native_120_observer_20261026.py",
+      "tools/development/run_universal_verified_graphics.py",
+      "scripts/shadps4-universal-two-game-check.sh"
+    ],
+    "behavior": "Capture the existing live CPU samples and timing counters at 140 and 180 seconds in addition to 80 and 110 when performance diagnostics are enabled. No emulator rebuild or emulation change.",
+    "validation": {
+      "deadline_and_profile_schedule_cases": [
+        {
+          "performance": false,
+          "live_snapshots": [],
+          "seconds": 118,
+          "early_exit": null,
+          "stop": [
+            {
+              "at": 118.0,
+              "deadline": 120.0
+            }
+          ],
+          "result": {
+            "exit_reason": "TEST_118S_DURATION_LIMIT",
+            "elapsed_seconds": 118.0,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png",
+              "frame-080s.png",
+              "frame-095s.png",
+              "frame-110s.png"
+            ]
+          }
+        },
+        {
+          "performance": false,
+          "live_snapshots": [],
+          "seconds": 185,
+          "early_exit": null,
+          "stop": [
+            {
+              "at": 185.0,
+              "deadline": 187.0
+            }
+          ],
+          "result": {
+            "exit_reason": "TEST_185S_DURATION_LIMIT",
+            "elapsed_seconds": 185.0,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png",
+              "frame-080s.png",
+              "frame-095s.png",
+              "frame-110s.png",
+              "frame-140s.png",
+              "frame-160s.png",
+              "frame-180s.png"
+            ]
+          }
+        },
+        {
+          "performance": false,
+          "live_snapshots": [],
+          "seconds": 185,
+          "early_exit": 70,
+          "stop": [],
+          "result": {
+            "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+            "elapsed_seconds": 70.4,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png"
+            ]
+          }
+        },
+        {
+          "performance": true,
+          "live_snapshots": [
+            80,
+            110
+          ],
+          "seconds": 118,
+          "early_exit": null,
+          "stop": [
+            {
+              "at": 118.0,
+              "deadline": 120.0
+            }
+          ],
+          "result": {
+            "exit_reason": "TEST_118S_DURATION_LIMIT",
+            "elapsed_seconds": 118.0,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png",
+              "frame-080s.png",
+              "frame-095s.png",
+              "frame-110s.png"
+            ]
+          }
+        },
+        {
+          "performance": true,
+          "live_snapshots": [
+            80,
+            110,
+            140,
+            180
+          ],
+          "seconds": 185,
+          "early_exit": null,
+          "stop": [
+            {
+              "at": 185.0,
+              "deadline": 187.0
+            }
+          ],
+          "result": {
+            "exit_reason": "TEST_185S_DURATION_LIMIT",
+            "elapsed_seconds": 185.0,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png",
+              "frame-080s.png",
+              "frame-095s.png",
+              "frame-110s.png",
+              "frame-140s.png",
+              "frame-160s.png",
+              "frame-180s.png"
+            ]
+          }
+        },
+        {
+          "performance": true,
+          "live_snapshots": [],
+          "seconds": 185,
+          "early_exit": 70,
+          "stop": [],
+          "result": {
+            "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+            "elapsed_seconds": 70.4,
+            "screenshots": [
+              "frame-008s.png",
+              "frame-025s.png",
+              "frame-045s.png",
+              "frame-060s.png"
+            ]
+          }
+        }
+      ],
+      "python_syntax": "PASS",
+      "shell_syntax": "PASS",
+      "wrapper_runner_observer_hash_chain": "PASS",
+      "native_profile_run": "PENDING"
+    }
+  },
+  "next_run": {
+    "source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+    "runner_commit": "05fe9702134c6ac39cba9ec450b1e5b20b7ee482",
+    "mode": "existing",
+    "seconds_per_game": 185,
+    "order": [
+      "CUSA11456",
+      "CUSA34384"
+    ],
+    "cpu_sampling": true,
+    "performance_regions": true,
+    "gpu_command_trace": false,
+    "gpu_progress_timestamps": false,
+    "go_t_first_shader_capture": true,
+    "single_sudo_authentication": true,
+    "installed_esde_and_sunshine_unchanged": true,
+    "one_paste": "(\n  set -euo pipefail\n  unset SHADPS4_OLLAMA_CONTAINER_IDS\n  P=680db30c3f0b6678a65a4982aaf0274b1605255a\n  R=05fe9702134c6ac39cba9ec450b1e5b20b7ee482\n  S=\"$HOME/projects/shadps4/scripts/shadps4-universal-two-game-check.sh\"\n  mkdir -p \"$(dirname \"$S\")\"\n  T=\"$S.download.$$\"\n  trap 'rm -f -- \"$T\"' EXIT\n  curl --ipv4 --fail --location --retry 3 \\\n    \"https://raw.githubusercontent.com/Chreece/shadPS4/$R/scripts/shadps4-universal-two-game-check.sh\" -o \"$T\"\n  printf '%s  %s\\n' 8344efa068fdc4891e5b62895628259dd3cf7e06d649ef9bc3c958f7535c0d9a \"$T\" | sha256sum --check -\n  mv -- \"$T\" \"$S\"\n  SHADPS4_TEST_FIRST_GAME=CUSA11456 \\\n  SHADPS4_TEST_SECONDS=185 \\\n  SHADPS4_TEST_GPU_TRACE=0 SHADPS4_TEST_PERFORMANCE=1 \\\n  SHADPS4_TEST_CAPTURE_FIRST_SHADERS=1 \\\n  SHADPS4_GPU_PROGRESS=0 SHADPS4_KERNEL_JOURNAL_SUDO=1 \\\n    bash \"$S\" \"$P\" existing \"$R\"\n)"
+  }
+}
