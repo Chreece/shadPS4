@@ -24,7 +24,7 @@ import uuid
 
 HOME = Path.home()
 PROJECT = Path(os.environ.get('ESDE_GUARD_PROJECT', HOME / 'projects/shadps4'))
-APPIMAGE = Path(os.environ.get('ESDE_GUARD_APPIMAGE', HOME / 'apps/es/ES-DE_x64.AppImage'))
+APPIMAGE = Path(os.environ.get('ESDE_GUARD_APPIMAGE', HOME / 'apps/es/extracted/squashfs-root/usr/bin/es-de'))
 REAL = APPIMAGE.with_name(APPIMAGE.name + '.real')
 SCRIPT = PROJECT / 'scripts/esde-ollama-vram-guard.py'
 LOGS = PROJECT / 'logs'
@@ -204,11 +204,21 @@ def run(binary: Path, args: list[str]) -> int:
                 unload_for_vram(log, unloaded)
             except Exception as exc:
                 emit(log, 'PREFLIGHT_UNEXPECTED_ERROR', error=repr(exc))
-                # ES-DE should remain usable even if diagnostics or Ollama fail.
+                # Preflight failures must not bypass the VRAM requirement.
+            available = free_bytes()
+            emit(log, 'PRELAUNCH_VRAM', free_gib=round(available / 1024 ** 3, 2) if available is not None else None,
+                 minimum_gib=round(REQUIRED / 1024 ** 3, 2))
+            if available is None or available < REQUIRED:
+                emit(log, 'BLOCKED_ESDE_TO_PROTECT_SUNSHINE',
+                     reason='vram_unavailable' if available is None else 'vram_below_8_gib',
+                     free_gib=round(available / 1024 ** 3, 2) if available is not None else None)
+                return 75  # finally still restores the models that we unloaded
             emit(log, 'START_ESDE', executable=str(binary), args=args)
             child = subprocess.Popen([str(binary), *args])
             exit_code = child.wait()
-            emit(log, 'ESDE_EXITED', exit_code=exit_code)
+            final_free = free_bytes()
+            emit(log, 'ESDE_EXITED', exit_code=exit_code,
+                 final_free_gib=round(final_free / 1024 ** 3, 2) if final_free is not None else None)
         except (InterruptedError, KeyboardInterrupt) as exc:
             emit(log, 'ESDE_INTERRUPTED', signal=str(exc))
             if child is not None and child.poll() is None:
@@ -225,6 +235,8 @@ def run(binary: Path, args: list[str]) -> int:
         finally:
             signal.signal(signal.SIGTERM, signal.SIG_IGN)  # finish restoration even on late TERM
             restore(log, unloaded)
+            final_free = free_bytes()
+            emit(log, 'AFTER_RESTORE', free_gib=round(final_free / 1024 ** 3, 2) if final_free is not None else None)
             signal.signal(signal.SIGTERM, old_term)
             signal.signal(signal.SIGINT, old_int)
         return exit_code
