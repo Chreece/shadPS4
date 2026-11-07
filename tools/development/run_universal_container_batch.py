@@ -83,11 +83,13 @@ class Docker:
                              'StartedAt', 'FinishedAt')}
         return rows
 
-    def candidates(self, explicit):
-        ids = self.call('container', 'ls', '--all', '--no-trunc', '--format', '{{.ID}}').split()
-        if not set(explicit).issubset(ids):
-            raise RuntimeError('EVIDENCE_CONTAINER_MISSING; do not substitute a different container')
-        rows = self.inspect(ids) if ids else []
+    def candidates(self, explicit, timeout=10):
+        ids = self.call('container', 'ls', '--all', '--no-trunc', '--format', '{{.ID}}',
+                        timeout=timeout).split()
+        rows = self.inspect(ids, timeout=timeout) if ids else []
+        self.discovery = {'complete': True, 'missing_hint_ids': sorted(set(explicit) - set(ids)),
+            'inventory': [{key: row[key] for key in ('id', 'name', 'image', 'service')}
+                          | {'running': row['state']['Running']} for row in rows]}
         selected = []
         for row in rows:
             image = row['image'].split('@')[0].rsplit('/', 1)[-1].split(':')[0]
@@ -96,8 +98,6 @@ class Docker:
                 if row['swarm'] or row['state']['Paused'] or row['state']['Restarting']:
                     raise RuntimeError('UNSTABLE_OR_ORCHESTRATED_OLLAMA_CONTAINER')
                 selected.append(row)
-        if not selected:
-            raise RuntimeError('NO_OLLAMA_CONTAINER_IDENTIFIED')
         return selected
 
 
@@ -133,6 +133,7 @@ class ContainerLease:
 
     def acquire(self, explicit):
         rows = self.docker.candidates(explicit)
+        self.state['discovery'] = self.docker.discovery
         for row in rows:
             item = {key: row[key] for key in
                     ('id', 'name', 'image', 'image_id', 'created', 'state', 'restart')}
@@ -176,16 +177,24 @@ class ContainerLease:
             item['stopped_state'] = current['state']
             item['status'] = 'STOPPED'
             self.persist()
+        if not any(item['was_running'] for item in self.state['containers']):
+            print('OLLAMA_ALREADY_STOPPED_OR_ABSENT; NO_CONTAINER_START_REQUIRED', flush=True)
         self.check()
         self.state['result'] = 'HELD_STOPPED'
         self.persist()
 
     def check(self):
         items = self.state['containers']
-        rows = {row['id']: row for row in self.docker.inspect([i['id'] for i in items], timeout=2)}
+        rows = {row['id']: row for row in self.docker.inspect(
+            [i['id'] for i in items], timeout=2)} if items else {}
+        discovered = self.docker.candidates([], timeout=2)
+        new_running = [row['id'] for row in discovered if row['id'] not in rows and not stopped(row)]
         with (self.path.parent / 'ollama-container-during.jsonl').open('a') as stream:
             stream.write(json.dumps({'monotonic_seconds': time.monotonic(),
-                'containers': [{'id': row['id'], 'state': row['state']} for row in rows.values()]}) + '\n')
+                'containers': [{'id': row['id'], 'state': row['state']} for row in rows.values()],
+                'new_running_model_container_ids': new_running}) + '\n')
+        if new_running:
+            raise RuntimeError('NEW_MODEL_CONTAINER_STARTED_DURING_BATCH:' + ','.join(new_running))
         for item in items:
             row = rows[item['id']]
             if identity(row) != identity(item) or not stopped(row):
@@ -258,6 +267,20 @@ class ContainerLease:
 
 def unresolved(state):
     return state.get('result') not in ('RESTORED', 'NO_CONTAINERS_CHANGED')
+
+
+def current_model_container_ids(observer, out):
+    observer.capture_gpu_clients(out, 'container-discovery')
+    snapshot = json.loads((out / 'gpu-clients-container-discovery.json').read_text())
+    ids = set()
+    for item in snapshot.get('clients', []) + snapshot.get('kfd_processes', []):
+        if (item.get('name') or item.get('comm')) not in ('ollama', 'llama-server'):
+            continue
+        match = re.search(r'(?:docker/|docker-)([0-9a-f]{64})(?:\.scope)?(?:\n|$)',
+                          item.get('cgroup', ''))
+        if match:
+            ids.add(match.group(1))
+    return sorted(ids)
 
 
 def recover(path):
@@ -371,7 +394,9 @@ def main():
         explicit = os.environ.get('SHADPS4_OLLAMA_CONTAINER_IDS', '').split()
         if any(not re.fullmatch(r'[a-f0-9]{64}', value) for value in explicit):
             raise RuntimeError('INVALID_EXPLICIT_CONTAINER_ID')
-        lease.acquire(explicit)
+        current = current_model_container_ids(observer, out)
+        lease.state['current_gpu_model_container_ids'] = current
+        lease.acquire(sorted(set(explicit + current)))
         for game in games:
             if interrupted.is_set():
                 rc = 130
