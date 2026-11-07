@@ -147,7 +147,7 @@ class GuardTests(unittest.TestCase):
         self.used.write_text(str(20 * GIB))  # 4 GiB free; protect Sunshine
         app = self.root / 'must-not-execute.sh'
         marker = self.root / 'unexpected-launch'
-        app.write_text('#!/bin/sh\\nprintf \"launched\\n\" > ' + str(marker) + '\\n')
+        app.write_text('#!/bin/sh\ntouch ' + str(marker) + '\n')
         app.chmod(0o755)
         with mock.patch.object(self.guard, 'loaded_models', side_effect=RuntimeError('Ollama API down')):
             self.assertEqual(self.guard.run(app, []), 75)
@@ -158,13 +158,13 @@ class GuardTests(unittest.TestCase):
         self.total.unlink()
         app = self.root / 'must-not-execute.sh'
         marker = self.root / 'unexpected-launch'
-        app.write_text('#!/bin/sh\\ntouch ' + str(marker) + '\\n')
+        app.write_text('#!/bin/sh\ntouch ' + str(marker) + '\n')
         app.chmod(0o755)
         self.assertEqual(self.guard.run(app, []), 75)
         self.assertFalse(marker.exists())
 
     def log_text(self):
-        return '\\n'.join(p.read_text() for p in self.guard.LOGS.glob('esde-vram-*.jsonl'))
+        return '\n'.join(p.read_text() for p in self.guard.LOGS.glob('esde-vram-*.jsonl'))
 
     def test_multiple_gpu_cards_prefers_largest_vram(self):
         intel = self.guard.SYSFS / 'card1/device'
