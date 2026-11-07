@@ -177,24 +177,30 @@ void FaultManager::ProcessFaultBuffer() {
 
     scheduler.DeferOperation([this, mapped, offset, area = current_area] {
         download_buffer.Invalidate(offset, PageFaultAreaSize);
-        fault_ranges.Clear();
         const u64* fault_buf = std::bit_cast<const u64*>(mapped);
         const u32 fault_count = static_cast<u32>(std::min<u64>(fault_buf[0], MaxPageFaults - 1));
         for (u32 i = 1; i <= fault_count; ++i) {
             fault_ranges.Add(fault_buf[i], sparse_pagesize);
             LOG_INFO(Render_Vulkan, "Accessed non-GPU cached memory at {:#x}", fault_buf[i]);
         }
-        fault_ranges.ForEach([&](VAddr start, VAddr end) {
-            ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
-                       "Buffer size is too large");
-            (void)buffer_cache.ObtainBuffer(start, static_cast<u32>(end - start),
-                                            ObtainBufferFlags::IgnoreStreamBuffer);
-        });
         fault_areas[area] = 0;
     });
 
     fault_areas[current_area++] = scheduler.CurrentTick();
     current_area %= MaxPendingFaults;
+}
+
+void FaultManager::ResolveFaults() {
+    // Residency may read back images and submit work; callbacks run under scheduler locks.
+    while (!fault_ranges.m_ranges_set.empty()) {
+        auto ranges = std::exchange(fault_ranges, RangeSet{});
+        ranges.ForEach([&](VAddr start, VAddr end) {
+            ASSERT_MSG((end - start) <= std::numeric_limits<u32>::max(),
+                       "Buffer size is too large");
+            (void)buffer_cache.ObtainBuffer(start, static_cast<u32>(end - start),
+                                            ObtainBufferFlags::IgnoreStreamBuffer);
+        });
+    }
 }
 
 } // namespace VideoCore

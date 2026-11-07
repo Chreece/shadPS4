@@ -175,6 +175,11 @@ public:
     /// Reuploads image contents.
     void RefreshImage(Image& image);
 
+    void InheritStencilWrites(Image& stencil_image, Image& depth_image);
+
+    void CopyStencil(ImageId depth_id, const ImageInfo& source, const ImageInfo& destination,
+                     const SubresourceRange& range);
+
     /// Retrieves the sampler that matches the provided S# descriptor.
     [[nodiscard]] vk::Sampler GetSampler(const AmdGpu::Sampler& sampler,
                                          AmdGpu::BorderColorBuffer border_color_base, bool is_depth,
@@ -200,7 +205,9 @@ public:
         if (slot_images.IsAllocated(image.depth_id)) {
             auto& depth_image = slot_images[image.depth_id];
             if (depth_image.image_uid == image.depth_uid &&
+                depth_image.info.stencil_addr == image.info.guest_address &&
                 depth_image.flags & ImageFlagBits::Registered) {
+                InheritStencilWrites(image, depth_image);
                 return image.depth_id;
             }
         }
@@ -337,6 +344,9 @@ public:
     }
 
 private:
+    void UploadStencil(Image& image, const ImageInfo& plane, const SubresourceRange& range);
+    void SaveStencil(Image& image);
+
     /// Iterate over all page indices in a range
     template <typename Func>
     static void ForEachPage(PAddr addr, size_t size, Func&& func) {
@@ -364,7 +374,11 @@ private:
     void UnregisterImage(ImageId image);
 
     /// Track CPU reads and writes for image
-    void TrackImage(ImageId image_id);
+    void TrackImage(ImageId image_id) {
+        TrackImage(slot_images[image_id]);
+    }
+
+    void TrackImage(Image& image);
 
     /// Stop tracking CPU reads and writes for image
     void UntrackImage(ImageId image_id);
@@ -387,6 +401,7 @@ private:
 
     /// Removes image from the cache and schedules it for deletion.
     void FreeImage(ImageId image_id) {
+        SaveStencil(slot_images[image_id]);
         {
             std::scoped_lock lk{slot_images[image_id].mutex};
             UntrackImage(image_id);

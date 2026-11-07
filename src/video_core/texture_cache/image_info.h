@@ -54,6 +54,7 @@ struct ImageInfo {
     }
 
     s32 MipOf(const ImageInfo& info) const;
+    ImageInfo StencilPlane() const;
     s32 SliceOf(const ImageInfo& info, s32 mip) const;
 
     bool IsCompatible(const ImageInfo& info) const;
@@ -85,6 +86,8 @@ struct ImageInfo {
     bool alt_tile{};
     VAddr stencil_addr{};
     u32 stencil_size{};
+    MipInfo stencil_mip{};
+    u16 stencil_layers{};
 };
 
 } // namespace VideoCore

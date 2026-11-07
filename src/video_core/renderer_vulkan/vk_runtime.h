@@ -62,7 +62,8 @@ public:
     void CopyColorAndDepth(VideoCore::Image* src, VideoCore::Image* dst);
 
     void CopyDepthStencil(VideoCore::Image* src, VideoCore::Image* dst,
-                          const VideoCore::SubresourceRange& sub_range);
+                          const VideoCore::SubresourceRange& sub_range,
+                          vk::ImageAspectFlags aspects);
 
     void ResolveImage(VideoCore::Image* src, VideoCore::Image* dst,
                       const VideoCore::SubresourceRange& src_range,

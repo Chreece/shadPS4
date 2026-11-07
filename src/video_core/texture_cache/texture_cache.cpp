@@ -936,7 +936,127 @@ void TextureCache::AssociateStencil(ImageId depth_id, const ImageInfo& depth_inf
     }
     Image& stencil_image = slot_images[stencil_id];
     TouchImage(stencil_image);
-    stencil_image.AssociateDepth(depth_id, slot_images[depth_id].image_uid);
+    auto& depth_image = slot_images[depth_id];
+    if (depth_image.info.stencil_addr != depth_info.stencil_addr ||
+        depth_image.info.stencil_size != depth_info.stencil_size ||
+        depth_image.info.stencil_mip.pitch != depth_info.stencil_mip.pitch ||
+        depth_image.info.stencil_mip.height != depth_info.stencil_mip.height ||
+        depth_image.info.stencil_layers != depth_info.stencil_layers) {
+        SaveStencil(depth_image);
+    }
+    if (stencil_image.depth_id && stencil_image.depth_id != depth_id &&
+        slot_images.IsAllocated(stencil_image.depth_id)) {
+        auto& owner = slot_images[stencil_image.depth_id];
+        if (owner.image_uid == stencil_image.depth_uid &&
+            owner.info.stencil_addr == depth_info.stencil_addr) {
+            SaveStencil(owner);
+        }
+    }
+    stencil_image.AssociateDepth(depth_id, depth_image.image_uid);
+    depth_image.info.stencil_addr = depth_info.stencil_addr;
+    depth_image.info.stencil_size = depth_info.stencil_size;
+    depth_image.info.stencil_mip = depth_info.stencil_mip;
+    depth_image.info.stencil_layers = depth_info.stencil_layers;
+    InheritStencilWrites(stencil_image, depth_image);
+}
+
+void TextureCache::InheritStencilWrites(Image& stencil_image, Image& depth_image) {
+    const auto& info = depth_image.info;
+    if (False(stencil_image.flags & ImageFlagBits::Dirty) || !info.props.has_stencil ||
+        info.stencil_addr == 0 || info.stencil_addr == info.guest_address || info.num_samples > 1 ||
+        !(depth_image.aspect_mask & vk::ImageAspectFlagBits::eStencil)) {
+        return;
+    }
+
+    TrackImage(stencil_image);
+    if (False(stencil_image.flags & (ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty)) &&
+        stencil_image.cpu_hash == HashBackingMemory(info.stencil_addr, info.stencil_size)) {
+        stencil_image.flags &= ~ImageFlagBits::MaybeCpuDirty;
+        return;
+    }
+
+    UploadStencil(depth_image, info.StencilPlane(), {.extent = {1, info.stencil_layers}});
+    stencil_image.cpu_hash = 0;
+    stencil_image.flags &= ~ImageFlagBits::Dirty;
+}
+
+static vk::BufferImageCopy StencilCopy(const ImageInfo& plane, const SubresourceRange& range) {
+    const auto [mip_size, mip_pitch, mip_height, mip_offset] = plane.mips_layout[0];
+    return vk::BufferImageCopy{
+        .bufferOffset = mip_offset + range.base.layer * (mip_size / plane.resources.layers),
+        .bufferRowLength = mip_pitch,
+        .bufferImageHeight = mip_height,
+        .imageSubresource{
+            .aspectMask = vk::ImageAspectFlagBits::eStencil,
+            .mipLevel = 0,
+            .baseArrayLayer = range.base.layer,
+            .layerCount = range.extent.layers,
+        },
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {mip_pitch ? std::min<u32>(mip_pitch, plane.size.width) : plane.size.width,
+                        mip_height ? std::min<u32>(mip_height, plane.size.height)
+                                   : plane.size.height,
+                        1},
+    };
+}
+
+void TextureCache::UploadStencil(Image& image, const ImageInfo& plane,
+                                 const SubresourceRange& range) {
+    auto copy = StencilCopy(plane, range);
+    scheduler.EndRendering();
+    const auto [in_buffer, in_offset] =
+        buffer_cache.ObtainBufferForImage(plane.guest_address, plane.guest_size);
+    const auto [buffer, offset] = tile_manager.DetileImage(in_buffer, in_offset, plane);
+    copy.bufferOffset += offset;
+    runtime.UploadImage(&image, buffer, {&copy, 1});
+    GraphicsDiagnostics::Emit(GraphicsDiagnostics::Event::StencilUpload,
+                              "plane=%llx depth=%llx bytes=%u layer=%u layers=%u",
+                              static_cast<unsigned long long>(plane.guest_address),
+                              static_cast<unsigned long long>(image.info.guest_address),
+                              plane.guest_size, u32(range.base.layer), u32(range.extent.layers));
+}
+
+void TextureCache::SaveStencil(Image& image) {
+    const auto& info = image.info;
+    if (!info.props.has_stencil || info.stencil_addr == 0 ||
+        info.stencil_addr == info.guest_address || info.num_samples != 1) {
+        return;
+    }
+    bool owned = false;
+    ForEachImageInRegion(info.stencil_addr, info.stencil_size, [&](ImageId, Image& stencil) {
+        if (stencil.info.guest_address == info.stencil_addr &&
+            stencil.depth_uid == image.image_uid) {
+            if (True(stencil.flags & ImageFlagBits::MaybeCpuDirty) &&
+                False(stencil.flags & (ImageFlagBits::CpuDirty | ImageFlagBits::GpuDirty)) &&
+                stencil.cpu_hash == HashBackingMemory(info.stencil_addr, info.stencil_size)) {
+                stencil.flags &= ~ImageFlagBits::MaybeCpuDirty;
+            }
+            owned |= False(stencil.flags & ImageFlagBits::Dirty);
+        }
+    });
+    if (!owned) {
+        return;
+    }
+    const auto plane = info.StencilPlane();
+    auto copy = StencilCopy(plane, {.extent = {1, info.stencil_layers}});
+    const auto [buffer, offset] = buffer_cache.ObtainBuffer(
+        plane.guest_address, plane.guest_size,
+        ObtainBufferFlags::IsWritten | ObtainBufferFlags::IgnoreStreamBuffer);
+    tile_manager.TileImage(image, {&copy, 1}, buffer, offset, &plane);
+    GraphicsDiagnostics::Emit(
+        GraphicsDiagnostics::Event::StencilSave, "plane=%llx depth=%llx bytes=%u",
+        static_cast<unsigned long long>(plane.guest_address),
+        static_cast<unsigned long long>(info.guest_address), plane.guest_size);
+}
+
+void TextureCache::CopyStencil(ImageId depth_id, const ImageInfo& source,
+                               const ImageInfo& destination, const SubresourceRange& range) {
+    auto& image = slot_images[depth_id];
+    AssociateStencil(depth_id, source);
+    SaveStencil(image);
+    AssociateStencil(depth_id, destination);
+    UploadStencil(image, source.StencilPlane(), range);
+    image.flags |= ImageFlagBits::GpuModified;
 }
 
 void TextureCache::RefreshImage(Image& image) {
@@ -1070,8 +1190,7 @@ void TextureCache::UnregisterImage(ImageId image_id) {
     });
 }
 
-void TextureCache::TrackImage(ImageId image_id) {
-    auto& image = slot_images[image_id];
+void TextureCache::TrackImage(Image& image) {
     if (False(image.flags & ImageFlagBits::Registered)) {
         return;
     }
