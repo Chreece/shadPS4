@@ -305,7 +305,8 @@ s32 ImageInfo::MipOf(const ImageInfo& info) const {
 }
 
 s32 ImageInfo::SliceOf(const ImageInfo& info, s32 mip) const {
-    if (!IsCompatible(info)) {
+    if (!IsCompatible(info) || mip < 0 || mip >= info.resources.levels ||
+        info.resources.layers == 0) {
         return -1;
     }
 
@@ -330,17 +331,22 @@ s32 ImageInfo::SliceOf(const ImageInfo& info, s32 mip) const {
 
     // Check for size alignment.
     const u32 slice_size = info.mips_layout[mip].size / info.resources.layers;
-    if (guest_size % slice_size != 0) {
+    if (slice_size == 0 || guest_size == 0 || guest_size % slice_size != 0) {
         return -1;
     }
 
     // Ensure that address is aligned too.
-    const auto addr_diff = guest_address - (info.guest_address + info.mips_layout[mip].offset);
-    if ((addr_diff % guest_size) != 0) {
+    const auto mip_base = info.guest_address + info.mips_layout[mip].offset;
+    if (guest_address < mip_base) {
+        return -1;
+    }
+    const auto addr_diff = guest_address - mip_base;
+    const auto mip_size = info.mips_layout[mip].size;
+    if (addr_diff % slice_size != 0 || addr_diff >= mip_size || guest_size > mip_size - addr_diff) {
         return -1;
     }
 
-    return addr_diff / guest_size;
+    return addr_diff / slice_size;
 }
 
 } // namespace VideoCore

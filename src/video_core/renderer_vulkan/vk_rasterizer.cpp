@@ -2659,6 +2659,49 @@ RenderState Rasterizer::BeginRendering(const GraphicsPipeline* pipeline) {
         }
     }
 
+    if (VideoCore::GraphicsDiagnostics::Enabled() && small_pass_diagnostics.size() < 1024) {
+        const auto& vp = regs.viewports[0];
+        const auto scissor = regs.GetCombinedScissor();
+        const auto width = std::abs(vp.xscale * 2.f);
+        const auto height = std::abs(vp.yscale * 2.f);
+        const bool small_viewport = regs.viewport_control.xscale_enable &&
+                                    regs.viewport_control.yscale_enable && width > 0.f &&
+                                    height > 0.f && width <= 64.f && height <= 64.f;
+        if (small_viewport || (state.width <= 64 && state.height <= 64)) {
+            for (u32 cb = 0; cb < state.num_color_attachments; ++cb) {
+                const auto& [image_id, desc] = cb_descs[cb];
+                if (!image_id) {
+                    continue;
+                }
+                const auto& image = texture_cache.GetImage(image_id);
+                const auto& range = desc.view_info.range;
+                const std::array<u64, 8> identity{key.stage_hashes[0],
+                                                  key.stage_hashes[4],
+                                                  desc.info.guest_address,
+                                                  image.info.guest_address,
+                                                  u64(range.base.level) << 32 | range.base.layer,
+                                                  u64(state.width) << 32 | state.height,
+                                                  u64(std::bit_cast<u32>(vp.xscale)) << 32 |
+                                                      std::bit_cast<u32>(vp.yscale),
+                                                  u64(cb) << 32 | range.extent.layers};
+                if (small_pass_diagnostics.insert(identity).second) {
+                    LOG_INFO(Render_Vulkan,
+                             "SmallRenderPass: tick={} cb={} requested={:#x} backing={:#x} "
+                             "requested-size={}x{} backing-size={}x{} mip={} layer={} layers={} "
+                             "render={}x{} viewport={},{},{},{} scissor={},{},{},{} clip={} "
+                             "stages={:#x},{:#x},{:#x},{:#x},{:#x}",
+                             scheduler.CurrentTick(), cb, desc.info.guest_address,
+                             image.info.guest_address, desc.info.size.width, desc.info.size.height,
+                             image.info.size.width, image.info.size.height, range.base.level,
+                             range.base.layer, range.extent.layers, state.width, state.height,
+                             vp.xoffset, vp.yoffset, vp.xscale, vp.yscale, scissor.top_left_x,
+                             scissor.top_left_y, scissor.bottom_right_x, scissor.bottom_right_y,
+                             regs.IsClipDisabled(), key.stage_hashes[0], key.stage_hashes[1],
+                             key.stage_hashes[2], key.stage_hashes[3], key.stage_hashes[4]);
+                }
+            }
+        }
+    }
     return state;
 }
 

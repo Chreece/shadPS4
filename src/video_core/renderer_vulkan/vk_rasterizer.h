@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <utility>
 #include <vector>
@@ -268,6 +269,7 @@ private:
     void ExecuteOrderedGdsDispatch(std::unique_ptr<OrderedGdsEpochDeviceBuffers> owner);
     void PrepareRenderState(const GraphicsPipeline* pipeline);
     RenderState BeginRendering(const GraphicsPipeline* pipeline);
+    std::set<std::array<u64, 8>> small_pass_diagnostics;
     void Resolve();
     void DepthStencilCopy(bool is_depth, bool is_stencil);
     void EliminateFastClear();

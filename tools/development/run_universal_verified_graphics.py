@@ -21,7 +21,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '1b9d4410a1b330f745b60421f6d08c4c7d1cc98a2577e0a2e47df3561b1f3d24'
+OBSERVER_SHA256 = '201a880cba00c0605bb23dd1a5c04e079c9cd560010c380e32c11a2eb50769da'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -132,9 +132,9 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                     resource_warning_hashes = resource_warning_hashes[-8:]
                 capture_completed |= 'PR117_REAL_GCN_CAPTURE_DONE epoch=' in line
         with console.open('rb') as f:
-            start = max(0, console.stat().st_size - 16 * 1024**2)
+            start = max(0, console.stat().st_size - 64 * 1024**2)
             f.seek(start)
-            (out / 'console-tail.log').write_bytes(f.read(16 * 1024**2))
+            (out / 'console-tail.log').write_bytes(f.read(64 * 1024**2))
     priority = validation_hashes.copy()
     priority.extend(h for h in validation_compilation_hashes if h not in priority)
     for capture in captures:
@@ -226,10 +226,10 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 if not any(h in stem for stem in compiled_pairs)],
             'binary_limit_bytes': 8 * 1024**2, 'binary_limit_files': 128,
             'capture_completed_marker': capture_completed,
-            'console_tail_complete': console.is_file() and console.stat().st_size <= 16 * 1024**2}
+            'console_tail_complete': console.is_file() and console.stat().st_size <= 64 * 1024**2}
 
 
-def diagnostic_command(argv, timeout):
+def diagnostic_command(argv, timeout, stdout_limit=128 * 1024, preserve_start=False):
     started = time.monotonic()
     result = {'command': argv, 'timed_out': False}
     try:
@@ -244,7 +244,14 @@ def diagnostic_command(argv, timeout):
         result.update(exit_code=None, error=str(exc))
         stdout, stderr = b'', b''
     result['elapsed_seconds'] = round(time.monotonic() - started, 3)
-    result['stdout'] = stdout[-128 * 1024:].decode('utf-8', 'replace')
+    result['stdout_bytes'] = len(stdout)
+    result['stdout_truncated'] = len(stdout) > stdout_limit
+    if preserve_start and len(stdout) > stdout_limit:
+        half = stdout_limit // 2
+        stdout = stdout[:half] + b'\n[... middle omitted ...]\n' + stdout[-half:]
+    else:
+        stdout = stdout[-stdout_limit:]
+    result['stdout'] = stdout.decode('utf-8', 'replace')
     result['stderr'] = stderr[-16 * 1024:].decode('utf-8', 'replace')
     return result
 
@@ -268,7 +275,7 @@ def kernel_gpu_timeouts(out, started, ended):
     return sorted(failures)
 
 
-def collect_display_health(out, display, query_display=True):
+def collect_display_health(out, display, query_display=True, since_epoch=None):
     authority = Path(os.environ.get('XAUTHORITY') or str(Path.home() / '.Xauthority'))
     health = {'display': display, 'xauthority_path': str(authority),
               'xauthority_exists': authority.is_file(),
@@ -296,18 +303,19 @@ def collect_display_health(out, display, query_display=True):
     save(out / 'display-host-state.json', health)
     if query_display:
         save(out / 'display-xset.json', diagnostic_command(['xset', '-display', display, 'q'], 3))
-    save(out / 'kernel-journal.json', diagnostic_command(
-        ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic'], 5))
-    save(out / 'kernel-gpu-journal.json', diagnostic_command(
-        ['journalctl', '-k', '-b', '--no-pager', '-n', '600', '-o', 'short-monotonic',
-         '--grep', GPU_JOURNAL_PATTERN], 5))
-    if os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1':
-        save(out / 'kernel-journal-root.json', diagnostic_command(
-            ['sudo', '-n', 'journalctl', '-k', '-b', '--no-pager', '-n', '600',
-             '-o', 'short-monotonic'], 5))
-        save(out / 'kernel-gpu-journal-root.json', diagnostic_command(
-            ['sudo', '-n', 'journalctl', '-k', '-b', '--no-pager', '-n', '600',
-             '-o', 'short-monotonic', '--grep', GPU_JOURNAL_PATTERN], 5))
+    journal_window = (['--since', '@' + str(int(since_epoch) - 1)]
+                      if since_epoch is not None else ['-n', '600'])
+    journal = ['journalctl', '-k', '-b', '--no-pager', '-o', 'short-monotonic', *journal_window]
+    for root in (False, True):
+        if root and os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') != '1':
+            continue
+        prefix = ['sudo', '-n'] if root else []
+        suffix = '-root' if root else ''
+        save(out / ('kernel-journal' + suffix + '.json'), diagnostic_command(
+            prefix + journal, 5, stdout_limit=8 * 1024**2, preserve_start=True))
+        save(out / ('kernel-gpu-journal' + suffix + '.json'), diagnostic_command(
+            prefix + journal + ['--grep', GPU_JOURNAL_PATTERN], 5,
+            stdout_limit=8 * 1024**2, preserve_start=True))
     match = re.fullmatch(r':(\d+)(?:\.\d+)?', display)
     if match:
         name = 'Xorg.' + match.group(1) + '.log'
@@ -838,6 +846,7 @@ def main():
                     '--seconds', '118']
         print('STARTING_VERIFIED_CANDIDATE NO_INPUT MAXIMUM_120_SECONDS', flush=True)
         record['native_start_monotonic'] = time.monotonic()
+        record['native_start_epoch'] = time.time()
         try:
             rc = module.main()
         finally:
@@ -880,7 +889,8 @@ def main():
             not record.get('native', {}).get('owned_child_terminated', False)))
         if record['game_launched'] or record.get('native', {}).get('gpu_failure'):
             try:
-                collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False)
+                collect_display_health(out, os.environ.get('DISPLAY') or ':0', query_display=False,
+                                       since_epoch=record.get('native_start_epoch'))
                 record['kernel_gpu_timeouts'] = kernel_gpu_timeouts(
                     out, record.get('native_start_monotonic'), record.get('native_end_monotonic'))
                 if record['kernel_gpu_timeouts']:
