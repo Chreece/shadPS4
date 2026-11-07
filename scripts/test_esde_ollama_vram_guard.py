@@ -44,6 +44,19 @@ class GuardTests(unittest.TestCase):
         self.guard.LOGS.mkdir(parents=True)
         self.log = self.guard.LOGS / 'test.jsonl'
 
+    def test_historical_ollama_host_endpoint(self):
+        self.assertEqual(self.guard.API, os.environ.get(
+            'ESDE_GUARD_OLLAMA_API', 'http://127.0.0.1:7869').rstrip('/'))
+
+    def test_read_only_status_probes_backend(self):
+        called = []
+        with mock.patch.object(self.guard, 'loaded_models', side_effect=lambda: (
+                called.append('api/ps') or [{'name': 'qwen3.8-greek:latest', 'size_vram': 19 * GIB}])), \\
+             mock.patch.object(self.guard, 'api_model', side_effect=AssertionError('never unload or load')), \\
+             mock.patch.object(sys, 'argv', ['guard', 'status']):
+            self.assertEqual(self.guard.main(), 0)
+        self.assertEqual(called, ['api/ps'])
+
     def test_no_models_touched_when_enough_free(self):
         self.used.write_text(str(15 * GIB))
         unloaded = []
