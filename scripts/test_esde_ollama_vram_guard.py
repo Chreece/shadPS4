@@ -50,11 +50,13 @@ class GuardTests(unittest.TestCase):
 
     def test_read_only_status_probes_backend(self):
         called = []
-        with mock.patch.object(self.guard, 'loaded_models', side_effect=lambda: (
-                called.append('api/ps') or [{'name': 'qwen3.8-greek:latest', 'size_vram': 19 * GIB}])), \\
-             mock.patch.object(self.guard, 'api_model', side_effect=AssertionError('never unload or load')), \\
-             mock.patch.object(sys, 'argv', ['guard', 'status']):
-            self.assertEqual(self.guard.main(), 0)
+        def fake_status():
+            called.append('api/ps')
+            return [{'name': 'qwen3.8-greek:latest', 'size_vram': 19 * GIB}]
+        with mock.patch.object(self.guard, 'loaded_models', side_effect=fake_status):
+            with mock.patch.object(self.guard, 'api_model', side_effect=AssertionError('never unload or load')):
+                with mock.patch.object(sys, 'argv', ['guard', 'status']):
+                    self.assertEqual(self.guard.main(), 0)
         self.assertEqual(called, ['api/ps'])
 
     def test_no_models_touched_when_enough_free(self):
