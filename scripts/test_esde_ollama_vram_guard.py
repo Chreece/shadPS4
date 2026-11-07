@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import threading
 import shutil
 import subprocess
 import os
@@ -144,6 +147,56 @@ class GuardTests(unittest.TestCase):
         (intel / 'mem_info_vram_total').write_text(str(2 * GIB))
         (intel / 'mem_info_vram_used').write_text(str(1 * GIB))
         self.assertEqual(self.guard.vram()[2], 'card0')
+
+    def test_http_api_full_unload_launch_restore(self):
+        self.used.write_text(str(20 * GIB))  # only 4 GiB initially free
+        actions = []
+        device_used = self.used
+        class FakeOllama(BaseHTTPRequestHandler):
+            loaded = True
+            def log_message(self, *args):
+                pass
+            def reply(self, response):
+                payload = json.dumps(response).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            def do_GET(self):
+                if self.path != '/api/ps':
+                    self.send_error(404)
+                    return
+                models = [{'name': 'test:latest', 'size_vram': 9 * GIB}] if self.loaded else []
+                self.reply({'models': models})
+            def do_POST(self):
+                self.assert_post_path()
+                size = int(self.headers['Content-Length'])
+                args = json.loads(self.rfile.read(size))
+                assert args['prompt'] == '' and args['stream'] is False
+                actions.append((args['model'], args['keep_alive']))
+                type(self).loaded = args['keep_alive'] != 0
+                device_used.write_text(str((20 if self.loaded else 10) * GIB))
+                self.reply({'done': True})
+            def assert_post_path(self):
+                assert self.path == '/api/generate'
+        server = ThreadingHTTPServer(('127.0.0.1', 0), FakeOllama)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.guard.API = 'http://127.0.0.1:' + str(server.server_address[1])
+        app = self.root / 'quick-app.sh'
+        app.write_text('#!/bin/sh\nexit 0\n')
+        app.chmod(0o755)
+        try:
+            self.assertEqual(self.guard.run(app, []), 0)
+            self.assertEqual(actions[0], ('test:latest', 0))
+            self.assertEqual(actions[1][0], 'test:latest')
+            self.assertGreaterEqual(actions[1][1], 300)
+            self.assertEqual(device_used.read_text(), str(20 * GIB))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
 
 if __name__ == '__main__':
