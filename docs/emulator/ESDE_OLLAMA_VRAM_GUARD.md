@@ -43,7 +43,7 @@ This restores the original ES-DE AppImage filename.
 1. Read `mem_info_vram_total` and `mem_info_vram_used` from the AMD GPU
    with the largest total VRAM, via Linux DRM sysfs.
 2. If free VRAM is at least 8 GiB, start ES-DE immediately without touching Ollama.
-3. Otherwise ask the IPv4 loopback Ollama API (`http://127.0.0.1:11434/api/ps`)
+3. Otherwise ask the IPv4 loopback Ollama API (`http://127.0.0.1:7869/api/ps`)
    for resident models. Unload GPU-resident models via `POST /api/generate`,
    empty prompt, and `keep_alive: 0`, largest GPU allocation first. Stop
    unloading when at least 8 GiB is available or no candidates remain.
@@ -71,7 +71,7 @@ restoration.
 Optional environment overrides:
 
 - `ESDE_GUARD_MIN_FREE_GIB` — default `8`.
-- `ESDE_GUARD_OLLAMA_API` — default IPv4 `http://127.0.0.1:11434`.
+- `ESDE_GUARD_OLLAMA_API` — default IPv4 `http://127.0.0.1:7869`.
 - `ESDE_GUARD_APPIMAGE` — default `~/apps/es/extracted/squashfs-root/usr/bin/es-de`.
 - `ESDE_GUARD_PROJECT` — default `~/projects/shadps4`.
 - `ESDE_GUARD_DRM_ROOT` — default `/sys/class/drm`, also used for offline testing.
@@ -81,3 +81,21 @@ Run the offline suite (does not require a GPU, Ollama or ES-DE):
 ```bash
 python3 -m unittest discover -s scripts -p 'test_esde_ollama_vram_guard.py' -v
 ```
+
+## Verified host mapping (2026-11-07 incident)
+
+The original failure was caused by the wrong host-side Ollama API address:
+127.0.0.1:11434 was mapped to another Docker service (Open WebUI), which
+reset /api/ps connections; historical verified Ollama host API mapping is
+127.0.0.1:7869 -> Ollama container port 11434 (Docker Compose
+`~/AI/ollama/docker-compose.yml`, container `ollama`). Always run
+`guard.py status` **on the host** before launching ES-DE; it now performs a
+read-only /api/ps request and prints `OLLAMA_BACKEND_STATUS=VERIFIED` only
+when the expected response is received. Do not issue unloads or start a
+Moonlight ES-DE session while it reports unavailable.
+
+In the incident archive, the guard recorded ~0.18-0.19 GiB free VRAM,
+`OLLAMA_UNAVAILABLE: Connection reset by peer`, then returned 75;
+Sunshine logged `App exited with code [19200]` and closed the app stream.
+Sunshine itself was still running (PID 4089922, 30 open FDs). This is
+an application exit, not evidence that Sunshine crashed on that attempt.
