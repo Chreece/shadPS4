@@ -21,7 +21,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = '684cba09690571ae6aa32f8639cf26d2fc779c98768422061a8507611af8fc5a'
+OBSERVER_SHA256 = 'c2a8708c327b96ab7b6641f19f6a10ef891bfc7475ff1eae68bd8810af32f87b'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -41,6 +41,10 @@ def collect_shader_diagnostics(runtime, out, console, captures):
     waiting_work_hashes = []
     first_wait_work_hashes = []
     first_wait_window = None
+    first_gpu_progress = None
+    gpu_progress_hashes = []
+    sampling_offset_hashes = []
+    bound_stage_hashes = {}
     in_first_wait = False
     first_wait_hashes_truncated = False
     work_reason = None
@@ -65,6 +69,14 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         with console.open(errors='replace') as f:
             for line in f:
                 line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+                progress = re.match(
+                    r'GRAPHICS_WORK_PROGRESS semaphore=(\S+) before-completed-seq=(\d+) '
+                    r'first-unavailable-seq=(\d+) skipped=(\d+) supported=(\d+)', line)
+                if progress and first_gpu_progress is None:
+                    first_gpu_progress = dict(zip(
+                        ('semaphore', 'before_completed_sequence', 'first_unavailable_sequence',
+                         'skipped', 'supported'),
+                        [progress.group(1), *(int(progress.group(i)) for i in range(2, 6))]))
                 work_begin = re.match(r'GRAPHICS_WORK_BEGIN reason=(\S+)', line)
                 if work_begin:
                     work_reason = work_begin.group(1)
@@ -72,6 +84,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                                      work_reason in ('wait-timeout', 'wait-error'))
                     if in_first_wait:
                         first_wait_window = line.strip()
+                        bound_stage_hashes.clear()
                 elif line.startswith('GRAPHICS_WORK_END'):
                     work_reason = None
                     in_first_wait = False
@@ -92,6 +105,26 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                             waiting_work_hashes.remove(shader_hash)
                         waiting_work_hashes.append(shader_hash)
                         waiting_work_hashes = waiting_work_hashes[-16:]
+                if in_first_wait and first_gpu_progress and first_gpu_progress['supported']:
+                    event = re.match(r'GRAPHICS_WORK seq=(\d+) .*?semaphore=(\S+) .*?kind=(\S+)', line)
+                    if event and event.group(2) == first_gpu_progress['semaphore']:
+                        stage = re.search(r'kind=shader stage=(\d+) shader=([0-9a-fA-F]+)', line)
+                        if stage:
+                            bound_stage_hashes[stage.group(1)] = format(int(stage.group(2), 16), '016x')
+                        lower = first_gpu_progress['before_completed_sequence']
+                        upper = first_gpu_progress['first_unavailable_sequence']
+                        if lower <= int(event.group(1)) <= upper:
+                            direct = re.search(r'\bshader=([0-9a-fA-F]+)', line)
+                            hashes = ([format(int(direct.group(1), 16), '016x')] if direct else
+                                      list(bound_stage_hashes.values()) if event.group(3).startswith('draw') else [])
+                            gpu_progress_hashes.extend(h for h in hashes if h not in gpu_progress_hashes)
+                        if event.group(3).startswith('draw'):
+                            bound_stage_hashes.clear()
+                sample_offset = re.search(r'Emitting runtime image sample offset: shader=0x([0-9a-fA-F]+)', line)
+                if sample_offset:
+                    shader_hash = format(int(sample_offset.group(1), 16), '016x')
+                    if shader_hash not in sampling_offset_hashes and len(sampling_offset_hashes) < 16:
+                        sampling_offset_hashes.append(shader_hash)
                 automatic_coherence |= 'GPU memory coherence: automatic' in line
                 mode = re.search(r'GPU readbacksMode: (\d+)\b', line)
                 if mode:
@@ -135,8 +168,10 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             start = max(0, console.stat().st_size - 64 * 1024**2)
             f.seek(start)
             (out / 'console-tail.log').write_bytes(f.read(64 * 1024**2))
-    priority = validation_hashes.copy()
+    priority = gpu_progress_hashes.copy()
+    priority.extend(h for h in validation_hashes if h not in priority)
     priority.extend(h for h in validation_compilation_hashes if h not in priority)
+    priority.extend(h for h in sampling_offset_hashes if h not in priority)
     for capture in captures:
         match = re.fullmatch(r'ordered-gds-([0-9a-f]{16})-\d+\.bin', capture['file'])
         if match and match.group(1) not in priority:
@@ -213,6 +248,9 @@ def collect_shader_diagnostics(runtime, out, console, captures):
             'automatic_coherence_enabled': automatic_coherence,
             'recorded_gpu_work_hashes': list(reversed(recorded_work_hashes)),
             'waiting_gpu_work_hashes': list(reversed(waiting_work_hashes)),
+            'sampling_offset_hashes': sampling_offset_hashes,
+            'first_gpu_progress': first_gpu_progress,
+            'gpu_progress_hashes': gpu_progress_hashes,
             'first_wait_window': first_wait_window,
             'first_wait_work_hashes': first_wait_work_hashes,
             'first_wait_hashes_truncated': first_wait_hashes_truncated,
@@ -781,6 +819,7 @@ def main():
     record['performance_diagnostics_requested'] = (
         os.environ.get('SHADPS4_PERFORMANCE_DIAGNOSTICS') == '1')
     record['gpu_command_trace_requested'] = os.environ.get('SHADPS4_TEST_GPU_TRACE') == '1'
+    record['gpu_progress_requested'] = os.environ.get('SHADPS4_GPU_PROGRESS') == '1'
     record['privileged_kernel_journal_requested'] = (
         os.environ.get('SHADPS4_KERNEL_JOURNAL_SUDO') == '1')
     rc = 1

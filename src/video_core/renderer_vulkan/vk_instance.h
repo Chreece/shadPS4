@@ -143,6 +143,11 @@ public:
         return maintenance_8;
     }
 
+    bool IsImageSampleRuntimeOffsetSupported() const {
+        return maintenance_8 && features.shaderImageGatherExtended &&
+               properties.limits.minTexelOffset <= -32 && properties.limits.maxTexelOffset >= 31;
+    }
+
     /// Returns true if VK_EXT_attachment_feedback_loop_layout is supported
     bool IsAttachmentFeedbackLoopLayoutSupported() const {
         return attachment_feedback_loop;

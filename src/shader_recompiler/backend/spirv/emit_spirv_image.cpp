@@ -108,13 +108,18 @@ struct ImageOperands {
         }
 
         if (op_mask != spv::ImageOperandsMask::ConstOffset) {
-            if (!can_use_runtime_offsets) {
+            if (!can_use_runtime_offsets && !ctx.profile.supports_image_sample_runtime_offset) {
                 LOG_WARNING(Render_Vulkan,
                             "Runtime offset provided to unsupported image sample instruction");
                 return;
             }
             op_mask = spv::ImageOperandsMask::Offset;
             value = ctx.Def(offset);
+            ctx.AddCapability(spv::Capability::ImageGatherExtended);
+            if (!can_use_runtime_offsets) {
+                LOG_INFO(Render_Vulkan, "Emitting runtime image sample offset: shader={:#x}",
+                         ctx.info.pgm_hash);
+            }
         }
 
         value = PadImageOperand<false>(ctx, value, image_type);

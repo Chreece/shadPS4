@@ -414,7 +414,11 @@ public:
     /// Returns the current command buffer tick.
     template <typename... Args>
     void RecordWork(const char* format, Args... args) const {
-        VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, CurrentTick(), format, args...);
+        const auto sequence =
+            VideoCore::GpuWorkDiagnostics::Record(&work_semaphore, CurrentTick(), format, args...);
+        if (sequence) {
+            RecordGpuProgress(sequence, format);
+        }
     }
 
     [[nodiscard]] u64 CurrentTick() const noexcept {
@@ -456,6 +460,8 @@ public:
     static std::mutex submit_mutex;
 
 private:
+    void RecordGpuProgress(u64 sequence, const char* format) const;
+
     void EndSession();
 
     void SubmitExecution(SubmitInfo& info);
@@ -466,12 +472,15 @@ private:
     const Instance& instance;
     Semaphore work_semaphore;
     CommandPool command_pool;
+    struct GpuProgress;
+    std::unique_ptr<GpuProgress> gpu_progress;
     DynamicState dynamic_state;
     SessionFunc on_session{};
     SubmitFunc on_submit{};
     struct Session {
         vk::CommandBuffer upload{};
         vk::CommandBuffer primary{};
+        u64 tick{};
     };
     std::vector<Session> sessions;
     std::condition_variable_any event_cv;

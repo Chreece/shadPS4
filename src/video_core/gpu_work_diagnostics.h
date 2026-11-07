@@ -107,9 +107,9 @@ inline void RegisterExitDump() {
 }
 
 template <typename... Args>
-void Record(const void* semaphore, std::uint64_t tick, const char* format, Args... args) {
+std::uint64_t Record(const void* semaphore, std::uint64_t tick, const char* format, Args... args) {
     if (!GraphicsDiagnostics::Enabled() || Common::PerformanceDiagnostics::Enabled()) {
-        return;
+        return 0;
     }
     auto& history = GetHistory();
     RegisterExitDump();
@@ -122,6 +122,7 @@ void Record(const void* semaphore, std::uint64_t tick, const char* format, Args.
     std::scoped_lock lock{history.mutex};
     auto& entry = history.entries[history.sequence % Capacity];
     entry = {++history.sequence, tick, GraphicsDiagnostics::ElapsedMs(), semaphore, false, fields};
+    return entry.sequence;
 }
 
 } // namespace VideoCore::GpuWorkDiagnostics
