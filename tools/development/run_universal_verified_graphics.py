@@ -21,7 +21,7 @@ import urllib.request
 PIN = os.environ.get('SHADPS4_TEST_SOURCE_COMMIT', 'ed0fe5be055ee712756351479ac5411366e5385b')
 ELF = '2866fdd415a3e3a82c9fa216530acb26fd4a4f4ef388e0aeec2b7f3ce8abc548'
 MIN_FREE = 8 * 1024**3
-OBSERVER_SHA256 = 'c2a8708c327b96ab7b6641f19f6a10ef891bfc7475ff1eae68bd8810af32f87b'
+OBSERVER_SHA256 = '9dfe6fca59089f23b0e4b78a7e3c157478266914adc39186581550bcc1f444d1'
 GPU_JOURNAL_PATTERN = r'(?i)\b(amdgpu|i915|xe|nouveau|nvidia|drm|gpu|kfd|xorg)\b|blocked for more than|Workqueue:'
 
 
@@ -201,7 +201,8 @@ def collect_shader_diagnostics(runtime, out, console, captures):
         paths = [p for p in dumps.glob('*' + shader_hash + '*')
                  if p.is_file() and not p.is_symlink()]
         groups.append(sorted((p for p in paths if p.name.endswith('irprogram.txt')),
-                             key=lambda p: ('.pre-' in p.name, p.name)))
+                             key=lambda p: (0 if '.pre-res-patch.' in p.name else
+                                            1 if '.pre-' not in p.name else 2, p.name)))
         variants = {}
         for path in paths:
             if path.suffix in ('.bin', '.spv'):
@@ -219,7 +220,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 continue
             path = group[depth]
             size = path.stat().st_size
-            if len(saved_ir) >= 48 or total_ir + size > 20 * 1024**2:
+            if len(saved_ir) >= 144 or total_ir + size > 20 * 1024**2:
                 continue
             target = out / 'blocked-shader-ir' / path.name
             target.parent.mkdir(exist_ok=True)
@@ -274,7 +275,7 @@ def collect_shader_diagnostics(runtime, out, console, captures):
                 if not any(h in stem for stem in compiled_pairs)],
             'recent_compiled_hashes': list(reversed(recent)),
             'priority_hashes': priority, 'saved_ir': saved_ir, 'saved_bytes': total_ir,
-            'limit_bytes': 20 * 1024**2, 'limit_files': 48,
+            'limit_bytes': 20 * 1024**2, 'limit_files': 144,
             'saved_binary': saved_binary, 'saved_binary_bytes': total_binary,
             'binary_unrepresented_hashes': [h for h in priority
                 if not any(h in stem for stem in compiled_pairs)],
@@ -812,6 +813,13 @@ def recover_incomplete_captures(project, out, observer):
     return recovered
 
 
+def test_duration_seconds():
+    seconds = int(os.environ.get('SHADPS4_TEST_SECONDS', '118'))
+    if not 1 <= seconds <= 600:
+        raise ValueError('SHADPS4_TEST_SECONDS must be 1..600')
+    return seconds
+
+
 def main():
     os.umask(0o077)
     project = Path.home() / 'projects/shadps4'
@@ -846,6 +854,8 @@ def main():
     model_monitor = None
     lock = (project / 'tests/.universal-upstream-build.lock').open('a')
     try:
+        seconds = test_duration_seconds()
+        record['requested_run_seconds'] = seconds
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if record['gpu_command_trace_requested'] and (
                 diagnostics or record['performance_diagnostics_requested']):
@@ -959,8 +969,9 @@ def main():
         record['graphics_diagnostics_requested'] = True
         sys.argv = [str(observer), '--binary', str(binary.resolve()), '--sha256', expected_elf,
                     '--game', str(game), '--cwd', str(runtime), '--report', str(out / 'capture'),
-                    '--seconds', '118']
-        print('STARTING_VERIFIED_CANDIDATE NO_INPUT MAXIMUM_120_SECONDS', flush=True)
+                    '--seconds', str(seconds)]
+        print(f'STARTING_VERIFIED_CANDIDATE NO_INPUT RUN_SECONDS={seconds} SHUTDOWN_SECONDS=2',
+              flush=True)
         record['native_start_monotonic'] = time.monotonic()
         record['native_start_epoch'] = time.time()
         try:

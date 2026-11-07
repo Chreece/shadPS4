@@ -413,7 +413,8 @@ void PatchImageSharp(const ResourceDiscovery& resource, Info& info, Descriptors&
                 // Only use dimension-typed GPU image sampling when the whole
                 // guest table fits real Vulkan descriptor resource limits.
                 image_res.is_guest_mixed_indexed =
-                    info.hw_stage == HwStage::Fragment && !inst_info.has_offset &&
+                    ((info.hw_stage == HwStage::Fragment && !inst_info.has_offset) ||
+                     inst_info.has_lod || inst_info.force_level0) &&
                     !inst_info.has_derivatives &&
                     entries <= profile.max_guest_mixed_indexed_image_entries;
                 if (image_res.is_guest_mixed_indexed) {
@@ -1002,6 +1003,11 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             return ir.BitFieldExtract(IR::U32{arg}, ir.Imm32(off), ir.Imm32(6), true);
         };
 
+        if (image_res.is_guest_mixed_indexed &&
+            (inst_info.has_lod || inst_info.force_level0)) {
+            return ir.CompositeConstruct(read(0), read(8), read(16));
+        }
+
         switch (view_type) {
         case AmdGpu::ImageType::Color1D:
         case AmdGpu::ImageType::Color1DArray:
@@ -1134,12 +1140,9 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
             }
             return ir.ImageSampleDrefImplicitLod(handle, coords, dref, bias, offset, inst_info);
         }
-        if (explicit_lod) {
-            return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
-        }
         if (image_res.is_guest_indexed) {
             IR::Value sampled_coords = coords;
-            if (image_res.is_guest_mixed_indexed && !inst_info.has_offset) {
+            if (image_res.is_guest_mixed_indexed) {
                 // T# dword 3 carries bits [31:28] = genuine guest image type.
                 // Retain its GPU-selected value in coords.w. The unused z
                 // coordinate has no effect on Color2D samples, but is
@@ -1149,8 +1152,28 @@ void PatchImageSampleArgs(IR::Inst& inst, Info& info, const ImageResource& image
                     get_coord(coords_start + 2u, 2u),
                     ir.BitCast<IR::F32>(IR::U32{gpu_tsharp_word3}));
             }
+            if (explicit_lod) {
+                IR::F32 indexed_lod = lod;
+                if (inst_info.has_lod && image_res.is_guest_mixed_indexed) {
+                    const auto type = ir.ShiftRightLogical(IR::U32{gpu_tsharp_word3}, ir.Imm32(28u));
+                    const auto is_1d = ir.LogicalOr(
+                        ir.IEqual(type, ir.Imm32(u32(AmdGpu::ImageType::Color1D))),
+                        ir.IEqual(type, ir.Imm32(u32(AmdGpu::ImageType::Color1DArray))));
+                    const auto is_3d = ir.LogicalOr(
+                        ir.IEqual(type, ir.Imm32(u32(AmdGpu::ImageType::Color3D))),
+                        ir.IEqual(type, ir.Imm32(u32(AmdGpu::ImageType::Cube))));
+                    indexed_lod = IR::F32{ir.Select(
+                        is_1d, get_addr_reg(coords_start + 1u),
+                        ir.Select(is_3d, get_addr_reg(coords_start + 3u), lod))};
+                }
+                return ir.ImageSampleExplicitLodIndexed(handle, sampled_coords, indexed_lod, offset,
+                                                        IR::U32{inst.Arg(1)}, inst_info);
+            }
             return ir.ImageSampleImplicitLodIndexed(handle, sampled_coords, bias, offset,
                                                     IR::U32{inst.Arg(1)}, inst_info);
+        }
+        if (explicit_lod) {
+            return ir.ImageSampleExplicitLod(handle, coords, lod, offset, inst_info);
         }
         return ir.ImageSampleImplicitLod(handle, coords, bias, offset, inst_info);
     }();

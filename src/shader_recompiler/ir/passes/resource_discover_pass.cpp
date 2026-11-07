@@ -1094,11 +1094,6 @@ ResourceDiscoveryList ResourceDiscoverPass(IR::Program& program, const Profile& 
                 }
             } else if (IsImageInstruction(inst)) {
                 DiscoverImageSharp(*block, inst, sharp_usages);
-                // Resource discovery must agree with PatchImageSharp: the
-                // earlier broad 384-byte matcher accepted 108 unsupported
-                // sample modes in the 19:33 trial. Those paths could not bind
-                // guest material images and only caused extra compilation.
-                // Image operations themselves still use the existing path.
                 if (inst.GetOpcode() == IR::Opcode::ImageSampleRaw &&
                     profile.supports_sampled_image_nonuniform_indexing &&
                     IsBindableGuestIndexedSampleMode(inst.Flags<IR::TextureInstInfo>())) {

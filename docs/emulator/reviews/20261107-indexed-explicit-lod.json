@@ -1,0 +1,1212 @@
+{
+  "schema_version": 1,
+  "review": "20261107-indexed-explicit-lod",
+  "source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+  "upstream_commit": "33e73127119f672f9f08b8a5a7f71600263f61d9",
+  "retained_base": "c3d70678695f7e9b481d5de3f4ffdaab037a35a6",
+  "pull_request": 199,
+  "archive": "universal-two-games-20261107T153310Z-659431.tar.gz",
+  "archive_sha256": "d2fb6bdbfab1967dacb9b06ca3529ebd850b5a64a5bc9b7dd3615862d4f3b05f",
+  "native_source": "a42f6d9f025843cb825cfdc916cf4e6be6610faa",
+  "native_binary_sha256": "fa4c061865b49393a8f4b8cdb36f816ded777ba84bb4e80261b23c8f2fabcf07",
+  "native_results": {
+    "got": {
+      "elapsed_seconds": 118.668,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "kernel_gpu_failures": [],
+      "gpu_failure": null,
+      "gpu_progress": false,
+      "all_warning_error_groups": {
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 4,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 315,
+          "examples": [
+            "Linker: Stub resolved NR1J0N7L2xY as sceRtcTickAddDays (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved 8w-H19ip48I as sceRtcGetTick (lib: libSceRtc, mod: libSceRtc)",
+            "Linker: Stub resolved ueega6v3GUw as sceRtcSetTick (lib: libSceRtc, mod: libSceRtc)"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Error file_system.cpp sceKernelStat": {
+          "count": 1,
+          "examples": [
+            "error = 2"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceParamGetString": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Error gamelivestreaming.cpp sceGameLiveStreamingInitialize": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 9,
+          "examples": [
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0xc954f6",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0xc9550f",
+            "Stub: sceShareUtilityAdvanceSetUploadContentData (nid: karnJhakdKg) called, returning zero to 0xc95520"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0xcbbd10, stack_size = 0x4000, common = 0x0"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error netctl.cpp sceNetCtlInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 2,
+          "examples": [
+            "(DUMMY) called poolSize = 262144",
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Error np_manager.cpp sceNpRegisterStateCallbackForToolkit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error gnmdriver.cpp sceGnmSetWaveLimitMultipliers": {
+          "count": 1340,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error audioout.cpp sceAudioOutMasteringInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error http2.cpp sceHttp2Init": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Error http.cpp sceHttpsLoadCert": {
+          "count": 1,
+          "examples": [
+            "ctxId=2 marked as using custom CAs; subsequent HTTPS requests on this context will bypass cert verification (libSceSsl integration not implemented)"
+          ]
+        },
+        "Error np_manager.cpp sceNpSetContentRestriction": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error audioout.cpp sceAudioOutMasteringSetParam": {
+          "count": 3,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning videodec2.cpp sceVideodec2AllocateComputeQueue": {
+          "count": 1,
+          "examples": [
+            "called"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 264,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 6,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum."
+          ]
+        },
+        "Warning lower_buffer_format_to_raw.cpp LowerBufferFormatInst": {
+          "count": 1,
+          "examples": [
+            "Skipping lowering for null buffer sharp"
+          ]
+        },
+        "Warning vk_rasterizer.cpp BindTextures": {
+          "count": 6,
+          "examples": [
+            "Indexed sampler table: shader=0xb5c898c7 slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0",
+            "Indexed sampler table: shader=0x7eaf40ad slots=27904 available=27651 valid=27651 bytes=884832 record_stride=0"
+          ]
+        },
+        "Warning vk_resource_pool.cpp Commit": {
+          "count": 4,
+          "examples": [
+            "Descriptor pool underprovisioned: type=SampledImage required=251146 pool=8192",
+            "Descriptor pool underprovisioned: type=Sampler required=111620 pool=1024",
+            "Descriptor pool underprovisioned: type=SampledImage required=251161 pool=251146"
+          ]
+        }
+      },
+      "visual": "FAIL: 110-second screenshot shows menu text and mist, with solid-black sword and foreground; 9 FPS. User confirms no change. Geometry displacement into a corner is not established by this capture."
+    },
+    "gow": {
+      "elapsed_seconds": 119.391,
+      "exit_reason": "TEST_118S_DURATION_LIMIT",
+      "kernel_gpu_failures": [],
+      "gpu_failure": null,
+      "gpu_progress": false,
+      "all_warning_error_groups": {
+        "Error emulator.cpp ExtractTrophies": {
+          "count": 1,
+          "examples": [
+            "Couldn't extract trophy file trophy00.trp"
+          ]
+        },
+        "Warning emulator.cpp Run": {
+          "count": 1,
+          "examples": [
+            "No dumped system fonts, expect missing text or instability"
+          ]
+        },
+        "Warning vk_instance.cpp lambda": {
+          "count": 1,
+          "examples": [
+            "Extension VK_NV_framebuffer_mixed_samples unavailable."
+          ]
+        },
+        "Warning vk_instance.cpp CollectImageFormatInfo": {
+          "count": 5,
+          "examples": [
+            "Surface format data_format=9, number_format=1 is not fully supported (vk_format=A2B10G10R10SnormPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=9, number_format=5 is not fully supported (vk_format=A2B10G10R10SintPack32, missing features={ SampledImage | StorageImage | ColorAttachment | TransferSrc | TransferDst })",
+            "Surface format data_format=13, number_format=4 is not fully supported (vk_format=R32G32B32Uint, missing features={ SampledImage | TransferSrc | TransferDst })"
+          ]
+        },
+        "Warning module.cpp LoadModuleToMemory": {
+          "count": 5,
+          "examples": [
+            "Unable to read SCE Library Version segment of module eboot.bin",
+            "Unable to read SCE Library Version segment of module libSceFios2.prx",
+            "Unable to read SCE Library Version segment of module libc.prx"
+          ]
+        },
+        "Warning module.cpp LoadDynamicInfo": {
+          "count": 6,
+          "examples": [
+            "DT_FLAGS is NOT 0x04 should check!"
+          ]
+        },
+        "Warning linker.cpp Resolve": {
+          "count": 185,
+          "examples": [
+            "Linker: Stub resolved tZ2yplY8MBY as sceKernelGetPageTableStats (lib: libkernel, mod: libkernel)",
+            "Linker: Stub resolved R9lA82OraNs as sceAppContentInitialize (lib: dlcldr, mod: dlcldr)",
+            "Linker: Stub resolved +YX0z-GUSNw as sceCoredumpAttachMemoryRegion (lib: libSceCoredump, mod: libkernel)"
+          ]
+        },
+        "Error kernel.cpp __sys_regmgr_call": {
+          "count": 2,
+          "examples": [
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x0c82671adf0eeb34, request_word8: 0x00000000; outputs unchanged",
+            "(STUBBED) called, op: 0x19, key: 0, len: 16, encoded_key: 0x68436eecf1cfd447, request_word8: 0x00000000; outputs unchanged"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitCount": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit count callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning thread_atexit.cpp _sceKernelSetThreadAtexitReport": {
+          "count": 1,
+          "examples": [
+            "Thread-atexit report callback registered; module unloading remains unsupported"
+          ]
+        },
+        "Warning app_content.cpp sceAppContentInitialize": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called"
+          ]
+        },
+        "Warning memory.cpp sceKernelSetPrtAperture": {
+          "count": 1,
+          "examples": [
+            "PRT aperture id = 0, address = 0x1000000000, size = 0x7600000000 is set but not used"
+          ]
+        },
+        "Warning memory.cpp sceKernelGetDirectMemoryType": {
+          "count": 22,
+          "examples": [
+            "called, direct memory addr = 0x400000",
+            "called, direct memory addr = 0xad988000",
+            "called, direct memory addr = 0xb7240000"
+          ]
+        },
+        "Error stubs.cpp CommonStub": {
+          "count": 4,
+          "examples": [
+            "Stub: sceKernelGetPageTableStats (nid: tZ2yplY8MBY) called, returning zero to 0x48306f",
+            "Stub: sceShareUtilityInitializeEx2 (nid: j7DlalBzHh8) called, returning zero to 0x4858cc",
+            "Stub: sceShareUtilityAdvanceInitialize (nid: u4bCGkqhOB4) called, returning zero to 0x4858e9"
+          ]
+        },
+        "Warning coredump.cpp sceCoredumpRegisterCoredumpHandler": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called, handler = 0x483ad0, stack_size = 0x10000, common = 0x0"
+          ]
+        },
+        "Error ssl2.cpp sceSslInit": {
+          "count": 1,
+          "examples": [
+            "(DUMMY) called poolSize = 524288"
+          ]
+        },
+        "Warning userservice.cpp sceUserServiceInitialize": {
+          "count": 1,
+          "examples": [
+            "(dummy) called"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyRegisterContext": {
+          "count": 1,
+          "examples": [
+            "Could not find trophy files."
+          ]
+        },
+        "Error np_tus.cpp sceNpTusSetThreadParam": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Warning np_manager.cpp sceNpGetNpId": {
+          "count": 1,
+          "examples": [
+            "sceNpGetNpId: SIGNED_OUT (user_id=1000 shadnet_enabled=false signed_in=false)"
+          ]
+        },
+        "Error np_trophy.cpp sceNpTrophyGetTrophyUnlockState": {
+          "count": 1,
+          "examples": [
+            "Failed to open trophy XML: File was not found"
+          ]
+        },
+        "Error systemservice.cpp sceSystemServiceGetHdrToneMapLuminance": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error pad.cpp scePadInit": {
+          "count": 1,
+          "examples": [
+            "(STUBBED) called"
+          ]
+        },
+        "Error file_system.cpp open": {
+          "count": 11,
+          "examples": [
+            "Opening path /app0/exec/wad/orbis_le/sys_files.texpack.toc failed, file does not exist",
+            "Opening path /app0/exec/wad/orbis_le/sys_files.lodpack.toc failed, file does not exist",
+            "Opening path /app0/exec/sound/orbis_le/sys_files.audiopack.toc failed, file does not exist"
+          ]
+        },
+        "Warning liverpool.cpp ProcessCompute": {
+          "count": 1723,
+          "examples": [
+            "Encountered compute SetQueueReg: vqid = 4, reg_offset = 0xb"
+          ]
+        },
+        "Warning resource_patching_pass.cpp SharpLocationFromSource": {
+          "count": 212,
+          "examples": [
+            "Sharp source was not flatenned"
+          ]
+        },
+        "Warning vk_pipeline_cache.cpp CompileModule": {
+          "count": 11,
+          "examples": [
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x4158, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preserved live GCN SGPR/VGPR/flags IR: site=0x41d4, copies=1, register_records=192; checkpoint coverage complete",
+            "Ordered GDS preflight: static site=0x4158, control=0x1300, count=1 (execution remains gated)"
+          ]
+        },
+        "Warning vk_rasterizer.cpp DispatchOriginalGcnOrderedCaptureImpl": {
+          "count": 3876,
+          "examples": [
+            "PR117 original guest GCN GPU first pass completed: epoch=1, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=2, waves=7, sites=2; captured phase ready for ordered resolution",
+            "PR117 original guest GCN GPU first pass completed: epoch=3, waves=11, sites=2; captured phase ready for ordered resolution"
+          ]
+        },
+        "Warning vk_runtime.cpp SanitizeCopyLayers": {
+          "count": 5,
+          "examples": [
+            "Coercing copy source layers 1 and destination layers 2 to minimum.",
+            "Coercing copy source layers 2 and destination layers 3 to minimum.",
+            "Coercing copy source layers 3 and destination layers 4 to minimum."
+          ]
+        }
+      },
+      "visual": "110-second screenshot shows character and snow, missing/dark world surfaces, 7 FPS. No wait-timeout or GPU reset in this run; ended by 118-second runner limit. Cutscene passage remains unverified."
+    }
+  },
+  "defect": {
+    "cause": "IsBindableGuestIndexedSampleMode excluded has_lod and force_level0, and no explicit-LOD indexed emission existed. Actual IMAGE_SAMPLE_LZ / LZ_O sites reached null image bindings despite recognizable GPU-indexed material records.",
+    "captured_shader_replay": [
+      {
+        "file": "cs_0x0000000001d85313_1.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=4b40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000004950cf6_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x00000000111263ee_0.bin",
+        "rc": 0,
+        "samples": 10,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=2980008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=8040008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=ae40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000135bdfc8_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=17380008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=196c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=1afc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000155f46b2_1.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=46c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000017df04e9_1.bin",
+        "rc": 0,
+        "samples": 8,
+        "new_mode_indexed_samples": 7,
+        "details": [
+          "SAMPLE flags=3dc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=5580008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6c00028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6c80028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6d00028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6e00028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=8080008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000021b6953d_0.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 5,
+        "details": [
+          "SAMPLE flags=3680008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6280008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=7b80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=9440008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=d7c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000022365e1f_0.bin",
+        "rc": 0,
+        "samples": 7,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1a0c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1c6c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000029c94ef4_1.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=3e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1d500008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000002ba92c19_0.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 5,
+        "details": [
+          "SAMPLE flags=3b80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=5200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=21880008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=24000008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=258c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000032ec6d10_0.bin",
+        "rc": 0,
+        "samples": 17,
+        "new_mode_indexed_samples": 10,
+        "details": [
+          "SAMPLE flags=3ec0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=5a00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=7e40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=b680008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=d180008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=f500028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=f580028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=f600028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=f680028 lod=0 lz=1 offset=1 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=113c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000333e59b5_1.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=3e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1d500008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000033a001dc_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=3a40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000038ab3c08_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=6400008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000038edbd81_1.bin",
+        "rc": 0,
+        "samples": 7,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1d500008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0",
+          "SAMPLE flags=24840008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000003ca39324_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=17380008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=196c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=1afc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000462299e6_0.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 5,
+        "details": [
+          "SAMPLE flags=9ac0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=c600008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=df00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=f7c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=13b00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000004783d0fe_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3380008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=4f00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1ad00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000489aa7f4_0.bin",
+        "rc": 0,
+        "samples": 8,
+        "new_mode_indexed_samples": 5,
+        "details": [
+          "SAMPLE flags=3300008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=5840008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=8040008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=9940008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=b200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000005065ed7b_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x0000000052b6e003_0.bin",
+        "rc": 0,
+        "samples": 5,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x0000000055d17c16_0.bin",
+        "rc": 0,
+        "samples": 5,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x000000005665d0a0_0.bin",
+        "rc": 0,
+        "samples": 3,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=17200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=194c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000058a64dd6_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3bc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=20240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=228c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000058f22286_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x000000005a56df57_0.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=15cc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=19580008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1bec0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x000000005c4c2b6f_1.bin",
+        "rc": 0,
+        "samples": 21,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x00000000601993a3_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=17380008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=196c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=1afc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000076ea3515_1.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=3e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1d500008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000007b469f0b_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=17380008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=196c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=1afc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000007ed8fcac_0.bin",
+        "rc": 0,
+        "samples": 7,
+        "new_mode_indexed_samples": 4,
+        "details": [
+          "SAMPLE flags=5b80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=8180008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=11d80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=14e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=64 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x0000000083c06d36_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=4400008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=6a40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x0000000092e1d1c6_1.bin",
+        "rc": 0,
+        "samples": 6,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=3e80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1d500008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000009cb3ffed_0.bin",
+        "rc": 0,
+        "samples": 3,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=17200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=194c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x000000009db8b2ff_0.bin",
+        "rc": 0,
+        "samples": 8,
+        "new_mode_indexed_samples": 5,
+        "details": [
+          "SAMPLE flags=3700008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=5000008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=68c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=8700008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=acc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x000000009ef15078_0.bin",
+        "rc": 0,
+        "samples": 9,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=5740008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=8540008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000a0194fef_0.bin",
+        "rc": 0,
+        "samples": 5,
+        "new_mode_indexed_samples": 4,
+        "details": [
+          "SAMPLE flags=3bc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=20180008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=22880008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=24140008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000a40cb508_0.bin",
+        "rc": 0,
+        "samples": 7,
+        "new_mode_indexed_samples": 4,
+        "details": [
+          "SAMPLE flags=51c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1fe80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=21a40008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=23f80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000a69d425f_0.bin",
+        "rc": 0,
+        "samples": 3,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=17200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=194c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000c0cac3b6_0.bin",
+        "rc": 0,
+        "samples": 10,
+        "new_mode_indexed_samples": 9,
+        "details": [
+          "SAMPLE flags=ec0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=12c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=14c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1540008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=15c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1680008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=1700008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1",
+          "SAMPLE flags=17c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=376 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000c3d87aea_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3bc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=20240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=228c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000c7542465_0.bin",
+        "rc": 0,
+        "samples": 2,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x00000000cabe3c02_0.bin",
+        "rc": 0,
+        "samples": 1,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=16b80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000cfd30fa8_0.bin",
+        "rc": 0,
+        "samples": 5,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      },
+      {
+        "file": "cs_0x00000000d196a0b4_0.bin",
+        "rc": 0,
+        "samples": 2,
+        "new_mode_indexed_samples": 1,
+        "details": [
+          "SAMPLE flags=16f80008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1"
+        ]
+      },
+      {
+        "file": "cs_0x00000000de03cca1_1.bin",
+        "rc": 0,
+        "samples": 7,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3f00008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=5780008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0",
+          "SAMPLE flags=1f180008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=224 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000df07c25f_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3bc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=20240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=228c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000e476f075_0.bin",
+        "rc": 0,
+        "samples": 4,
+        "new_mode_indexed_samples": 3,
+        "details": [
+          "SAMPLE flags=3bc0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=20240008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=228c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000e4829727_0.bin",
+        "rc": 0,
+        "samples": 3,
+        "new_mode_indexed_samples": 2,
+        "details": [
+          "SAMPLE flags=17200008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=0 sampler=1",
+          "SAMPLE flags=194c0008 lod=0 lz=1 offset=0 depth=0 array=0 indexed=1 stride=384 offset_bytes=192 sampler=0"
+        ]
+      },
+      {
+        "file": "cs_0x00000000ee963aae_0.bin",
+        "rc": 0,
+        "samples": 0,
+        "new_mode_indexed_samples": 0,
+        "details": []
+      }
+    ],
+    "discovery_summary": {
+      "captured_compute_modules_replayed": 50,
+      "previously_excluded_explicit_lod_sites_now_recognized": 131,
+      "affected_modules": 41,
+      "scope": "Actual captured GCN through production front-end and resource discovery with synthetic runtime metadata. This does not reproduce native table contents or prove visual coverage."
+    },
+    "specific_example": {
+      "hash": "17df04e9",
+      "newly_recognized_material_samples": 7,
+      "record_stride_bytes": 384,
+      "texture_offset": 0,
+      "sampler_offset": 256,
+      "eighth_sample": "static path, not a newly indexed material sample"
+    },
+    "implementation": [
+      "Explicit-LOD indexed IR and SPIR-V path",
+      "Preserve GPU descriptor/sampler selection and real descriptor-table bounds",
+      "Preserve runtime mip level with dimension-specific VGPR position",
+      "Typed 1D/2D/3D/cube and numeric sample variants; signed offsets retain dimensionality and 1D ignores Y",
+      "Shader serialization version 35",
+      "Original OpenOrbis hardware probe, no commercial data"
+    ]
+  },
+  "validation": {
+    "compiler_probe": [
+      {
+        "mode": "constant",
+        "rc": 0,
+        "compiler": "image indexed=1 mixed=1 count=2 stride=64 offset=0\nindexed=1 images=1 samplers=2 spirv_words=5068\n",
+        "error": "",
+        "validator": 0,
+        "validation_error": ""
+      },
+      {
+        "mode": "lod",
+        "rc": 0,
+        "compiler": "image indexed=1 mixed=1 count=2 stride=64 offset=0\nindexed=1 images=1 samplers=2 spirv_words=5082\n",
+        "error": "",
+        "validator": 0,
+        "validation_error": ""
+      },
+      {
+        "mode": "offset",
+        "rc": 0,
+        "compiler": "image indexed=1 mixed=1 count=2 stride=64 offset=0\nindexed=1 images=1 samplers=2 spirv_words=5167\n",
+        "error": "",
+        "validator": 0,
+        "validation_error": ""
+      },
+      {
+        "mode": "zero",
+        "rc": 0,
+        "compiler": "image indexed=0 mixed=0 count=0 stride=64 offset=0\nindexed=0 images=1 samplers=1 spirv_words=1067\n",
+        "error": "",
+        "validator": 0,
+        "validation_error": ""
+      }
+    ],
+    "generated_operand_checks": [
+      {
+        "mode": "constant",
+        "typed_sample_branches": 30,
+        "lod_zero_preserved": true,
+        "runtime_lod_preserved": false,
+        "offset_preserved": true,
+        "no_implicit_derivatives": true
+      },
+      {
+        "mode": "lod",
+        "typed_sample_branches": 30,
+        "lod_zero_preserved": true,
+        "runtime_lod_preserved": true,
+        "offset_preserved": true,
+        "no_implicit_derivatives": true
+      },
+      {
+        "mode": "offset",
+        "typed_sample_branches": 30,
+        "lod_zero_preserved": true,
+        "runtime_lod_preserved": false,
+        "offset_preserved": true,
+        "no_implicit_derivatives": true
+      }
+    ],
+    "before_probe": "Previous eligibility: indexed=0, one null image, 1067 SPIR-V words. New: indexed=1, bounded two-record table. This is a compiler output comparison, not a GPU pixel test.",
+    "cpu_regressions": "31 CTests plus all universal renderer/SRT/host primitive contracts PASS",
+    "cli_startup": "3 actual pinned binary scenarios PASS, GPU_NOT_RUN",
+    "full_build": "Release GCC14 build PASS",
+    "local_pinned_binary_sha256": "f7f0edc381684533d4023124956c28981d38105b56718a44b6d33dc74d76c772",
+    "hardware_probe": "C11 syntax and GCN decode PASS; SDK link and physical PS4 NOT_RUN",
+    "native_games": "NOT_RUN here: no home-server/GPU access",
+    "duration_checks": [
+      {
+        "seconds": 118,
+        "early_exit": null,
+        "stop": [
+          {
+            "at": 118.0,
+            "deadline": 120.0
+          }
+        ],
+        "result": {
+          "binary_sha256": "59c6b990c7fe61e69fb3105b754c9f4cc1a89bda2daf79a7b8a5fbbfbdf4ed73",
+          "game": "example/eboot.bin",
+          "duration_limit": 120,
+          "time_to_sigterm": 118,
+          "graphics_visual_acceptance": "NOT_OBSERVED",
+          "audio_audible_acceptance": "NOT_OBSERVED",
+          "gameplay_acceptance": "NOT_OBSERVED",
+          "screenshots": [
+            "frame-008s.png",
+            "frame-025s.png",
+            "frame-045s.png",
+            "frame-060s.png",
+            "frame-080s.png",
+            "frame-095s.png",
+            "frame-110s.png"
+          ],
+          "owned_child_terminated": true,
+          "exit_code": 0,
+          "owned_child_pid": 999999,
+          "exit_reason": "TEST_118S_DURATION_LIMIT",
+          "trigger_reason": "TEST_118S_DURATION_LIMIT",
+          "elapsed_seconds": 118.0,
+          "native_fault": {}
+        }
+      },
+      {
+        "seconds": 185,
+        "early_exit": null,
+        "stop": [
+          {
+            "at": 185.0,
+            "deadline": 187.0
+          }
+        ],
+        "result": {
+          "binary_sha256": "59c6b990c7fe61e69fb3105b754c9f4cc1a89bda2daf79a7b8a5fbbfbdf4ed73",
+          "game": "example/eboot.bin",
+          "duration_limit": 187,
+          "time_to_sigterm": 185,
+          "graphics_visual_acceptance": "NOT_OBSERVED",
+          "audio_audible_acceptance": "NOT_OBSERVED",
+          "gameplay_acceptance": "NOT_OBSERVED",
+          "screenshots": [
+            "frame-008s.png",
+            "frame-025s.png",
+            "frame-045s.png",
+            "frame-060s.png",
+            "frame-080s.png",
+            "frame-095s.png",
+            "frame-110s.png",
+            "frame-140s.png",
+            "frame-160s.png",
+            "frame-180s.png"
+          ],
+          "owned_child_terminated": true,
+          "exit_code": 0,
+          "owned_child_pid": 999999,
+          "exit_reason": "TEST_185S_DURATION_LIMIT",
+          "trigger_reason": "TEST_185S_DURATION_LIMIT",
+          "elapsed_seconds": 185.0,
+          "native_fault": {}
+        }
+      },
+      {
+        "seconds": 185,
+        "early_exit": 70,
+        "stop": [],
+        "result": {
+          "binary_sha256": "59c6b990c7fe61e69fb3105b754c9f4cc1a89bda2daf79a7b8a5fbbfbdf4ed73",
+          "game": "example/eboot.bin",
+          "duration_limit": 187,
+          "time_to_sigterm": 185,
+          "graphics_visual_acceptance": "NOT_OBSERVED",
+          "audio_audible_acceptance": "NOT_OBSERVED",
+          "gameplay_acceptance": "NOT_OBSERVED",
+          "screenshots": [
+            "frame-008s.png",
+            "frame-025s.png",
+            "frame-045s.png",
+            "frame-060s.png"
+          ],
+          "owned_child_terminated": true,
+          "exit_code": 139,
+          "owned_child_pid": 999999,
+          "exit_reason": "GAME_EXITED_BEFORE_LIMIT",
+          "trigger_reason": "GAME_EXITED_BEFORE_LIMIT",
+          "elapsed_seconds": 70.4,
+          "native_fault": {}
+        }
+      }
+    ],
+    "collector": "64 descriptor-origin and 64 final IR files preserved under 144-file/20-MiB cap"
+  },
+  "unresolved": [
+    "Native GoT material recovery and FPS; no visual success claimed",
+    "Seven earlier 536-byte-record binding rejections still reported zero-sized guest tables; no extent was fabricated",
+    "Remaining unresolved SHARP sources, depth/array/gather modes, and unavailable Vulkan surface formats are not declared fixed",
+    "GoW cutscene progression and low FPS; no crash in the short latest capture is not proof of a fix",
+    "Missing system-font/trophy assets and stubbed library calls are classified, not blindly changed; no evidence ties each to missing material shading",
+    "For tables above the mixed-dimension descriptor budget, the existing restricted path remains; no capacity was invented"
+  ],
+  "next_native": {
+    "source_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+    "runner_commit": "680db30c3f0b6678a65a4982aaf0274b1605255a",
+    "go_first": "CUSA11456",
+    "seconds_per_game": 185,
+    "shutdown_grace_seconds": 2,
+    "screenshots_seconds": [
+      8,
+      25,
+      45,
+      60,
+      80,
+      95,
+      110,
+      140,
+      160,
+      180
+    ],
+    "gpu_timestamps": false,
+    "automatic_input": false,
+    "sudo": "one sudo -v after build; journal probes use sudo -n",
+    "containers": "Inventory current model containers once; stop detected containers, restore exact lease; complete empty inventory is valid",
+    "installed_ESDE_binary": "unchanged",
+    "wrapper_sha256": "161737deb0f4588bcaaef31ff38366e96777c32128562c5a8561e5d2d6e47209"
+  }
+}

@@ -9,7 +9,7 @@ namespace Shader::Optimization {
 // No shader hash, title-specific condition, or fabricated guest value.
 template <typename TextureFlags>
 [[nodiscard]] constexpr bool IsBindableGuestIndexedSampleMode(const TextureFlags& flags) noexcept {
-    return !flags.is_depth && !flags.is_array && !flags.is_gather && !flags.has_lod &&
-           !flags.force_level0 && !flags.has_lod_clamp && !flags.is_r128 && !flags.is_unnormalized;
+    return !flags.is_depth && !flags.is_array && !flags.is_gather && !flags.has_lod_clamp &&
+           !flags.is_r128 && !flags.is_unnormalized;
 }
 } // namespace Shader::Optimization

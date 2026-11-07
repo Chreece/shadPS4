@@ -5,7 +5,7 @@
 
 The actual emulator receives only the normal game selector and common
 --fullscreen true --show-fps options. No CPU/GPU overrides, DynamoRIO or
-automatic input. At 118 seconds SIGTERM only its owned child process group;
+automatic input. At the requested deadline SIGTERM only its owned child process group;
 after two seconds SIGKILL only that group. Keep full console on the host and
 write a bounded, source-attributed archive for the shared emulator diary.
 """
@@ -1032,8 +1032,9 @@ def main():
     p.add_argument('--report',required=True,type=Path)
     p.add_argument('--seconds',required=True,type=int)
     args=p.parse_args()
-    if args.seconds!=118:
-        p.error('Hard limit fixed at 118 seconds SIGTERM, +2 seconds SIGKILL')
+    if not 1 <= args.seconds <= 600:
+        p.error('Run time must be 1..600 seconds, followed by at most 2 seconds for shutdown')
+    duration_reason = f'TEST_{args.seconds}S_DURATION_LIMIT'
     if not re.fullmatch(r'[a-f0-9]{64}',args.sha256):
         p.error('Candidate hash must be full lowercase SHA256')
     if not args.game or args.game.startswith('-') or '\0' in args.game:
@@ -1062,14 +1063,14 @@ def main():
     launch={
         'command':argv,'sha256':args.sha256,'cpu':'emulator-native/no-DynamoRIO',
         'memory':'global emulator config','automated_game_inputs':False,
-        'runtime_limit_seconds':120,'signal_at_seconds':118,
+        'runtime_limit_seconds':args.seconds+2,'signal_at_seconds':args.seconds,
         'ordered_gds_capture_requested':env.get('SHADPS4_PR117_CAPTURE_ONCE')=='1',
         'graphics_diagnostics_requested':env.get('SHADPS4_GRAPHICS_DIAGNOSTICS')=='1',
         'vulkan_diagnostics_requested':env.get('SHADPS4_VULKAN_DIAGNOSTICS')=='1',
         'performance_diagnostics_requested':env.get('SHADPS4_PERFORMANCE_DIAGNOSTICS')=='1'
     }
     result={'binary_sha256':args.sha256,'game':args.game,
-            'duration_limit':120,'time_to_sigterm':118,
+            'duration_limit':args.seconds+2,'time_to_sigterm':args.seconds,
             'graphics_visual_acceptance':'NOT_OBSERVED',
             'audio_audible_acceptance':'NOT_OBSERVED',
             'gameplay_acceptance':'NOT_OBSERVED','screenshots':[],
@@ -1088,21 +1089,22 @@ def main():
             result['owned_child_pid']=child.pid
             save(report/'launch.json',dict(launch,pid=child.pid))
             print(f'NATIVE_GENERIC_GAME_LAUNCHED=YES PID={child.pid}',flush=True)
-            due=(8,25,45,60,80,95,110)
+            due=tuple(t for t in (8,25,45,60,80,95,110,140,160,180,
+                                     *range(210,601,30)) if t < args.seconds)
             taken=set()
             gpu_failure=None
             memory_failure=None
             validation_error=None
             console_offset=0
             pending_line=''
-            while child.poll() is None and time.monotonic()-began<118:
+            while child.poll() is None and time.monotonic()-began<args.seconds:
                 elapsed=time.monotonic()-began
                 usage=capture_performance_usage(child.pid,report,elapsed)
                 memory_failure=gpu_memory_headroom_failure(usage)
                 if memory_failure:
                     result['gpu_memory_headroom_failure']=memory_failure
                     result['exit_reason']='GPU_MEMORY_HEADROOM_EXHAUSTED'
-                    snapshot_budget = min(0.6, 118 - (time.monotonic() - began))
+                    snapshot_budget = min(0.6, args.seconds - (time.monotonic() - began))
                     if snapshot_budget > 0.05:
                         capture_gpu_clients(report, 'headroom-failure', snapshot_budget)
                     break
@@ -1131,16 +1133,16 @@ def main():
                     if elapsed>=second and second not in taken:
                         taken.add(second)
                         if second in (25, 80):
-                            snapshot_budget = min(0.6, 118 - (time.monotonic() - began))
+                            snapshot_budget = min(0.6, args.seconds - (time.monotonic() - began))
                             if snapshot_budget > 0.05:
                                 capture_gpu_clients(report, f'{second:03d}s', snapshot_budget)
                         capture_owned_stop_state(child.pid,report,
                             filename=f'owned-process-state-{second:03d}s.json')
-                        if second in (80, 110) and live_symbols is not None:
+                        if second in (80, 110, 140, 180) and live_symbols is not None:
                             capture_owned_live_memory(child.pid, report, second, live_symbols)
                         if take_picture(report,second,display):
                             result['screenshots'].append(f'frame-{second:03d}s.png')
-                time.sleep(min(0.4,max(0.0,118-elapsed)))
+                time.sleep(min(0.4,max(0.0,args.seconds-elapsed)))
             if gpu_failure:
                 result['exit_reason']='GPU_CONTEXT_LOST'
             elif memory_failure:
@@ -1148,7 +1150,7 @@ def main():
             elif validation_error:
                 result['exit_reason']='VULKAN_VALIDATION_FAILED'
             elif child.poll() is None:
-                result['exit_reason']='TEST_118S_DURATION_LIMIT'
+                result['exit_reason']=duration_reason
             else:
                 result['exit_reason']='GAME_EXITED_BEFORE_LIMIT'
                 result['exit_code']=child.returncode
@@ -1160,7 +1162,7 @@ def main():
         result['trigger_reason'] = result.get('exit_reason')
         if child is not None:
             if child.poll() is None:
-                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL',began+120.0)
+                stop_error=term_owned(child,'TERM_THEN_OPTIONAL_KILL',began+args.seconds+2.0)
                 if stop_error:
                     result['termination_error']=stop_error
             result['owned_child_terminated']=child.poll() is not None
@@ -1181,7 +1183,7 @@ def main():
                 if (launch['graphics_diagnostics_requested'] and
                         not result.get('graphics_diagnostics_active')):
                     result['graphics_diagnostics_failure']='GRAPHICS_DIAGNOSTICS_NOT_OBSERVED'
-                    if result['exit_reason'] in ('TEST_118S_DURATION_LIMIT','GAME_EXITED_BEFORE_LIMIT'):
+                    if result['exit_reason'] in (duration_reason,'GAME_EXITED_BEFORE_LIMIT'):
                         result['exit_reason']='GRAPHICS_DIAGNOSTICS_NOT_OBSERVED'
                 result["native_fault"]=classify_native_fault(console,report,binary)
                 if result["native_fault"].get("fault_rip"):
@@ -1209,7 +1211,7 @@ def main():
         launch['vulkan_diagnostics_requested'] and (
             result.get('first_validation_failure') or not result.get('validation_layer_active'))
         ) and result['owned_child_terminated'] and (
-        result['exit_reason']=='TEST_118S_DURATION_LIMIT' or result['exit_code']==0) else 1
+        result['exit_reason']==duration_reason or result['exit_code']==0) else 1
 
 
 if __name__=='__main__':

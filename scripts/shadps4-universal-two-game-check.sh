@@ -52,7 +52,7 @@ trap finish EXIT
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_verified_graphics.py" \
     -o "$OUT/graphics.py"
-printf '%s  %s\n' b53a78cfa08444a3930a375761d1cd438899a4297ab35e63690162ac46a0cc95 "$OUT/graphics.py" | sha256sum --check -
+printf '%s  %s\n' 80580f98eb9471e2786e8737041c2beb7d0674d664c8ea1c044f52db22e12239 "$OUT/graphics.py" | sha256sum --check -
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/shadps4_native_120_observer_20261026.py" \
     -o "$OUT/observer.py"
@@ -111,5 +111,5 @@ fi
 curl --ipv4 --fail --location --retry 3 \
     "https://raw.githubusercontent.com/Chreece/shadPS4/$RUNNER_PIN/tools/development/run_universal_container_batch.py" \
     -o "$OUT/container-batch.py"
-printf '%s  %s\n' 6b67a79a9fdb56abd2ebcbab0baa0ce1d8cfcc3e68e057cc9a3b392c22461db7 "$OUT/container-batch.py" | sha256sum --check -
+printf '%s  %s\n' b9c11eb8d0a89959361daaf3de93db781c8f8408431f1465cf126844e6e10535 "$OUT/container-batch.py" | sha256sum --check -
 python3 "$OUT/container-batch.py" "$OUT" "$PIN" "$RUNNER_PIN" "${GAMES[@]}"
